@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { apiRequest } from '../utils/api';
+import { apiRequest } from '../../utils/api';
 import './WKWorkerProfile.css';
 
 const emptyProfile = {

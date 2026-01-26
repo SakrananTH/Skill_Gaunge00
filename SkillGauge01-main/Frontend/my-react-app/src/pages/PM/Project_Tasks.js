@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import './Dashboard.css';
+import '../Dashboard.css';
 import './Project_Tasks.css';
-import { mockUser } from '../mock/mockData';
-import { performLogout } from '../utils/logout';
+import { mockUser } from '../../mock/mockData';
+import { performLogout } from '../../utils/logout';
 
 const Project_Tasks = () => {
   const location = useLocation();

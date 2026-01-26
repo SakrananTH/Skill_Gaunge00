@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './WKDashboard.css';
 import './WKSkillAssessmentTest.css';
-import { mockUser } from '../mock/mockData';
-import WorkerSidebar from '../components/WorkerSidebar';
+import { mockUser } from '../../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
 
 const DEFAULT_ASSESSMENT_DURATION_MINUTES = 60;
 const ASSESSMENT_DURATION_STORAGE_KEY = 'skillAssessmentDurationMinutes';

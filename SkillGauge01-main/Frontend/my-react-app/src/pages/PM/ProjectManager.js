@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import './Dashboard.css';
-import { mockUser } from '../mock/mockData';
-import { performLogout } from '../utils/logout';
+import '../Dashboard.css';
+import { mockUser } from '../../mock/mockData';
+import { performLogout } from '../../utils/logout';
 
 const ProjectManager = () => {
   const location = useLocation();

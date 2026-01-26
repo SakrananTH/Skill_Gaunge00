@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import './WKDashboard.css';
-import { mockUser, mockProjects, mockSites } from '../mock/mockData';
-import WorkerSidebar from '../components/WorkerSidebar';
-import { apiRequest } from '../utils/api';
+import { mockUser, mockProjects, mockSites } from '../../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
+import { apiRequest } from '../../utils/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();

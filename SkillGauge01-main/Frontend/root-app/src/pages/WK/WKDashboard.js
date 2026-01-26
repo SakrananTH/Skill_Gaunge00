@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import './WKDashboard.css';
-import { mockUser, mockProjects, mockSites, mockTasks } from '../mock/mockData';
-import WorkerSidebar from '../components/WorkerSidebar';
+import { mockUser, mockProjects, mockSites, mockTasks } from '../../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
 
 const Dashboard = () => {
   const location = useLocation();

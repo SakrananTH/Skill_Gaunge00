@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import './WKDashboard.css';
 import './WKSkillAssessmentQuiz.css';
-import { mockUser } from '../mock/mockData';
-import WorkerSidebar from '../components/WorkerSidebar';
-import { apiRequest } from '../utils/api';
+import { mockUser } from '../../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
+import { apiRequest } from '../../utils/api';
 
 const DEFAULT_ASSESSMENT_DURATION_MINUTES = 60;
 const ASSESSMENT_DURATION_STORAGE_KEY = 'skillAssessmentDurationMinutes';

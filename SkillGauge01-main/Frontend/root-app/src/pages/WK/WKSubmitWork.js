@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import './WKDashboard.css';
 import './WKSubmitWork.css';
-import WorkerSidebar from '../components/WorkerSidebar';
-import { mockUser } from '../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
+import { mockUser } from '../../mock/mockData';
 
 const defaultForm = {
   title: '',

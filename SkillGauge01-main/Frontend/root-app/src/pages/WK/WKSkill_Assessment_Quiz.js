@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './WKDashboard.css';
 import './WKSkillAssessmentQuiz.css';
-import { mockUser } from '../mock/mockData';
-import WorkerSidebar from '../components/WorkerSidebar';
+import { mockUser } from '../../mock/mockData';
+import WorkerSidebar from '../../components/WorkerSidebar';
 
 const sampleQuestions = [
   {

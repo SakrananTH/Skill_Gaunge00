@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './WKDashboard.css';
 import './WKProject_Tasks.css';
-import { mockUser } from '../mock/mockData';
-import { performLogout } from '../utils/logout';
+import { mockUser } from '../../mock/mockData';
+import { performLogout } from '../../utils/logout';
 
 const Project_Tasks = () => {
   const location = useLocation();
