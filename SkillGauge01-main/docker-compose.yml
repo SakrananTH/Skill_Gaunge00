@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: skillgauge-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: admin-worker-registration
+      MYSQL_USER: skillgauge
+      MYSQL_PASSWORD: skillgauge
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:5
+    container_name: skillgauge-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword
+    ports:
+      - "8000:80"
+    depends_on:
+      mysql:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    container_name: skillgauge-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: skillgauge
+      POSTGRES_USER: skillgauge
+      POSTGRES_PASSWORD: skillgauge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skillgauge -d skillgauge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  # Development service
+  web-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3002:3002"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - BROWSER=none
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+
+  api:
+    image: node:20-alpine
+    working_dir: /app/server
+    command: sh -c "npm ci && node index.js"
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - CORS_ORIGIN=http://localhost:3002
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=admin-worker-registration
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - THAI_ADDRESS_DATA_PATH=/data/thai-addresses/thailand-province-district-subdistrict-zipcode-latitude-longitude-master/output.csv
+    depends_on:
+      mysql:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ../thailand-province-district-subdistrict-zipcode-latitude-longitude-master:/data/thai-addresses:ro
+    profiles:
+      - dev
+      - hot
+
+  # Production service
+  web-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3002:80"
+    profiles:
+      - prod
+
+  # Development with hot reload
+  web-hot:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3002:3002"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - BROWSER=none
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - FAST_REFRESH=true
+    stdin_open: true
+    tty: true
+    profiles:
+      - hot
+
+volumes:
+  pgdata:
+  mysql_data:

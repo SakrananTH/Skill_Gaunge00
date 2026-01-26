@@ -1,0 +1,8 @@
+#! 0-my-react-app-namespace.yaml
+# Generated code, do not edit
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: my-react-app
+    labels:
+        com.docker.compose.project: my-react-app

@@ -1,0 +1,36 @@
+.dash-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 0;
+    min-height: calc(100vh - 74px);
+    background: #f6f8fb;
+    font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.menu horizontal {
+    font-family: "Inter", "Noto Sans Thai", sans-serif;
+}
+
+.dash-topbar .phone {
+    margin-left: 2rem;
+}
+
+@media (max-width: 800px) {
+    .dash-layout { grid-template-columns: 1fr; }
+    /* Keep sidebar visible on small screens and render it above content as a
+         top horizontal menu so mobile shows the admin controls like desktop. */
+    .dash-sidebar {
+        display: block;
+        grid-column: 1 / -1;
+        border-right: none;
+        border-bottom: 1px solid #e2e6ec;
+        border-radius: 12px;
+        margin: 0.75rem 1rem;
+        padding: 0.6rem;
+        background: #eaf1fb;
+    }
+    .menu { flex-direction: row; gap: 0.5rem; overflow-x: auto; padding: 0 0.25rem; }
+    .menu-item { min-width: 140px; padding: 0.6rem 0.9rem; text-align: center; }
+    .thead, .tr { grid-template-columns: 1fr; }
+    .td { justify-content: space-between; }
+}

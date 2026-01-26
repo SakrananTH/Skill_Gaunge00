@@ -1,0 +1,13 @@
+#! kustomization.yaml
+# Generated code, do not edit
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+    - ../../base
+patches:
+    - path: db-C:\Users\sakra\OneDrive\เดสก์ท็อป\Jsapps\my-react-app\db\init-persistentVolumeClaim.yaml
+    - path: db-pgdata-persistentVolumeClaim.yaml
+    - path: db-service.yaml
+    - path: mysql-mysql_data-persistentVolumeClaim.yaml
+    - path: mysql-service.yaml
+    - path: phpmyadmin-service.yaml

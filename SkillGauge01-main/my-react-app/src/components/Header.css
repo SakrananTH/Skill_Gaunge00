@@ -1,0 +1,250 @@
+@import url('https://fonts.googleapis.com/css2?family=BBH+Sans+Bogle&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Noto+Sans+Thai:wght@100..900&display=swap');
+
+.header {
+  background-color: #ffffff;
+  padding: 0.75rem 0;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.1);
+  border-bottom: 1px solid #e8eaed;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  width: 100%;
+  margin: 0;
+}
+
+.header .container {
+  max-width: 100%;
+  margin: 50 auto;
+  padding: 40; /* flush to edges on desktop */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  color: #71a7ff;
+  text-decoration: none;
+  flex-shrink: 0;
+  margin-right: 3rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.logo-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+}
+
+.logo h1 {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 500;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 2rem; /* more space between items on desktop */
+  align-items: center;
+  justify-content: center; /* center the nav group */
+}
+
+.nav-link {
+  color: #5f6368;
+  text-decoration: none;
+  font-weight: 400;
+  font-size: 0.875rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  transition: color 0.2s ease;
+  padding: 1rem ;
+  border-radius: 4px;
+  display: block;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: #1a73e8;
+  background-color: rgba(26, 115, 232, 0.04);
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.language-selector {
+  position: relative;
+}
+
+.language-btn {
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  color: #5f6368;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  justify-content: space-between;
+}
+
+.language-btn:hover {
+  background: #f1f3f4;
+  border-color: #c4c7c5;
+}
+
+.dropdown-arrow {
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.language-btn:hover .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.language-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 1000;
+  margin-top: 4px;
+}
+
+.language-option {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  color: #5f6368;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.language-option:hover {
+  background: #f8f9fa;
+}
+
+.language-option:first-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.language-option:last-child {
+  border-radius: 0 0 4px 4px;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  color: #5f6368;
+  padding: 0.5rem;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: background-color 0.2s ease;
+}
+
+.action-btn:hover {
+  background-color: rgba(95, 99, 104, 0.08);
+}
+
+.sign-in-btn {
+  background: #006eff;
+  color: white;
+  text-decoration: none;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.sign-in-btn:hover {
+  background: #1557b0;
+}
+
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: #5f6368;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header .container {
+    padding: 0 1rem; /* keep small gutter on mobile */
+  }
+  .nav-list {
+    gap: 1rem; /* tighter spacing on mobile */
+  }
+  
+  .nav {
+    display: none;
+  }
+  
+  .header-actions {
+    gap: 0.5rem;
+  }
+  
+  .language-btn {
+    min-width: 60px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+  }
+  
+  .sign-in-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  
+  .mobile-menu-btn {
+    display: block;
+    order: -1;
+  }
+  
+  .logo {
+    margin-right: 0;
+  }
+  
+  .logo-img {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .logo h1 {
+    font-size: 1.25rem;
+  }
+}

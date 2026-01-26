@@ -1,0 +1,77 @@
+API: ระบบจัดการข้อสอบ (Structural Quiz Management)
+Base URL: /api/managequestion Auth Required: ใช้ (Header Authorization: Bearer <Admin_Token>) Role Required: Admin เท่านั้น
+
+1. ดึงข้อสอบทั้งหมด (Get All Questions)
+ใช้สำหรับดึงรายชื่อข้อสอบทั้งหมดมาแสดงในตาราง (Table)
+
+Method: GET
+
+URL: http://localhost:4000/api/managequestion/all
+
+Response:
+
+JSON
+
+[
+    {
+        "id": 1,
+        "question_text": "คอนกรีตเสาควรมีค่า Slump เท่าไหร่?",
+        "choice_a": "2.5 ซม.",
+        "choice_b": "7.5 - 10 ซม.",
+        "choice_c": "15 ซม.",
+        "choice_d": "20 ซม.",
+        "answer": "B",
+        "difficulty_level": 2,
+        "skill_type": "งานคอนกรีต (Concrete)"
+    },
+    ...
+]
+2. เพิ่มข้อสอบ (Add Questions)
+รองรับการเพิ่มทีละหลายข้อ (Bulk Insert) หรือข้อเดียวก็ได้
+
+Method: POST
+
+URL: http://localhost:4000/api/managequestion/add
+
+Body: ส่งเป็น Array ของ Object (แม้จะเพิ่มข้อเดียวก็ให้ใส่ใน [])
+
+JSON
+
+[
+  {
+    "question_text": "เหล็ก DB12 คืออะไร?",
+    "choice_a": "เหล็กกลม 12 มม.",
+    "choice_b": "เหล็กข้ออ้อย 12 มม.",
+    "choice_c": "เหล็กแบน",
+    "choice_d": "ลวดผูกเหล็ก",
+    "answer": "B",              
+    "difficulty_level": 1,      
+    "skill_type": "งานเหล็กเสริม (Rebar)" // ควรทำเป็นเลือกจาก Dropdown 
+  }
+]
+3. แก้ไขข้อสอบ (Update Question)
+Method: PUT
+
+URL: http://localhost:4000/api/managequestion/update/:id (เช่น /api/managequestion/update/5)
+
+Body: ส่งค่าที่ต้องการแก้
+
+JSON
+
+{
+    "question_text": "แก้ไขโจทย์...",
+    "choice_a": "2.5 ซม.",
+    "choice_b": "7.5 - 10 ซม.",
+    "choice_c": "15 ซม.",
+    "choice_d": "20 ซม.",
+    "answer": "A",
+    "difficulty_level": 2 ,
+    "skill_type": "งานคอนกรีต (Concrete)"
+}
+
+4. ลบข้อสอบ (Delete Question)
+Method: DELETE
+
+URL: http://localhost:4000/api/managequestion/delete/:id
+
+Response: { "message": "Question deleted successfully" }

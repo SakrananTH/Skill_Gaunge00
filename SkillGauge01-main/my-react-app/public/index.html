@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#667eea" />
+    
+    <!-- SEO Meta Tags - หัวใจของการค้นหา -->
+    <meta name="description" content="Skill Gauge" />
+    <meta name="keywords" content="เว็บไซต์, ออกแบบเว็บ, พัฒนาเว็บ, React, Node.js, Docker, HTML, CSS, JavaScript" />
+    <meta name="author" content="Skill Gauge Team" />
+    <meta name="robots" content="index, follow" />
+    
+    <!-- Open Graph Tags - สำหรับการแชร์บนโซเชียล -->
+    <meta property="og:type" content="Skill Gauge" />
+    <meta property="og:title" content="Skill Gauge" />
+    <meta property="og:description" content="สร้างเว็บไซต์ที่สวยงาม ทันสมัย และใช้งานง่าย ด้วยเทคโนโลยี React และ Docker" />
+    <meta property="og:url" content="https://your-website.com" />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
+    <meta property="og:site_name" content="Skill Gauge" />
+    
+    <!-- Twitter Card Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Skill Gauge" />
+    <meta name="twitter:description" content="สร้างเว็บไซต์ที่สวยงาม ทันสมัย และใช้งานง่าย" />
+    <meta name="twitter:image" content="%PUBLIC_URL%/twitter-image.jpg" />
+    
+    <!-- Progressive Web App -->
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Preload Critical Resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link href='https://cdn.boxicons.com/3.0.3/fonts/basic/boxicons.min.css' rel='stylesheet'>
+  <link href='https://cdn.boxicons.com/3.0.3/fonts/brands/boxicons-brands.min.css' rel='stylesheet'>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2Pkf46smm9ZqYkGm1Q4qVZ9CqoBs+7G9vY9C4fU6TfN3S4V94C6r+XGq7A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <!-- Critical CSS -->
+    <style>
+      /* Critical Above-the-fold CSS */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #ffffff;
+      }
+      
+      /* Loading Animation */
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        z-index: 9999;
+      }
+      
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid #ffffff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .loading-text {
+        color: white;
+        margin-top: 20px;
+        font-size: 18px;
+        font-weight: 500;
+      }
+      
+      /* Hide loading when React loads */
+      #root:not(:empty) + .loading-container {
+        display: none;
+      }
+    </style>
+    
+    <title>Skill Gauge</title>
+  </head>
+  <body>
+    <!-- Fallback for users without JavaScript -->
+    <noscript>
+      <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+        <h1>Skill Gauge</h1>
+        <h2>เว็บไซต์นี้ต้องการ JavaScript</h2>
+        <p>กรุณาเปิดใช้งาน JavaScript ในเบราว์เซอร์ของคุณเพื่อใช้งานเว็บไซต์</p>
+        <p style="margin-top: 20px;">
+          <strong>ทำไมต้องใช้ JavaScript?</strong><br>
+          - เพื่อประสบการณ์ที่ดีในการใช้งาน<br>
+          - เพื่อการนำทางที่ราบรื่น<br>
+          - เพื่อแสดงเนื้อหาแบบ interactive
+        </p>
+      </div>
+    </noscript>
+    
+    <!-- Main Application Container -->
+    <div id="root"></div>
+    
+    <!-- Loading Screen -->
+    <div class="loading-container">
+      <div style="text-align: center;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">กำลังโหลด Skill Gauge...</div>
+      </div>
+    </div>
+    
+    <!-- Schema Markup for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "WebStudio",
+      "description": "บริการออกแบบและพัฒนาเว็บไซต์มืออาชีพ",
+      "url": "https://your-website.com",
+      "logo": "https://your-website.com/logo.png",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "telephone": "+66-2-123-4567",
+        "contactType": "Customer Service",
+        "areaServed": "TH",
+        "availableLanguage": "Thai"
+      },
+      "sameAs": [
+        "https://www.facebook.com/webstudio",
+        "https://www.instagram.com/webstudio",
+        "https://twitter.com/webstudio"
+      ]
+    }
+    </script>
+  </body>
+</html>

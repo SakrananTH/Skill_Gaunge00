@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "bcrypt": "^6.0.0",
+    "bootstrap-icons": "^1.13.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mysql2": "^3.15.3",
+    "react-router-dom": "^7.9.4",
+    "tailwindcss": "^4.1.17"
+  }
+}

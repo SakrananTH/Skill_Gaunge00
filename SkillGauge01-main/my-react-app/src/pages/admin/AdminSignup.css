@@ -1,0 +1,279 @@
+.admin-signup-page {
+  min-height: 100vh;
+  background: #f0f4f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.admin-signup-container {
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 1100px; /* Wider container */
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-signup-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.admin-signup-header h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1a365d;
+  margin: 0 0 0.5rem 0;
+}
+
+.admin-signup-header p {
+  color: #718096;
+  font-size: 1rem;
+}
+
+.admin-signup-form {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1.5rem;
+}
+
+/* Grid Spans */
+.col-span-12 { grid-column: span 12; }
+.col-span-10 { grid-column: span 10; }
+.col-span-9 { grid-column: span 9; }
+.col-span-8 { grid-column: span 8; }
+.col-span-7 { grid-column: span 7; }
+.col-span-6 { grid-column: span 6; }
+.col-span-5 { grid-column: span 5; }
+.col-span-4 { grid-column: span 4; }
+.col-span-3 { grid-column: span 3; }
+.col-span-2 { grid-column: span 2; }
+.col-span-1 { grid-column: span 1; }
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-field label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  padding: 0.85rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 1rem;
+  color: #2d3748;
+  background: #f7fafc;
+  transition: all 0.2s;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus {
+  outline: none;
+  border-color: #4299e1;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.name-inline-field .name-inline-inputs {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.name-inline-field .inline-control {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.name-inline-field .inline-control.prefix-control {
+  flex: 0 0 160px;
+}
+
+.name-inline-field .inline-control select {
+  min-width: 150px;
+}
+
+.name-inline-field .name-input input {
+  width: 100%;
+}
+
+.name-inline-field .error-message {
+  margin-top: 0.25rem;
+}
+
+.id-card-field {
+  max-width: 240px;
+  justify-self: start;
+}
+
+.id-card-field input {
+  width: 100%;
+}
+
+.role-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.role-field,
+.category-field {
+  max-width: 260px;
+  flex: 0 0 auto;
+}
+
+.role-field select,
+.category-field select {
+  width: 100%;
+}
+
+.phone-field {
+  max-width: 240px;
+  justify-self: start;
+}
+
+.phone-field input {
+  width: 100%;
+}
+
+.address-field {
+  max-width: 480px;
+}
+
+.address-field.left-align {
+  justify-self: start;
+}
+
+.name-field input {
+  width: 100%;
+  max-width: 320px;
+}
+
+.identity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: flex-end;
+}
+
+.identity-row .prefix-field {
+  flex: 0 0 140px;
+}
+
+.identity-row .prefix-field select {
+  width: 100%;
+}
+
+.identity-row .name-field {
+  flex: 1 1 260px;
+  max-width: 320px;
+}
+
+.identity-row .birthdate-field {
+  flex: 0 0 200px;
+}
+
+.identity-row .birthdate-field input {
+  width: 100%;
+}
+
+.address-field textarea {
+  min-height: 80px;
+}
+
+.form-field .error-message {
+  color: #e53e3e;
+  font-size: 0.85rem;
+}
+
+.form-field input.error,
+.form-field select.error,
+.form-field textarea.error {
+  border-color: #e53e3e;
+  background: #fff5f5;
+}
+
+.form-section-title {
+  grid-column: span 12;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4a5568;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 2px solid #edf2f7;
+  padding-bottom: 0.5rem;
+}
+
+.admin-signup-actions {
+  grid-column: span 12;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2rem;
+  gap: 1rem;
+}
+
+.btn-submit {
+  background: #2b6cb0;
+  color: #ffffff;
+  padding: 0.95rem 2.25rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  border: 1px solid #1e3a8a;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  box-shadow: none;
+}
+
+.btn-submit:hover {
+  background: #244a8a;
+}
+
+.btn-submit:active {
+  background: #1d3b6c;
+}
+
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Date Grid specific */
+.date-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .admin-signup-form {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .admin-signup-container {
+    padding: 1.5rem;
+  }
+}

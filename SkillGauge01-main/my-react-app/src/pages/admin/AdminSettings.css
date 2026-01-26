@@ -1,0 +1,129 @@
+.admin-settings {
+  padding: 1.25rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.admin-settings__header h2 {
+  font-size: 1.6rem;
+  color: #0f1d3a;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.admin-settings__header p {
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.settings-card {
+  margin-top: 1.75rem;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  max-width: 600px;
+}
+
+.settings-card h3 {
+  font-size: 1.2rem;
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.75rem;
+}
+
+.avatar-upload-section {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.avatar-preview {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid #f1f5f9;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background-color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.btn-upload {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  background-color: #3b82f6;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background-color 0.2s;
+  text-align: center;
+}
+
+.btn-upload:hover {
+  background-color: #2563eb;
+}
+
+.btn-remove {
+  padding: 0.6rem 1.2rem;
+  background-color: #fff;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.btn-remove:hover {
+  background-color: #fef2f2;
+}
+
+.save-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-save {
+  padding: 0.75rem 1.5rem;
+  background-color: #10b981;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: background-color 0.2s;
+}
+
+.btn-save:hover {
+  background-color: #059669;
+}

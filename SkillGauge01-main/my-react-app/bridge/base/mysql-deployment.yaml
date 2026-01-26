@@ -1,0 +1,55 @@
+#! mysql-deployment.yaml
+# Generated code, do not edit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: mysql
+    namespace: my-react-app
+    labels:
+        com.docker.compose.project: my-react-app
+        com.docker.compose.service: mysql
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            com.docker.compose.project: my-react-app
+            com.docker.compose.service: mysql
+    strategy:
+        type: Recreate
+    template:
+        metadata:
+            labels:
+                com.docker.compose.project: my-react-app
+                com.docker.compose.service: mysql
+                com.docker.compose.network.default: "true"
+        spec:
+            restartPolicy: unless-stopped
+            containers:
+                - name: skillgauge-mysql
+                  image: mysql:8.0
+                  imagePullPolicy: IfNotPresent
+                  args:
+                    - --default-authentication-plugin=mysql_native_password
+                    - --character-set-server=utf8mb4
+                    - --collation-server=utf8mb4_unicode_ci
+                  env:
+                    - name: MYSQL_DATABASE
+                      value: "admin-worker-registration"
+                    - name: MYSQL_PASSWORD
+                      value: "skillgauge"
+                    - name: MYSQL_ROOT_PASSWORD
+                      value: "rootpassword"
+                    - name: MYSQL_USER
+                      value: "skillgauge"
+                  ports:
+                    - name: mysql-3306
+                      containerPort: 3306
+                    - name: mysql-33060
+                      containerPort: 33060
+                  volumeMounts:
+                    - name: var-lib-mysql
+                      mountPath: /var/lib/mysql
+            volumes:
+                - name: var-lib-mysql
+                  persistentVolumeClaim:
+                    claimName: mysql-mysql-data

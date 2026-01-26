@@ -1,0 +1,19 @@
+#! kustomization.yaml
+# Generated code, do not edit
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+    - 0-my-react-app-namespace.yaml
+    - db-C:\Users\sakra\OneDrive\เดสก์ท็อป\Jsapps\my-react-app\db\init-persistentVolumeClaim.yaml
+    - db-deployment.yaml
+    - db-expose.yaml
+    - db-pgdata-persistentVolumeClaim.yaml
+    - db-service.yaml
+    - default-network-policy.yaml
+    - mysql-deployment.yaml
+    - mysql-expose.yaml
+    - mysql-mysql_data-persistentVolumeClaim.yaml
+    - mysql-service.yaml
+    - phpmyadmin-deployment.yaml
+    - phpmyadmin-expose.yaml
+    - phpmyadmin-service.yaml

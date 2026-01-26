@@ -1,0 +1,139 @@
+.assessment-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  border: 1px solid #e2e8f0;
+  font-family: 'Prompt', 'Inter', sans-serif;
+  color: #334155;
+}
+
+.assessment-title {
+  text-align: center;
+  color: #1e293b;
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  font-size: 1.15rem;
+  color: #334155;
+  margin: 1.5rem 0 1rem;
+  font-weight: 700;
+}
+
+.conditions-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 2rem;
+}
+
+.conditions-box h3 {
+  font-size: 1.1rem;
+  color: #334155;
+  margin: 0 0 1rem 0;
+  font-weight: 700;
+}
+
+.conditions-box ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.conditions-box li {
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.conditions-box li strong {
+  color: #1e293b;
+  font-weight: 700;
+}
+
+/* Table Styles */
+.score-table-container {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 2rem;
+}
+
+.score-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.score-table th, 
+.score-table td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.score-table th {
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.score-table td {
+  color: #334155;
+  font-size: 0.95rem;
+}
+.score-table tr:last-child td {
+  border-bottom: none;
+}
+.text-center { text-align: center !important; }
+
+/* Buttons */
+.assessment-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.assessment-actions button {
+  flex: 1;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  font-family: 'Prompt', 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+}
+
+.btn-cancel:hover {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #94a3b8;
+}
+
+.btn-start {
+  background: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #fff;
+}
+
+.btn-start:hover {
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+@media (max-width: 600px) {
+  .assessment-card { padding: 1.5rem; }
+  .assessment-actions { flex-direction: column-reverse; }
+}

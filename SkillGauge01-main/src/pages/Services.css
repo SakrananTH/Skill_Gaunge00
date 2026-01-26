@@ -1,0 +1,167 @@
+.services-page {
+  width: 100%;
+}
+
+.services-hero {
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  color: white;
+  text-align: center;
+}
+
+.hero-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.services-grid-section {
+  background: #f8f9fa;
+}
+
+.service-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  text-align: center;
+}
+
+.service-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
+}
+
+.service-icon {
+  font-size: 4rem;
+  margin-bottom: 1.5rem;
+}
+
+.service-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.service-description {
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.service-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2rem 0;
+}
+
+.service-features li {
+  padding: 0.5rem 0;
+  color: #555;
+  position: relative;
+}
+
+.service-features li:before {
+  content: '✓';
+  color: #10b981;
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+.service-button {
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.service-button:hover {
+  transform: translateY(-2px);
+}
+
+.process-section {
+  background: white;
+}
+
+.process-timeline {
+  display: flex;
+  justify-content: space-between;
+  max-width: 1000px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.process-timeline:before {
+  content: '';
+  position: absolute;
+  top: 50px;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: #e5e7eb;
+  z-index: 1;
+}
+
+.process-step {
+  text-align: center;
+  flex: 1;
+  position: relative;
+  z-index: 2;
+}
+
+.step-number {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: bold;
+  margin: 0 auto 1rem auto;
+}
+
+.process-step h4 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.process-step p {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .process-timeline {
+    flex-direction: column;
+    gap: 2rem;
+  }
+  
+  .process-timeline:before {
+    display: none;
+  }
+  
+  .hero-title {
+    font-size: 2rem;
+  }
+}

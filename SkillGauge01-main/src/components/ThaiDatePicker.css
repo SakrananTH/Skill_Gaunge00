@@ -1,0 +1,131 @@
+.thai-date-picker {
+    position: relative;
+    width: 100%;
+}
+
+.tdp-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: white;
+    font-family: inherit;
+}
+
+.tdp-calendar {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 5px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    z-index: 1000;
+    width: 300px;
+    min-width: 280px;
+}
+
+.tdp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tdp-header button {
+    background: #f1f5f9;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+.tdp-header button:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+
+.tdp-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tdp-select {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: #f8fafc;
+    color: #1e293b;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    outline: none;
+}
+
+.tdp-select:hover {
+    border-color: #94a3b8;
+}
+
+.tdp-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.tdp-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-size: 0.85rem;
+    color: #94a3b8;
+    margin-bottom: 0.5rem;
+}
+
+.tdp-body {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.tdp-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: 50%;
+    color: #334155;
+}
+
+.tdp-day:hover:not(.empty) {
+    background: #f1f5f9;
+}
+
+.tdp-day.selected {
+    background: #3b82f6;
+    color: white;
+}
+
+.tdp-day.today {
+    border: 1px solid #3b82f6;
+    color: #3b82f6;
+}
+
+.tdp-day.selected.today {
+    color: white;
+    border: none;
+}
+
+.tdp-day.empty {
+    cursor: default;
+}

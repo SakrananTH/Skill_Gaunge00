@@ -1,0 +1,61 @@
+#! db-deployment.yaml
+# Generated code, do not edit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: db
+    namespace: my-react-app
+    labels:
+        com.docker.compose.project: my-react-app
+        com.docker.compose.service: db
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            com.docker.compose.project: my-react-app
+            com.docker.compose.service: db
+    strategy:
+        type: Recreate
+    template:
+        metadata:
+            labels:
+                com.docker.compose.project: my-react-app
+                com.docker.compose.service: db
+                com.docker.compose.network.default: "true"
+        spec:
+            restartPolicy: unless-stopped
+            containers:
+                - name: skillgauge-db
+                  image: postgres:16
+                  imagePullPolicy: IfNotPresent
+                  env:
+                    - name: POSTGRES_DB
+                      value: "skillgauge"
+                    - name: POSTGRES_PASSWORD
+                      value: "skillgauge"
+                    - name: POSTGRES_USER
+                      value: "skillgauge"
+                  livenessProbe:
+                    exec:
+                        command:
+                            - /bin/sh
+                            - -c
+                            - pg_isready -U skillgauge -d skillgauge
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 20
+                  ports:
+                    - name: db-5432
+                      containerPort: 5432
+                  volumeMounts:
+                    - name: var-lib-postgresql-data
+                      mountPath: /var/lib/postgresql/data
+                    - name: docker-entrypoint-initdb-d
+                      mountPath: /docker-entrypoint-initdb.d
+            volumes:
+                - name: var-lib-postgresql-data
+                  persistentVolumeClaim:
+                    claimName: db-pgdata
+                - name: docker-entrypoint-initdb-d
+                  hostPath:
+                    path: C:\Users\sakra\OneDrive\เดสก์ท็อป\Jsapps\my-react-app\db\init

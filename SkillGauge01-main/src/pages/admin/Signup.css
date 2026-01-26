@@ -1,0 +1,400 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap');
+
+.signup-screen,
+.profile-page {
+  min-height: 100vh;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.profile-subtitle {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #5f6368;
+  margin: 0 0 1.5rem 0;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+.profile-container {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  max-width: 700px;
+  width: 100%;
+  padding: 2.5rem;
+}
+
+.admin-signup-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-signup-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #c5d7fe;
+  background: #edf3ff;
+  color: #1f4ebc;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.45rem 1.1rem;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.admin-signup-nav button:first-child::before {
+  content: '<';
+  font-size: 1rem;
+}
+
+.admin-signup-nav button:hover {
+  background: #dbe7ff;
+  color: #133a94;
+  transform: translateY(-1px);
+}
+
+.admin-signup-active {
+  font-faminly: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.profile-title {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #537dbd;
+  margin: 0 0 2rem 0;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #2b3a52;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid #e0e3e7;
+  border-radius: 6px;
+  font-size: 0.87rem;
+  color: #2b3a52;
+  background: #ffffff;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  transition: all 0.2s ease;
+  line-height: 1.3;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: #adb5bd;
+}
+
+.form-group input.error,
+.form-group select.error,
+.form-group textarea.error {
+  border-color: #dc3545;
+}
+
+.error-message {
+  font-size: 1rem;
+  color: #dc3545;
+  margin-top: 0.25rem;
+  display: block;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-row-inli {
+  margin-bottom: 1.25rem;
+}
+
+.form-c {
+  font-size: 1rem;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.form-c select {
+  width: 100%;
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.form-c label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #2b3a52;
+  margin-bottom: 0.5rem;
+  display: block;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+}
+
+.form-c select {
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid #e0e3e7;
+  background: #fff;
+  color: #2b3a52;
+  font-size: 0.87rem;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  transition: all 0.2s ease;
+  line-height: 1.3;
+}
+
+.form-c select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.date-grid select {
+  font-size: 0.87rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid #e0e3e7;
+  background: #fff;
+  color: #2b3a52;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  transition: all 0.2s ease;
+  line-height: 1.3;
+}
+
+.date-grid select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.submit-btn {
+  margin-top: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgb(134, 166, 255);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  width: 100%;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.submit-btn:active {
+  transform: translateY(0);
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Password Input with Eye Toggle */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding-right: 3rem;
+}
+
+.eye-toggle {
+  position: absolute;
+  right: 0.875rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
+  transition: color 0.2s ease;
+}
+
+.eye-toggle:hover {
+  color: #667eea;
+}
+
+.eye-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Login Link */
+.login-link {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+.login-link a {
+  color: #2e3142;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.login-link a:hover {
+  color: #764ba2;
+  text-decoration: underline;
+}
+
+/* Old styles kept for compatibility */
+.signup-page {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 2rem;
+  align-items: center;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.signup-logo-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signup-logo-side img {
+  max-width: 560px;
+  width: 100%;
+  height: auto;
+}
+
+.signup-header {
+  text-align: center;
+  font-size: 1.75rem;
+  margin-bottom: 1rem;
+}
+
+.signup-card {
+  background: #ffffff;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.signup-row { margin-bottom: 1rem; }
+.signup-label { font-size: 0.9rem; color: #5f6368; margin-bottom: 0.35rem; display:block; }
+.signup-input, .signup-select {
+  width: 100%;
+  color: #5f6368;
+  padding: 0.9rem 1rem;
+  border: 1px solid #e0e3e7;
+  border-radius: 8px;
+  background: #f8fbff;
+  outline: none;
+}
+.signup-input:focus, .signup-select:focus {
+  border-color: #8ab4f8;
+  box-shadow: 0 0 0 3px rgba(26,115,232,0.12);
+}
+
+
+.signup-submit {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  background: #6cabff;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+.signup-submit:hover { background: #1557b0; }
+
+.signup-footer { margin-top: 0.75rem; text-align: center; color: #5f6368; }
+
+.signup-error {
+  color: #b00020;
+  background: #ffe8ea;
+  border: 1px solid #ffccd1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .signup-page { grid-template-columns: 1fr; padding: 2rem 1rem; }
+}
+
+/* Shift logo a bit left and form a bit right on wide screens (mirrors Login) */
+@media (min-width: 901px) {
+  .signup-page > div:first-child { justify-self: start; }
+  .signup-logo-side { justify-self: end; }
+}
+
+/* Eye toggle for password fields */
+.input-with-eye { position: relative; }
+.input-with-eye .signup-input { padding-right: 2.5rem; }
+.input-with-eye .eye-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #5f6368;
+  padding: 0.25rem;
+}
+.input-with-eye .eye-btn svg { width: 20px; height: 20px; display:block; }
+.input-with-eye .eye-btn.is-hide::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  border-top: 2px solid currentColor;
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+.input-with-eye .eye-btn:focus { outline: 2px solid #ffffff; border-radius: 4px; }

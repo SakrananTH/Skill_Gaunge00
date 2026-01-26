@@ -1,0 +1,9 @@
+#! db-C:\Users\sakra\OneDrive\เดสก์ท็อป\Jsapps\my-react-app\db\init-persistentVolumeClaim.yaml
+# Generated code, do not edit
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: db-c--users-sakra-onedrive-----------jsapps-my-react-app-db-init
+    namespace: my-react-app
+spec:
+    storageClassName: "hostpath" # see docker/desktop-storage-provisioner

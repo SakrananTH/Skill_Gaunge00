@@ -1,0 +1,42 @@
+#! phpmyadmin-deployment.yaml
+# Generated code, do not edit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: phpmyadmin
+    namespace: my-react-app
+    labels:
+        com.docker.compose.project: my-react-app
+        com.docker.compose.service: phpmyadmin
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            com.docker.compose.project: my-react-app
+            com.docker.compose.service: phpmyadmin
+    strategy:
+        type: Recreate
+    template:
+        metadata:
+            labels:
+                com.docker.compose.project: my-react-app
+                com.docker.compose.service: phpmyadmin
+                com.docker.compose.network.default: "true"
+        spec:
+            restartPolicy: unless-stopped
+            containers:
+                - name: skillgauge-phpmyadmin
+                  image: phpmyadmin/phpmyadmin:5
+                  imagePullPolicy: IfNotPresent
+                  env:
+                    - name: PMA_HOST
+                      value: "mysql"
+                    - name: PMA_PASSWORD
+                      value: "rootpassword"
+                    - name: PMA_PORT
+                      value: "3306"
+                    - name: PMA_USER
+                      value: "root"
+                  ports:
+                    - name: phpmyadmin-80
+                      containerPort: 80

@@ -1,0 +1,12 @@
+.assessment-page { margin-top: 1rem; }
+.assessment-page h1 { font-size: 1.8rem; font-weight: 800; margin: 0 0 1rem; }
+.ass-section { margin: 1rem 0; }
+.ass-section h2 { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.5rem; }
+.ass-desc { color: #5f6368; }
+
+.ass-categories { display: grid; gap: 0.6rem; max-width: 340px; }
+.ass-pill { background: #deecff; border: 1px solid #cfe0fc; color: #2b3a52; padding: 0.7rem 1rem; border-radius: 10px; text-align: center; font-weight: 700; }
+
+.ass-actions { margin-top: 2rem; display: flex; justify-content: flex-end; }
+.btn-primary { background: #1a73e8; color: #fff; border: none; border-radius: 10px; padding: 0.6rem 1.25rem; font-weight: 700; cursor: pointer; }
+.btn-primary:hover { background: #1557b0; }

@@ -1,0 +1,4 @@
+Investigate PM/WK login failures:
+- Review login flow and chooseRole helper
+- Check signup-produced user data and session storage usage
+- Consider backend response requirements

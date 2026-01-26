@@ -1,0 +1,21 @@
+#! mysql-service.yaml
+# Generated code, do not edit
+apiVersion: v1
+kind: Service
+metadata:
+    name: mysql-published
+    namespace: my-react-app
+    labels:
+        com.docker.compose.project: my-react-app
+        com.docker.compose.service: mysql
+spec:
+    selector:
+        com.docker.compose.project: my-react-app
+        com.docker.compose.service: mysql
+    ports:
+        - name: mysql-3307
+          port: 3307
+          protocol: TCP
+          targetPort: mysql-3306
+
+# check if there is at least one published port
