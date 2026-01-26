@@ -13,12 +13,12 @@ import AdminSignupCredentials from './pages/admin/SignupCredentials';
 import AdminWorkerRegistration from './pages/admin/AdminWorkerRegistration';
 import AdminQuestionForm from './pages/admin/AdminQuestionForm';
 import PendingActions from './pages/admin/PendingActions';
-import WKDashboard from './pages/WKDashboard';
-import PMProjectManager from './pages/PMProjectManager';
-import WKProjectTasks from './pages/WKProject_Tasks';
-import WKSkillAssessmentTest from './pages/WKSkill_Assessment_Test';
-import WKSkillAssessmentQuiz from './pages/WKSkill_Assessment_Quiz';
-import WKWorkerProfile from './pages/WKWorkerProfile';
+import WKDashboard from './pages/WK/WKDashboard';
+import PMProjectManager from './pages/PM/PMProjectManager';
+import WKProjectTasks from './pages/WK/WKProject_Tasks';
+import WKSkillAssessmentTest from './pages/WK/WKSkill_Assessment_Test';
+import WKSkillAssessmentQuiz from './pages/WK/WKSkill_Assessment_Quiz';
+import WKWorkerProfile from './pages/WK/WKWorkerProfile';
 import './App.css';
 
 function App() {
