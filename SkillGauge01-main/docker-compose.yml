@@ -52,12 +52,12 @@ services:
   # Development service
   web-dev:
     build:
-      context: .
+      context: ./Frontend/root-app
       dockerfile: Dockerfile.dev
     ports:
       - "3002:3002"
     volumes:
-      - .:/app
+      - ./Frontend/root-app:/app
       - /app/node_modules
     environment:
       - PORT=3002
@@ -100,7 +100,7 @@ services:
   # Production service
   web-prod:
     build:
-      context: .
+      context: ./Frontend/root-app
       dockerfile: Dockerfile
     ports:
       - "3002:80"
@@ -110,12 +110,12 @@ services:
   # Development with hot reload
   web-hot:
     build:
-      context: .
+      context: ./Frontend/root-app
       dockerfile: Dockerfile.dev
     ports:
       - "3002:3002"
     volumes:
-      - .:/app
+      - ./Frontend/root-app:/app
       - /app/node_modules
     environment:
       - PORT=3002
