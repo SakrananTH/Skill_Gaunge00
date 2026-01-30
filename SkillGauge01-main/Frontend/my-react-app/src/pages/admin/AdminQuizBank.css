@@ -38,17 +38,16 @@
 .quiz-form-card {
   background: #ffffff;
   border: 1px solid #e2e8ff;
-  border-radius: 14px;
-  padding: clamp(1.0rem, 2.2vw, 1.6rem);
-  box-shadow: 0 18px 45px rgba(83, 125, 189, 0);
-  margin-bottom: 1.75rem;
+  border-radius: 12px;
+  padding: clamp(0.75rem, 1.5vw, 1rem);
+  box-shadow: 0 6px 18px rgba(83, 125, 189, 0.03);
+  margin-bottom: 1rem;
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
   box-sizing: border-box;
   width: 100%;
-  overflow: auto; /* contain children and prevent visual overlap */
-  /* ensure the card grows to contain its children */
-  min-height: auto;
-  padding-bottom: 2.25rem; /* extra space so the card visually extends downward */
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 1rem;
 }
 
 /* Let the card size be driven by content; remove aggressive fixed min-heights */
@@ -60,7 +59,7 @@
 .form-grid--round {
   display: flex;             /* เปลี่ยนจาก grid เป็น flex */
   flex-direction: column;    /* เรียงจากบนลงล่าง */
-  gap: 1.5rem;               /* ระยะห่างระหว่างบรรทัด */
+  gap: 1rem;                 /* ระยะห่างระหว่างบรรทัด (เล็กลง) */
   width: 100%;               /* ให้ขยายเต็มความกว้าง */
 }
 
