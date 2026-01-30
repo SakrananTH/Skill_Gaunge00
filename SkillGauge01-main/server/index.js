@@ -406,6 +406,7 @@ function parseAgeValue(ageInput, birthDate) {
 let workerTableColumns = new Set();
 let workerAccountColumns = new Set();
 let workerProfilesTableExists = false;
+let workerProfilesWorkerIdIsNumeric = false;
 
 async function refreshWorkerMetadata() {
   try {
@@ -430,7 +431,17 @@ async function refreshWorkerMetadata() {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     );
-    workerProfilesTableExists = true;
+    try {
+      const profileColumns = await query('SHOW COLUMNS FROM worker_profiles');
+      const workerIdColumn = profileColumns.find(column => column.Field === 'worker_id');
+      const workerIdType = workerIdColumn?.Type?.toLowerCase() || '';
+      workerProfilesWorkerIdIsNumeric = workerIdType.includes('int');
+      workerProfilesTableExists = true;
+    } catch (error) {
+      workerProfilesWorkerIdIsNumeric = false;
+      workerProfilesTableExists = false;
+      console.warn('Unable to inspect worker_profiles table', error?.code || error?.message || error);
+    }
   } catch (error) {
     workerProfilesTableExists = false;
     console.warn('Unable to ensure worker_profiles table', error?.code || error?.message || error);
@@ -449,6 +460,7 @@ function filterObjectByColumns(data, columnSet) {
 
 async function saveWorkerProfile(connection, workerId, payload) {
   if (!workerProfilesTableExists) return;
+  if (workerProfilesWorkerIdIsNumeric && !Number.isInteger(Number(workerId))) return;
   try {
     const serialized = JSON.stringify(payload ?? {});
     await execute(
@@ -468,6 +480,7 @@ async function saveWorkerProfile(connection, workerId, payload) {
 
 async function fetchWorkerProfile(connection, workerId) {
   if (!workerProfilesTableExists) return null;
+  if (workerProfilesWorkerIdIsNumeric && !Number.isInteger(Number(workerId))) return null;
   try {
     const row = await queryOne('SELECT payload FROM worker_profiles WHERE worker_id = ? LIMIT 1', [workerId], connection);
     if (!row?.payload) return null;
@@ -1755,15 +1768,16 @@ app.post('/api/admin/workers', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const created = await withTransaction(async connection => {
-      const workerResult = await execute(workerSql, workerValues, connection);
-      const workerId = workerResult.insertId;
+      await execute(workerSql, workerValues, connection);
+      const workerId = workerValues[workerColumns.indexOf('id')] ?? (await queryOne('SELECT LAST_INSERT_ID() AS id', [], connection))?.id;
       if (!workerId) throw new Error('worker_insert_failed');
 
       const accountData = filterObjectByColumns(
         {
           worker_id: workerId,
           email: normalizedEmail,
-          password_hash: passwordHash
+          password_hash: passwordHash,
+          status: 'active'
         },
         workerAccountColumns
       );
@@ -3054,127 +3068,31 @@ app.delete('/api/assessments/:id', requireAuth, authorizeRoles('admin'), async (
 // Admin - Quizzes Management
 // ---------------------------------------------------------------------------
 app.get('/api/admin/quizzes', requireAuth, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const status = req.query.status;
-    let sql = 'SELECT * FROM quizzes';
-    let params = [];
-    
-    if (status) {
-      sql += ' WHERE status = ?';
-      params.push(status);
-    }
-    
-    sql += ' ORDER BY created_at DESC';
-    
-    const rows = await query(sql, params);
-    res.json({ items: rows });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // quizzes table does not exist in current schema
+  res.json({ items: [] });
 });
 
 app.get('/api/admin/quizzes/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const quizId = req.params.id;
-    if (!uuidSchema.safeParse(quizId).success) return res.status(400).json({ message: 'invalid id' });
-    
-    const quiz = await queryOne('SELECT * FROM quizzes WHERE id = ?', [quizId]);
-    if (!quiz) return res.status(404).json({ message: 'not_found' });
-    
-    const questions = await query(
-      `SELECT q.* FROM questions q
-       INNER JOIN quiz_questions qq ON qq.question_id = q.id
-       WHERE qq.quiz_id = ?
-       ORDER BY qq.order_index`,
-      [quizId]
-    );
-    
-    res.json({ ...quiz, questions });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // quizzes/quiz_questions tables do not exist in current schema
+  res.status(404).json({ message: 'not_found' });
 });
 
 app.post('/api/admin/quizzes/:id/approve', requireAuth, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const quizId = req.params.id;
-    if (!uuidSchema.safeParse(quizId).success) return res.status(400).json({ message: 'invalid id' });
-    
-    const result = await execute(
-      `UPDATE quizzes 
-       SET status = 'approved', approved_by = ?, approved_at = NOW() 
-       WHERE id = ?`,
-      [req.user.full_name || req.user.email, quizId]
-    );
-    
-    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
-    
-    res.json({ message: 'Quiz approved successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // quizzes table does not exist in current schema
+  res.status(404).json({ message: 'not_found' });
 });
 
 app.post('/api/admin/quizzes/:id/reject', requireAuth, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const quizId = req.params.id;
-    if (!uuidSchema.safeParse(quizId).success) return res.status(400).json({ message: 'invalid id' });
-    
-    const { reason } = req.body;
-    
-    const result = await execute(
-      `UPDATE quizzes 
-       SET status = 'rejected', rejected_reason = ? 
-       WHERE id = ?`,
-      [reason || 'ไม่ระบุเหตุผล', quizId]
-    );
-    
-    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
-    
-    res.json({ message: 'Quiz rejected successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // quizzes table does not exist in current schema
+  res.status(404).json({ message: 'not_found' });
 });
 
 // ---------------------------------------------------------------------------
 // Admin - Expiring Assessments
 // ---------------------------------------------------------------------------
 app.get('/api/admin/assessments/expiring', requireAuth, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const daysAhead = parseInt(req.query.days) || 30;
-    
-    const rows = await query(
-      `SELECT 
-         a.id,
-         a.user_id,
-         u.full_name AS workerName,
-         ar.title AS title,
-         ar.category,
-         a.started_at AS startDate,
-         a.expiry_date AS expiryDate,
-         a.status,
-         a.score,
-         a.passed
-       FROM assessments a
-       LEFT JOIN users u ON u.id = a.user_id
-       LEFT JOIN assessment_rounds ar ON ar.id = a.round_id
-       WHERE a.expiry_date IS NOT NULL 
-         AND a.expiry_date <= DATE_ADD(NOW(), INTERVAL ? DAY)
-         AND a.status IN ('pending', 'in_progress')
-       ORDER BY a.expiry_date ASC`,
-      [daysAhead]
-    );
-    
-    res.json({ items: rows });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // assessments.expiry_date does not exist in current schema
+  res.json({ items: [] });
 });
 
 app.get('/api/admin/assessments/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
@@ -3309,49 +3227,8 @@ app.get('/api/admin/dashboard/stats', requireAuth, authorizeRoles('admin'), asyn
 // Admin Dashboard Skill Gap Analysis
 // ---------------------------------------------------------------------------
 app.get('/api/admin/dashboard/skill-gap', requireAuth, authorizeRoles('admin'), async (_req, res) => {
-  try {
-    const rows = await query(
-      `SELECT 
-         d.name as department_name,
-         COUNT(DISTINCT w.id) as total_workers,
-         ROUND(AVG(a.score), 1) as current_avg_score,
-         ROUND(80 - AVG(a.score), 1) as skill_gap,
-         CASE 
-           WHEN AVG(a.score) < 60 THEN 'Critical'
-           WHEN AVG(a.score) < 70 THEN 'High'
-           WHEN AVG(a.score) < 80 THEN 'Medium'
-           ELSE 'Good'
-         END as priority_status
-       FROM departments d
-       LEFT JOIN workers w ON w.department_id = d.id
-       LEFT JOIN users u ON u.phone = w.phone
-       LEFT JOIN assessments a ON a.user_id = u.id
-       WHERE a.id IN (
-         SELECT a2.id
-         FROM assessments a2
-         INNER JOIN (
-           SELECT user_id, MAX(finished_at) as latest_date
-           FROM assessments
-           WHERE finished_at IS NOT NULL
-           GROUP BY user_id
-         ) latest ON a2.user_id = latest.user_id AND a2.finished_at = latest.latest_date
-       )
-       GROUP BY d.id, d.name
-       HAVING total_workers > 0
-       ORDER BY skill_gap DESC`
-    );
-    
-    res.json(rows.map(row => ({
-      department_name: row.department_name,
-      total_workers: Number(row.total_workers),
-      current_avg_score: Number(row.current_avg_score || 0).toFixed(1),
-      skill_gap: Number(row.skill_gap || 0).toFixed(1),
-      priority_status: row.priority_status
-    })));
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // workers.department_id does not exist in current schema
+  res.json([]);
 });
 
 // ---------------------------------------------------------------------------

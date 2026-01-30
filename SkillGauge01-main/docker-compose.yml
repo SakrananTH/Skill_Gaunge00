@@ -52,12 +52,13 @@ services:
   # Development service
   web-dev:
     build:
-      context: ./Frontend/root-app
+      context: ./Frontend/my-react-app
       dockerfile: Dockerfile.dev
+    command: sh -c "npm install && npm start"
     ports:
       - "3002:3002"
     volumes:
-      - ./Frontend/root-app:/app
+      - ./Frontend/my-react-app:/app
       - /app/node_modules
     environment:
       - PORT=3002
@@ -65,6 +66,7 @@ services:
       - BROWSER=none
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+      - REACT_APP_API_BASE_URL=http://localhost:4000
     stdin_open: true
     tty: true
     profiles:
@@ -84,7 +86,7 @@ services:
       - MYSQL_DATABASE=admin-worker-registration
       - MYSQL_USER=root
       - MYSQL_PASSWORD=rootpassword
-      - THAI_ADDRESS_DATA_PATH=/data/thai-addresses/thailand-province-district-subdistrict-zipcode-latitude-longitude-master/output.csv
+      - THAI_ADDRESS_DATA_PATH=/data/thai-addresses/output.csv
     depends_on:
       mysql:
         condition: service_started
@@ -92,7 +94,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - ../thailand-province-district-subdistrict-zipcode-latitude-longitude-master:/data/thai-addresses:ro
+      - ./thailand-province-district-subdistrict-zipcode-latitude-longitude-master/thailand-province-district-subdistrict-zipcode-latitude-longitude-master:/data/thai-addresses:ro
     profiles:
       - dev
       - hot
@@ -100,7 +102,7 @@ services:
   # Production service
   web-prod:
     build:
-      context: ./Frontend/root-app
+      context: ./Frontend/my-react-app
       dockerfile: Dockerfile
     ports:
       - "3002:80"
@@ -110,12 +112,13 @@ services:
   # Development with hot reload
   web-hot:
     build:
-      context: ./Frontend/root-app
+      context: ./Frontend/my-react-app
       dockerfile: Dockerfile.dev
+    command: sh -c "npm install && npm start"
     ports:
       - "3002:3002"
     volumes:
-      - ./Frontend/root-app:/app
+      - ./Frontend/my-react-app:/app
       - /app/node_modules
     environment:
       - PORT=3002
@@ -124,6 +127,7 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - FAST_REFRESH=true
+      - REACT_APP_API_BASE_URL=http://localhost:4000
     stdin_open: true
     tty: true
     profiles:
@@ -132,3 +136,5 @@ services:
 volumes:
   pgdata:
   mysql_data:
+    external: true
+    name: jsapps_mysql_data

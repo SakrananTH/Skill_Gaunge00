@@ -8,7 +8,7 @@
 }
 
 .quiz-content {
-  max-width: 980px;
+  max-width: 1280px;
   margin: 0 auto;
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
 }
@@ -39,10 +39,40 @@
   background: #ffffff;
   border: 1px solid #e2e8ff;
   border-radius: 14px;
-  padding: clamp(1.6rem, 3.2vw, 2rem);
+  padding: clamp(1.0rem, 2.2vw, 1.6rem);
   box-shadow: 0 18px 45px rgba(83, 125, 189, 0);
   margin-bottom: 1.75rem;
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: auto; /* contain children and prevent visual overlap */
+  /* ensure the card grows to contain its children */
+  min-height: auto;
+  padding-bottom: 2.25rem; /* extra space so the card visually extends downward */
+}
+
+/* Let the card size be driven by content; remove aggressive fixed min-heights */
+.quiz-form-card {
+  min-height: 0;
+  padding-bottom: 1.5rem;
+}
+
+.form-grid--round {
+  display: flex;             /* เปลี่ยนจาก grid เป็น flex */
+  flex-direction: column;    /* เรียงจากบนลงล่าง */
+  gap: 1.5rem;               /* ระยะห่างระหว่างบรรทัด */
+  width: 100%;               /* ให้ขยายเต็มความกว้าง */
+}
+
+/* give subcategory grid a small top margin so it doesn't visually collide */
+.subcategory-grid {
+  margin-top: 0.6rem;
+}
+
+/* reduce category button height a bit more to avoid forcing tall left column */
+.category-button {
+  min-height: 56px;
+  padding: 0.5rem 0.8rem;
 }
 
 .quiz-form-card h3 {
@@ -61,9 +91,17 @@
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
   align-items: flex-start;
+}
+
+/* Inner grid used for date pickers and similar pairs */
+.form-grid--inner {
+  display: flex;             /* เปลี่ยนเป็น flex */
+  flex-direction: column;    /* ให้เรียงจากบนลงล่าง */
+  gap: 1.5rem;               /* เพิ่มระยะห่างระหว่างหัวข้อ */
+  width: 100%;               /* ให้กว้างเต็มจอ */
 }
 
 
@@ -76,8 +114,10 @@
 }
 
 .form-grid--round {
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  align-items: flex-end;
+  display: flex;             /* เปลี่ยนจาก grid เป็น flex */
+  flex-direction: column;    /* เรียงจากบนลงล่าง */
+  gap: 1.5rem;               /* ระยะห่างระหว่างบรรทัด */
+  width: 100%;               /* ให้ขยายเต็มความกว้าง */
 }
 
 .category-button-group {
@@ -104,8 +144,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 64px;
-  padding: 0.75rem 1rem;
+  min-height: 68px;
+  padding: 0.6rem 0.9rem;
 }
 
 .category-button:hover {
@@ -153,6 +193,13 @@
   gap: 0.4rem;
   margin: 0;
   width: 100%;
+}
+
+/* Make sure flex/grid children are allowed to shrink instead of forcing overflow */
+.form-group,
+.form-grid,
+.form-grid > * {
+  min-width: 0;
 }
 
 
@@ -892,10 +939,56 @@
   color: #a0aec0;
 }
 
+/* Force two columns for subcategory cards, left-to-right order */
+.subcategory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 0.6rem;
+  width: 100%;
+  align-items: stretch;
+  grid-auto-rows: min-content;
+  margin-bottom: 0.85rem;
+}
+
+.subcategory-card {
+  background: #f8faff;
+  border: 1px solid #dde3f3;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* allow internal items (inputs/grids) to break and shrink within cards */
+.subcategory-card * {
+  min-width: 0;
+}
+
+.quota-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .subcategory-grid { grid-template-columns: repeat(1, minmax(200px, 1fr)); }
+}
+
 @media (max-width: 768px) {
-  .admin-quiz-bank {
-    padding: 1.75rem 1.25rem;
-  }
+  .subcategory-grid { grid-template-columns: repeat(1, 1fr); }
+  .quota-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+
+/* make inputs shrink inside available column space */
+.quiz-form input[type="number"],
+.quiz-form input[type="text"],
+.quiz-form select, .quiz-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+}
 
   .form-grid {
     grid-template-columns: 1fr;
