@@ -184,6 +184,8 @@ const AdminQuizBank = () => {
   const [tableSubcategoryFilter, setTableSubcategoryFilter] = useState(TABLE_FILTER_ALL);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 7;
+  
+  // เปอร์เซ็นต์แบบรายหมวดหมู่ (จะเก็บเป็นฟิลด์ใน subcategoryQuotas[<sub>].pct และ easyPct/mediumPct/hardPct)
 
   const [structuralQuestions, setStructuralQuestions] = useState([]);
 
@@ -719,6 +721,24 @@ const AdminQuizBank = () => {
       return;
     }
 
+    // ตรวจสอบสัดส่วนเปอร์เซ็นต์ต่อหมวดหมู่ย่อย: ถ้ามีการกำหนด pct สำหรับหมวดหมู่ย่อยใดๆ
+    // ให้แน่ใจว่ายอดรวม easyPct+mediumPct+hardPct เท่ากับค่า pct ของหมวดนั้น (ไม่เกิน/ไม่ขาด)
+    const quotasCheck = roundForm.subcategoryQuotas || {};
+    for (const [subKey, q] of Object.entries(quotasCheck)) {
+      if (typeof q === 'object' && q.pct !== undefined && q.pct !== '') {
+        const target = Number(q.pct || 0);
+        const sum = Number(q.easyPct || 0) + Number(q.mediumPct || 0) + Number(q.hardPct || 0);
+        if (sum !== target) {
+          setRoundError(`ค่าเปอร์เซ็นต์ในหมวด '${subKey}' ต้องรวมกันเป็น ${target}% (ปัจจุบัน ${sum}%)`);
+          return;
+        }
+        if (sum > target) {
+          setRoundError(`ค่าเปอร์เซ็นต์ในหมวด '${subKey}' เกิน ${target}%`);
+          return;
+        }
+      }
+    }
+
     const cLevel1 = Number(roundForm.criteria?.level1 || 60);
     const cLevel2 = Number(roundForm.criteria?.level2 || 70);
     const cLevel3 = Number(roundForm.criteria?.level3 || 80);
@@ -860,6 +880,50 @@ const AdminQuizBank = () => {
     const total = easy + medium + hard;
     return { easy, medium, hard, total };
   }, [roundForm.subcategoryQuotas]);
+
+  // สถิติเปอร์เซ็นต์ (สำหรับ UI ใหม่): รวม pct และ ย่อย % per difficulty
+  const quotaPercentStats = useMemo(() => {
+    let pctTotal = 0, easyPct = 0, mediumPct = 0, hardPct = 0;
+    const quotas = roundForm.subcategoryQuotas || {};
+    Object.values(quotas).forEach(q => {
+      if (typeof q === 'object') {
+        const target = Number(q.pct || 0);
+        pctTotal += target;
+        easyPct += Number(q.easyPct || 0);
+        mediumPct += Number(q.mediumPct || 0);
+        hardPct += Number(q.hardPct || 0);
+      }
+    });
+    return { pctTotal, easyPct, mediumPct, hardPct };
+  }, [roundForm.subcategoryQuotas]);
+
+  // Handler สำหรับเปลี่ยนเปอร์เซ็นต์ของหมวดหมู่ย่อย (target percent)
+  const handleSubcategoryPctChange = useCallback((subKey, rawVal) => {
+    const pct = rawVal === '' ? '' : Math.max(0, Math.min(100, Number(rawVal)));
+    setRoundForm(prev => {
+      const next = { ...(prev.subcategoryQuotas || {}) };
+      const existing = (typeof next[subKey] === 'object') ? { ...next[subKey] } : {};
+      existing.pct = pct;
+      // ensure internal percent fields exist
+      if (existing.easyPct === undefined) existing.easyPct = existing.easyPct || 0;
+      if (existing.mediumPct === undefined) existing.mediumPct = existing.mediumPct || 0;
+      if (existing.hardPct === undefined) existing.hardPct = existing.hardPct || 0;
+      next[subKey] = existing;
+      return { ...prev, subcategoryQuotas: next };
+    });
+  }, []);
+
+  const handleQuotaPctChange = useCallback((subKey, difficulty, rawVal) => {
+    const val = rawVal === '' ? '' : Math.max(0, Math.min(100, Number(rawVal)));
+    setRoundForm(prev => {
+      const next = { ...(prev.subcategoryQuotas || {}) };
+      const existing = (typeof next[subKey] === 'object') ? { ...next[subKey] } : {};
+      const field = difficulty === 'easy' ? 'easyPct' : difficulty === 'medium' ? 'mediumPct' : 'hardPct';
+      existing[field] = val;
+      next[subKey] = existing;
+      return { ...prev, subcategoryQuotas: next };
+    });
+  }, []);
 
   const handleAutoFill = useCallback(() => {
     const targetTotal = roundForm.questionCount;
@@ -1009,7 +1073,7 @@ const AdminQuizBank = () => {
                 </div>
               </div>
 
-              <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', width: '100%', marginTop: '1rem', alignItems: 'start' }}>
+              <div className="form-grid form-grid--inner" style={{ width: '100%', marginTop: '1rem', gridColumn: '1 / -1' }}>
                 <div style={{ display: 'flex', gap: '1rem', gridColumn: 'span 2' }}>
                   <div className="form-group" style={{ flex: 1 }}>
                     <label htmlFor="round-start-at">วันเริ่มสอบ</label>
@@ -1031,6 +1095,9 @@ const AdminQuizBank = () => {
                   <hr style={{ margin: '0.5rem 0', border: 0, borderTop: '1px solid #eee' }} />
                   <h4 style={{ fontSize: '0.95rem', marginBottom: '0.5rem', color: '#444' }}>เงื่อนไขการสอบ</h4>
                 </div>
+
+                {/* จำนวนข้อสอบ, เกณฑ์การวัด และ เวลาทำข้อสอบ — ย้ายขึ้นมาตรงนี้ตามลำดับที่ต้องการ */}
+                
 
                 {subcategoryOptions[roundForm.category] && subcategoryOptions[roundForm.category].length > 0 && (
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -1057,6 +1124,15 @@ const AdminQuizBank = () => {
                         )}
                       </div>
                     </div>
+                    
+                    {/* กำหนดสัดส่วนเปอร์เซ็นต์ต่อหมวดหมู่ย่อย */}
+                    <div style={{ background: '#fff', padding: '0.6rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid #eee' }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#2d3748' }}>
+                        กำหนดสัดส่วนเปอร์เซ็นต์ต่อหมวดหมู่ย่อย (ตั้งค่า % ด้านขวา)
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#666' }}>กรอกเปอร์เซ็นต์เป้าหมายของแต่ละหมวดหมู่ย่อย จากนั้นกรอกสัดส่วน ย่อย: ง่าย/กลาง/ยาก (ค่าเป็น % ของหมวดหมู่ย่อย) โดยรวมต้องเท่ากับค่านี้</div>
+                    </div>
+
                     {categoryStats.total === 0 ? (
                       <div style={{ padding: '1.5rem', background: '#f9fafb', borderRadius: '8px', border: '1px dashed #e2e8f0', color: '#718096', textAlign: 'center', fontSize: '0.9rem' }}>
                         <i className='bx bx-info-circle' style={{ marginRight: '0.5rem', verticalAlign: 'middle', fontSize: '1.2em' }}></i>
@@ -1064,7 +1140,7 @@ const AdminQuizBank = () => {
                       </div>
                     ) : (
                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', background: '#f8f9fa', padding: '0.75rem', borderRadius: '8px', border: '1px solid #eee' }}>
-                      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                      <div className="subcategory-grid">
                       {subcategoryOptions[roundForm.category].map(option => {
                         const stats = currentSubcategoryStats[option.value] || { total: 0, easy: 0, medium: 0, hard: 0 };
                         if (stats.total === 0) return null;
@@ -1118,46 +1194,49 @@ const AdminQuizBank = () => {
                           }));
                         };
 
+                        // แสดง UI แบบเปอร์เซ็นต์: target pct ขวาบน และ ย่อย easyPct/mediumPct/hardPct
                         return (
-                          <div key={option.value} style={{ background: '#fff', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#2d3748' }}>{option.label}</div>
+                          <div key={option.value} style={{ background: '#fff', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', position: 'relative' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#2d3748' }}>{option.label}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <label style={{ fontSize: '0.8rem', color: '#666' }}>เป้าหมาย (%)</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={(safeQuota && typeof safeQuota === 'object') ? (safeQuota.pct ?? '') : ''}
+                                  onChange={(e) => handleSubcategoryPctChange(option.value, e.target.value)}
+                                  style={{ width: '80px', padding: '0.25rem', border: '1px solid #cbd5e0', borderRadius: '4px' }}
+                                />
+                              </div>
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-                              {['easy', 'medium', 'hard'].map(diff => (
-                                <div key={diff}>
-                                  <label style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginBottom: '2px' }}>
-                                    {diff === 'easy' ? 'ง่าย' : diff === 'medium' ? 'กลาง' : 'ยาก'} (มี {stats[diff]})
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={stats[diff]}
-                                    value={safeQuota[diff] ?? 0}
-                                    onChange={(e) => handleQuotaChange(diff, e.target.value)}
-                                    style={{ width: '100%', padding: '0.25rem', fontSize: '0.85rem', border: '1px solid #cbd5e0', borderRadius: '4px' }}
-                                  />
-                                </div>
-                              ))}
+                              {['easy', 'medium', 'hard'].map(diff => {
+                                const labelText = diff === 'easy' ? 'ง่าย' : diff === 'medium' ? 'กลาง' : 'ยาก';
+                                const field = diff === 'easy' ? 'easyPct' : diff === 'medium' ? 'mediumPct' : 'hardPct';
+                                const val = (safeQuota && typeof safeQuota === 'object') ? (safeQuota[field] ?? '') : '';
+                                return (
+                                  <div key={diff}>
+                                    <label style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginBottom: '2px' }}>{labelText}</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={val}
+                                      onChange={(e) => handleQuotaPctChange(option.value, diff, e.target.value)}
+                                      style={{ width: '100%', padding: '0.25rem', fontSize: '0.85rem', border: '1px solid #cbd5e0', borderRadius: '4px' }}
+                                    />
+                                  </div>
+                                );
+                              })}
                             </div>
                             <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#4a5568', textAlign: 'right' }}>
-                              รวม: {(safeQuota.easy || 0) + (safeQuota.medium || 0) + (safeQuota.hard || 0)} / {stats.total} ข้อ
+                              รวม: {((safeQuota && typeof safeQuota === 'object') ? (Number(safeQuota.easyPct || 0) + Number(safeQuota.mediumPct || 0) + Number(safeQuota.hardPct || 0)) : 0)}% / {((safeQuota && typeof safeQuota === 'object') ? (safeQuota.pct || 0) : 0)}%
                             </div>
                           </div>
                         );
                       })}
-                      </div>
-                      <div style={{ width: '200px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', alignSelf: 'flex-start' }}>
-                        <div 
-                          title={`รวมทั้งหมด: ${quotaStats.total} ข้อ\n- ง่าย: ${quotaStats.easy} ข้อ\n- กลาง: ${quotaStats.medium} ข้อ\n- ยาก: ${quotaStats.hard} ข้อ`}
-                          style={{
-                          width: '180px', height: '180px', borderRadius: '50%', marginBottom: '0.75rem', cursor: 'help',
-                          background: `conic-gradient(#48bb78 0% ${quotaStats.total ? (quotaStats.easy/quotaStats.total)*100 : 0}%, #ecc94b ${quotaStats.total ? (quotaStats.easy/quotaStats.total)*100 : 0}% ${quotaStats.total ? ((quotaStats.easy+quotaStats.medium)/quotaStats.total)*100 : 0}%, #f56565 ${quotaStats.total ? ((quotaStats.easy+quotaStats.medium)/quotaStats.total)*100 : 0}% 100%)`
-                        }} />
-                        <div style={{ fontSize: '0.8rem', width: '100%' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span style={{display:'flex', alignItems:'center'}}><span style={{width:8,height:8,background:'#48bb78',borderRadius:'50%',marginRight:4}}/>ง่าย</span> <span>{quotaStats.easy} ({quotaStats.total ? Math.round((quotaStats.easy/quotaStats.total)*100) : 0}%)</span></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span style={{display:'flex', alignItems:'center'}}><span style={{width:8,height:8,background:'#ecc94b',borderRadius:'50%',marginRight:4}}/>กลาง</span> <span>{quotaStats.medium} ({quotaStats.total ? Math.round((quotaStats.medium/quotaStats.total)*100) : 0}%)</span></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{display:'flex', alignItems:'center'}}><span style={{width:8,height:8,background:'#f56565',borderRadius:'50%',marginRight:4}}/>ยาก</span> <span>{quotaStats.hard} ({quotaStats.total ? Math.round((quotaStats.hard/quotaStats.total)*100) : 0}%)</span></div>
-                          <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #eee', textAlign: 'center', fontWeight: 'bold' }}>รวม {quotaStats.total} / 60 ข้อ</div>
-                        </div>
                       </div>
                     </div>
                     )}
@@ -1250,7 +1329,7 @@ const AdminQuizBank = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: '0.85rem', color: '#718096' }}>
                   {selectedRoundId !== ROUND_NEW_VALUE && selectedRound && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

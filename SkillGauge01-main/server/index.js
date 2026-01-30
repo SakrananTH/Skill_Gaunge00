@@ -2502,6 +2502,28 @@ app.delete('/api/admin/assessments/rounds/:id', requireAuth, authorizeRoles('adm
 });
 
 // ---------------------------------------------------------------------------
+// Structural Question API (Legacy Table Support)
+// ---------------------------------------------------------------------------
+
+app.get('/api/question-structural/all', requireAuth, authorizeRoles('admin'), async (_req, res) => {
+  try {
+    // Note: 'question_Structural' table structure based on user's DB
+    const rows = await query(
+      `SELECT * FROM question_Structural ORDER BY id ASC`,
+      []
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('[question-structural] Failed to fetch questions', error);
+    // If table doesn't exist, return empty array instead of 500 to avoid breaking UI
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      return res.json([]);
+    }
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Manage question API (legacy structure)
 // ---------------------------------------------------------------------------
 
