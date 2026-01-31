@@ -74,14 +74,21 @@
   font-size: 1.5rem;
 }
 
+/* Ensure inline SVG inside icon wrapper inherits color and has consistent size */
+.stat-icon-wrapper svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
 .stat-card--blue .stat-icon-wrapper {
   background: #eff6ff;
   color: #3b82f6;
 }
 
 .stat-card--orange .stat-icon-wrapper {
-  background: #fff7ed;
-  color: #f97316;
+  background: #FFFBEB; /* very light yellow background */
+  color: #FBBF24; /* yellow icon color */
 }
 
 .stat-card--green .stat-icon-wrapper {
@@ -94,13 +101,23 @@
   color: #a855f7;
 }
 
+/* Red variant for 'ยังไม่ผ่านเกณฑ์' */
+.stat-card--red .stat-icon-wrapper {
+  background: #ffffff; /* keep icon background white */
+  color: #c53030; /* red icon */
+}
+
+.stat-card--red {
+  border-bottom: 3px solid #c53030;
+}
+
 /* Keep left borders for accent */
 .stat-card--blue {
   border-bottom: 3px solid #3b82f6;
 }
 
 .stat-card--orange {
-  border-bottom: 3px solid #f97316;
+  border-bottom: 3px solid #FBBF24; /* yellow accent */
 }
 
 .stat-card--green {

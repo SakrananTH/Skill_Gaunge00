@@ -10,7 +10,6 @@ const PendingActions = () => {
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [pendingQuizzes, setPendingQuizzes] = useState([]);
-  const [expiringAssessments, setExpiringAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -35,20 +34,6 @@ const PendingActions = () => {
       } catch (err) {
         console.warn('Failed to fetch pending quizzes', err);
         setPendingQuizzes([]);
-      }
-
-      // ดึงข้อมูลการประเมินที่ใกล้หมดอายุ
-      try {
-        const assessmentsResponse = await apiRequest('/api/admin/assessments/expiring');
-        const assessments = Array.isArray(assessmentsResponse?.items) 
-          ? assessmentsResponse.items 
-          : Array.isArray(assessmentsResponse) 
-          ? assessmentsResponse 
-          : [];
-        setExpiringAssessments(assessments);
-      } catch (err) {
-        console.warn('Failed to fetch expiring assessments', err);
-        setExpiringAssessments([]);
       }
 
     } catch (err) {
@@ -96,15 +81,6 @@ const PendingActions = () => {
     });
   };
 
-  const getDaysUntilExpiry = (expiryDate) => {
-    if (!expiryDate) return null;
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-    const diffTime = expiry - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
   return (
     <div className="pending-actions-page">
       <header className="page-header">
@@ -114,7 +90,7 @@ const PendingActions = () => {
           </button>
           <div>
             <h1>สิ่งที่ต้องดำเนินการ (Pending Actions)</h1>
-            <p>จัดการแบบทดสอบและการประเมินที่รอดำเนินการ</p>
+            <p>ตรวจสอบและอนุมัติแบบทดสอบออนไลน์</p>
           </div>
         </div>
       </header>
@@ -128,16 +104,6 @@ const PendingActions = () => {
           แบบทดสอบรอการอนุมัติ
           {pendingQuizzes.length > 0 && (
             <span className="badge">{pendingQuizzes.length}</span>
-          )}
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'assessments' ? 'active' : ''}`}
-          onClick={() => setActiveTab('assessments')}
-        >
-          <span className="tab-icon">⏰</span>
-          การประเมินที่ใกล้หมดอายุ
-          {expiringAssessments.length > 0 && (
-            <span className="badge warning">{expiringAssessments.length}</span>
           )}
         </button>
       </div>
@@ -157,7 +123,7 @@ const PendingActions = () => {
         ) : (
           <>
             {/* Tab: แบบทดสอบรอการอนุมัติ */}
-            {activeTab === 'quizzes' && (
+            {(activeTab === 'quizzes' || activeTab === 'assessments') && (
               <div className="quizzes-section">
                 {pendingQuizzes.length === 0 ? (
                   <div className="empty-state">
@@ -214,79 +180,6 @@ const PendingActions = () => {
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tab: การประเมินที่ใกล้หมดอายุ */}
-            {activeTab === 'assessments' && (
-              <div className="assessments-section">
-                {expiringAssessments.length === 0 ? (
-                  <div className="empty-state">
-                    <span className="empty-icon">📅</span>
-                    <p>ไม่มีการประเมินที่ใกล้หมดอายุ</p>
-                  </div>
-                ) : (
-                  <div className="table-container">
-                    <table className="assessments-table">
-                      <thead>
-                        <tr>
-                          <th>ชื่อการประเมิน</th>
-                          <th>พนักงาน</th>
-                          <th>วันที่เริ่ม</th>
-                          <th>วันหมดอายุ</th>
-                          <th>เหลือเวลา</th>
-                          <th>สถานะ</th>
-                          <th>การดำเนินการ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {expiringAssessments.map((assessment) => {
-                          const daysLeft = getDaysUntilExpiry(assessment.expiryDate || assessment.endDate);
-                          const isUrgent = daysLeft !== null && daysLeft <= 3;
-                          const isExpired = daysLeft !== null && daysLeft < 0;
-
-                          return (
-                            <tr key={assessment.id} className={isUrgent ? 'urgent' : ''}>
-                              <td>
-                                <strong>{assessment.title || assessment.name || 'ไม่ระบุ'}</strong>
-                              </td>
-                              <td>{assessment.workerName || assessment.employeeName || '-'}</td>
-                              <td>{formatDate(assessment.startDate || assessment.createdAt)}</td>
-                              <td>{formatDate(assessment.expiryDate || assessment.endDate)}</td>
-                              <td>
-                                {daysLeft === null ? (
-                                  '-'
-                                ) : isExpired ? (
-                                  <span className="days-expired">หมดอายุแล้ว</span>
-                                ) : (
-                                  <span className={isUrgent ? 'days-urgent' : 'days-normal'}>
-                                    {daysLeft} วัน
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                <span className={`status-badge ${assessment.status || 'pending'}`}>
-                                  {assessment.status === 'in_progress' ? 'กำลังดำเนินการ' : 
-                                   assessment.status === 'completed' ? 'เสร็จสิ้น' : 
-                                   assessment.status === 'pending' ? 'รอดำเนินการ' : 
-                                   assessment.status || '-'}
-                                </span>
-                              </td>
-                              <td>
-                                <button 
-                                  className="btn btn-small btn-view"
-                                  onClick={() => navigate(`/admin/assessments/${assessment.id}`)}
-                                >
-                                  ดูรายละเอียด
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
                   </div>
                 )}
               </div>

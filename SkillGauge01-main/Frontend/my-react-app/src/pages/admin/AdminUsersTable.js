@@ -19,6 +19,7 @@ const AdminUsersTable = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState(location.state?.filterCategory || 'all');
   const [filterStatus, setFilterStatus] = useState(location.state?.filterStatus || 'all');
+  const [filterSkill, setFilterSkill] = useState(location.state?.filterSkill || 'all');
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -68,14 +69,18 @@ const AdminUsersTable = () => {
       const matchesStatus = filterStatus === 'all' || 
                             (filterStatus === 'probation' && worker.status === 'probation') ||
                             (filterStatus === 'permanent' && worker.status !== 'probation');
+      const matchesSkill = filterSkill === 'all' ||
+                            (filterSkill === 'none' && (worker.score === undefined || worker.score === null)) ||
+                            (filterSkill === 'passed' && worker.score >= 60) ||
+                            (filterSkill === 'failed' && worker.score !== undefined && worker.score < 60);
 
-      return matchesSearch && matchesCategory && matchesStatus;
+      return matchesSearch && matchesCategory && matchesStatus && matchesSkill;
     });
-  }, [workers, searchTerm, filterCategory, filterStatus]);
+  }, [workers, searchTerm, filterCategory, filterStatus, filterSkill]);
 
   const hasActiveFilters = useMemo(() => {
-    return Boolean(searchTerm.trim()) || filterCategory !== 'all' || filterStatus !== 'all';
-  }, [searchTerm, filterCategory, filterStatus]);
+    return Boolean(searchTerm.trim()) || filterCategory !== 'all' || filterStatus !== 'all' || filterSkill !== 'all';
+  }, [searchTerm, filterCategory, filterStatus, filterSkill]);
 
   const handleDelete = async (id) => {
     if (!id) {
@@ -181,6 +186,12 @@ const AdminUsersTable = () => {
               <option value="all">ทุกสถานะ</option>
               <option value="permanent">ผ่านโปร (Permanent)</option>
               <option value="probation">ทดลองงาน (Probation)</option>
+            </select>
+            <select value={filterSkill} onChange={(e) => setFilterSkill(e.target.value)} style={{ marginLeft: '0.5rem' }}>
+              <option value="all">ผลการประเมินทั้งหมด</option>
+              <option value="passed">ผ่านเกณฑ์ (≥ 60%)</option>
+              <option value="failed">ไม่ผ่านเกณฑ์ (&lt; 60%)</option>
+              <option value="none">ยังไม่ประเมิน</option>
             </select>
           </div>
         </div>
