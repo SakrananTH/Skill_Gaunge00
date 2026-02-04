@@ -651,7 +651,7 @@ function buildWorkerDataFromPayload(payload, { forUpdate = false } = {}) {
     current_address: toNullableString(payload.address?.currentAddress),
     card_issue_date: parseDateValue(payload.identity?.issueDate),
     card_expiry_date: parseDateValue(payload.identity?.expiryDate),
-    employment_status: 'active',
+    employment_status: 'probation',
     start_date: nowDate
   };
 
@@ -1238,6 +1238,89 @@ app.delete('/api/admin/users/:id', requireAuth, authorizeRoles('admin'), async (
     if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
     res.status(204).send();
   } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Audit Logs
+// ---------------------------------------------------------------------------
+const auditLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  search: z.string().max(200).trim().optional().or(z.literal('')),
+  status: z.string().max(30).optional(),
+  startDate: z.string().max(20).optional(),
+  endDate: z.string().max(20).optional()
+});
+
+app.get('/api/admin/audit-logs', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const params = auditLogQuerySchema.parse(req.query ?? {});
+    const limitValue = Number.isFinite(params.limit) ? params.limit : 10;
+    const pageValue = Number.isFinite(params.page) ? params.page : 1;
+    const offset = (pageValue - 1) * limitValue;
+    const filters = [];
+    const values = [];
+
+    if (params.search) {
+      const like = `%${params.search}%`;
+      filters.push('(username LIKE ? OR action LIKE ? OR details LIKE ?)');
+      values.push(like, like, like);
+    }
+
+    if (params.status && params.status !== 'all') {
+      filters.push('status = ?');
+      values.push(params.status);
+    }
+
+    if (params.startDate) {
+      filters.push('DATE(created_at) >= ?');
+      values.push(params.startDate);
+    }
+
+    if (params.endDate) {
+      filters.push('DATE(created_at) <= ?');
+      values.push(params.endDate);
+    }
+
+    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const countRows = await query(`SELECT COUNT(*) AS total FROM audit_logs ${whereClause}`, values);
+    const total = Number(countRows[0]?.total ?? 0);
+
+    if (!Number.isFinite(limitValue) || !Number.isFinite(offset)) {
+      return res.json({ items: [], total: 0 });
+    }
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limitValue)));
+    const safeOffset = Math.max(0, Math.floor(offset));
+    const rows = await query(
+      `SELECT id, created_at, username, role, action, details, ip_address, status
+       FROM audit_logs
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+      values
+    );
+
+    const items = rows.map(row => ({
+      id: row.id,
+      timestamp: row.created_at,
+      user: row.username || 'Unknown',
+      role: row.role || '-',
+      action: row.action,
+      details: row.details,
+      ip: row.ip_address,
+      status: row.status || 'success'
+    }));
+
+    res.json({ items, total });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid query', errors: error.issues });
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      console.warn('[audit-logs] table missing');
+      return res.json({ items: [], total: 0 });
+    }
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -1933,6 +2016,37 @@ app.put('/api/admin/workers/:id', async (req, res) => {
     if (error?.issues) {
       return res.status(400).json({ message: 'Invalid input', errors: error.issues });
     }
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.patch('/api/admin/workers/:id/status', async (req, res) => {
+  try {
+    const params = workerIdParamSchema.safeParse({ id: req.params.id });
+    if (!params.success) return res.status(400).json({ message: 'invalid_id' });
+
+    await requireWorkerTables();
+
+    if (!workerTableColumns.has('id') || !workerTableColumns.has('employment_status')) {
+      return res.status(500).json({ message: 'worker_columns_unavailable' });
+    }
+
+    const nextStatus = String(req.body?.status || '').trim();
+    if (!['probation', 'permanent'].includes(nextStatus)) {
+      return res.status(400).json({ message: 'invalid_status' });
+    }
+
+    const result = await execute(
+      'UPDATE workers SET employment_status = ? WHERE id = ?',
+      [nextStatus, params.data.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
+
+    const workerResponse = await getWorkerResponseById(params.data.id);
+    if (!workerResponse) return res.status(404).json({ message: 'not_found' });
+    res.json(workerResponse);
+  } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }

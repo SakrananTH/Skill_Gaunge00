@@ -85,7 +85,7 @@ const PendingActions = () => {
     <div className="pending-actions-page">
       <header className="page-header">
         <div className="header-content">
-          <button className="back-btn" onClick={() => navigate('/admin/overview')}>
+          <button className="back-btn" onClick={() => navigate('/admin', { state: { initialTab: 'overview' } })}>
             ← กลับ
           </button>
           <div>
@@ -161,7 +161,7 @@ const PendingActions = () => {
                         <div className="card-actions">
                           <button 
                             className="btn btn-view"
-                            onClick={() => navigate(`/admin/quiz-bank/${quiz.id}`)}
+                            onClick={() => navigate('/admin', { state: { initialTab: 'quiz' } })}
                           >
                             ดูรายละเอียด
                           </button>

@@ -202,7 +202,7 @@
 
 .admin-workers-table__header {
   display: grid;
-  grid-template-columns: 1.8fr 1.4fr 1fr 1.2fr 1fr 1fr;
+  grid-template-columns: 1.8fr 1.4fr 1fr 1.2fr 1fr 0.9fr 1fr;
   gap: 1rem;
   background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   padding: 1rem 1.25rem;
@@ -219,7 +219,7 @@
 
 .admin-workers-table__row {
   display: grid;
-  grid-template-columns: 1.8fr 1.4fr 1fr 1.2fr 1fr 1fr;
+  grid-template-columns: 1.8fr 1.4fr 1fr 1.2fr 1fr 0.9fr 1fr;
   gap: 1rem;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid #f1f5f9;
@@ -263,16 +263,16 @@
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
 }
 
-.status-badge--active {
+.status-badge--probation {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-badge--permanent {
   background: #d1fae5;
   color: #065f46;
   border: 1px solid #6ee7b7;
-}
-
-.status-badge--inactive {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
 }
 
 .col-actions {
@@ -323,6 +323,17 @@
   transform: translateY(-1px);
 }
 
+.action-btn--promote {
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 700;
+}
+
+.action-btn--promote:hover {
+  background: #bbf7d0;
+  transform: translateY(-1px);
+}
+
 .empty-state {
   padding: 3rem 1.5rem;
   text-align: center;
@@ -333,7 +344,7 @@
 @media (max-width: 1200px) {
   .admin-workers-table__header,
   .admin-workers-table__row {
-    grid-template-columns: 1.6fr 1.2fr 0.9fr 1fr 0.9fr 1fr;
+    grid-template-columns: 1.6fr 1.2fr 0.9fr 1fr 0.9fr 0.8fr 1fr;
   }
 }
 

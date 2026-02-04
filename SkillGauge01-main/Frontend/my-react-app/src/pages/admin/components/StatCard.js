@@ -1,15 +1,18 @@
 import React from 'react';
 
-const StatCard = ({ stat, onClick }) => {
+const StatCard = ({ stat, onClick, ...rest }) => {
     return (
         <div
             className={`stat-card stat-card--${stat.color}`}
             onClick={onClick}
             style={{ cursor: 'pointer' }}
+            {...rest}
         >
             <div className="stat-icon-wrapper">
                 <span className="stat-icon">
-                    {stat.color === 'red' && (
+                    {stat.icon ? stat.icon : (
+                      <>
+                        {stat.color === 'red' && (
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M11 7h2v6h-2zm0 8h2v2h-2z"></path><path d="M12 22c5.51 0 10-4.49 10-10S17.51 2 12 2 2 6.49 2 12s4.49 10 10 10m0-18c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8"></path>
                         </svg>
@@ -30,6 +33,8 @@ const StatCard = ({ stat, onClick }) => {
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M12 2a2 2 0 1 0 0 4 2 2 0 1 0 0-4m-2 20h4v-7h2V8c0-.55-.45-1-1-1H9c-.55 0-1 .45-1 1v7h2z"></path>
                         </svg>
+                    )}
+                      </>
                     )}
                 </span>
             </div>

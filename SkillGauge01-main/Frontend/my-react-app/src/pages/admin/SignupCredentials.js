@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Signup.css';
 import './AdminSignupCredentials.css';
+import { apiRequest } from '../../utils/api';
 
 const AdminSignupCredentials = () => {
   const navigate = useNavigate();
@@ -99,29 +100,15 @@ const AdminSignupCredentials = () => {
       const fullName = `${profileDraft.skill || ''}${profileDraft.name || ''} ${profileDraft.surname || ''}`.trim();
       const phone = profileDraft.phoneNumber;
 
-      const res = await fetch('http://localhost:4000/api/auth/signup', {
+      await apiRequest('/api/auth/signup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           full_name: fullName,
           phone,
           email: form.email || '',
           password: form.password,
-        }),
+        }
       });
-
-      if (res.status === 409) {
-        const data = await res.json().catch(() => ({}));
-        setErrors({ email: data.message || 'ข้อมูลนี้ถูกใช้งานแล้ว' });
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrors({ email: data.message || 'สมัครสมาชิกไม่สำเร็จ' });
-        return;
-      }
-
-      await res.json().catch(() => ({}));
 
       const finalProfile = {
         ...profileDraft,
@@ -139,8 +126,12 @@ const AdminSignupCredentials = () => {
       } catch {}
 
       navigate('/login');
-    } catch {
-      setErrors({ email: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' });
+    } catch (error) {
+      if (error?.status === 409) {
+        setErrors({ email: error?.data?.message || 'ข้อมูลนี้ถูกใช้งานแล้ว' });
+        return;
+      }
+      setErrors({ email: error?.data?.message || error?.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' });
     } finally {
       setIsSubmitting(false);
     }

@@ -4,7 +4,6 @@ import './AdminOverview.css';
 import { apiRequest } from '../../utils/api';
 
 import StatCard from './components/StatCard';
-import SkillDistributionChart from './components/SkillDistributionChart';
 import RecentActivityList from './components/RecentActivityList';
 
 const BRANCH_OPTIONS = [
@@ -60,8 +59,6 @@ const AdminOverview = () => {
 
   const [pendingActions, setPendingActions] = useState([]);
   const [recentActivities, setRecentActivities] = useState([]);
-  const [skillDistribution, setSkillDistribution] = useState([]);
-  const [skillGapData, setSkillGapData] = useState([]);
   const [branchStats, setBranchStats] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState('all');
   const [statusStats, setStatusStats] = useState({ probation: 0, permanent: 0, total: 0 });
@@ -91,18 +88,12 @@ const AdminOverview = () => {
         // Parallel Data Fetching
         const [
           workersRes, 
-          statsRes, 
-          gapRes, 
           pendingQuizRes, 
-          distRes, 
           logsRes
         ] = await Promise.allSettled([
           apiRequest(`/api/admin/workers${queryParams}`),
-          apiRequest(`/api/admin/dashboard/stats${queryParams}`),
-          apiRequest(`/api/admin/dashboard/skill-gap${queryParams}`),
           apiRequest('/api/admin/quizzes?status=pending'),
-          apiRequest(`/api/admin/dashboard/skill-distribution${queryParams}`),
-          apiRequest('/api/admin/audit-logs?limit=5')
+          apiRequest('/api/admin/audit-logs?page=1&limit=5')
         ]);
 
         if (!active) {
@@ -119,7 +110,9 @@ const AdminOverview = () => {
           : items;
 
         const totalWorkers = filteredItems.length;
-        const pendingWorkers = filteredItems.filter(worker => worker.status === 'probation').length;
+        const probationWorkers = filteredItems.filter(worker => worker.status === 'probation' || worker.status === 'active');
+        const pendingWorkers = probationWorkers.length;
+        const probationWithScore = probationWorkers.filter(worker => worker.score !== undefined && worker.score !== null).length;
         
         setStatusStats({
           probation: pendingWorkers,
@@ -127,13 +120,7 @@ const AdminOverview = () => {
           total: totalWorkers
         });
         
-        // --- 2. Process Skill Gap ---
-        if (gapRes.status === 'fulfilled') {
-          const gapData = gapRes.value;
-          setSkillGapData(Array.isArray(gapData) ? gapData : []);
-        }
-
-        // --- 3. Calculate KPI Stats ---
+        // --- 2. Calculate KPI Stats ---
         // 1. ยังไม่ผ่านเกณฑ์: คนที่มีคะแนน < 60 (และมีคะแนนแล้ว)
         // 2. ยังไม่ได้ทดสอบ: คนที่ไม่มีคะแนน (score === undefined/null)
         // 3. ผ่านเกณฑ์แล้ว: คนที่มีคะแนน >= 60
@@ -175,7 +162,7 @@ const AdminOverview = () => {
           {
             id: 'avg',
             label: 'กำลังทดสอบภาคปฏิบัติ',
-            value: pendingWorkers,
+            value: probationWithScore,
             unit: 'คน',
             color: 'blue',
             insight: 'อยู่ระหว่างทดสอบ',
@@ -184,7 +171,7 @@ const AdminOverview = () => {
           },
         ]);
 
-        // --- 4. Pending Actions ---
+        // --- 3. Pending Actions ---
         const actions = [];
         if (pendingWorkers > 0) {
           actions.push({ id: 'p1', title: 'ตรวจสอบเอกสารพนักงานใหม่', count: pendingWorkers, type: 'urgent', link: '/admin', state: { initialTab: 'users', filterStatus: 'probation' } });
@@ -212,48 +199,7 @@ const AdminOverview = () => {
 
         setPendingActions(actions);
 
-        // --- 5. Skill Distribution ---
-        if (distRes.status === 'fulfilled') {
-          const distributionData = distRes.value;
-          
-          if (Array.isArray(distributionData) && distributionData.length > 0) {
-            // Override colors with pastel palette
-            const coloredData = distributionData.map(item => {
-              let color = PASTEL_COLORS.mid.bg;
-              let filterKey = 'medium';
-              if (item.level.includes('Expert') || item.level.includes('สูง')) color = PASTEL_COLORS.high.bg;
-              if (item.level.includes('Beginner') || item.level.includes('ต่ำ')) color = PASTEL_COLORS.low.bg;
-              
-              if (item.level.includes('Expert') || item.level.includes('สูง')) filterKey = 'high';
-              if (item.level.includes('Beginner') || item.level.includes('ต่ำ')) filterKey = 'low';
-
-              return { ...item, color, filterKey };
-            });
-            setSkillDistribution(coloredData);
-          } else {
-            // Fallback: คำนวณจากข้อมูลพนักงานจริง (Real Data Consistency)
-            let high = 0, mid = 0, low = 0;
-            filteredItems.forEach(w => {
-                const rawScore = w.score !== undefined ? w.score : w.evaluation_score;
-                if (rawScore !== undefined && rawScore !== null) {
-                    const score = Number(rawScore);
-                    if (score >= 80) high++;
-                    else if (score >= 60) mid++;
-                    else low++;
-                }
-            });
-            const total = (high + mid + low) || 1;
-            setSkillDistribution([
-              { name: 'ระดับ 3 (สูง)', value: high, percentage: Math.round((high/total)*100), color: PASTEL_COLORS.high.bg, filterKey: 'high' },
-              { name: 'ระดับ 2 (กลาง)', value: mid, percentage: Math.round((mid/total)*100), color: PASTEL_COLORS.mid.bg, filterKey: 'medium' },
-              { name: 'ระดับ 1 (ต่ำ)', value: low, percentage: Math.round((low/total)*100), color: PASTEL_COLORS.low.bg, filterKey: 'low' },
-            ]);
-          }
-        } else {
-          setSkillDistribution([]); // แสดงว่างดีกว่าแสดงข้อมูลปลอม
-        }
-
-        // --- 6. Branch Stats Calculation ---
+        // --- 4. Branch Stats Calculation ---
         // Initialize branchMap with all 8 branches to ensure they appear even with 0 workers
         const branchMap = {};
         BRANCH_OPTIONS.forEach(opt => {
@@ -290,10 +236,12 @@ const AdminOverview = () => {
           const hasScore = rawScore !== undefined && rawScore !== null;
           const score = hasScore ? Number(rawScore) : 0;
 
-          // 1. จัดกลุ่มระดับทักษะ (รวมคนที่ไม่มีคะแนนเป็น Beginner/ต่ำ ไปก่อนตาม Logic เดิม)
-          if (score >= 80) branchMap[label].levels.high++;
-          else if (score >= 60) branchMap[label].levels.mid++;
-          else branchMap[label].levels.low++;
+          // 1. จัดกลุ่มระดับทักษะ (นับเฉพาะคนที่มีคะแนนเท่านั้น)
+          if (hasScore) {
+            if (score >= 80) branchMap[label].levels.high++;
+            else if (score >= 60) branchMap[label].levels.mid++;
+            else branchMap[label].levels.low++;
+          }
 
           // 2. คำนวณคะแนนเฉลี่ย (เฉพาะคนที่มีคะแนน)
           if (hasScore) {
@@ -306,8 +254,12 @@ const AdminOverview = () => {
             notEvaluatedMap[label]++;
           }
         });
-        // กรองสาขาที่มี 0 คนออก (Show only non-zero) ตาม Requirement ข้อ 4
-        setBranchStats(Object.values(branchMap).filter(b => b.total > 0).sort((a, b) => b.total - a.total));
+        // แสดงครบทั้ง 8 สาขาหลักเสมอ (แม้มี 0 คน)
+        setBranchStats(
+          Object.values(branchMap)
+            .filter(b => b.value !== 'other')
+            .sort((a, b) => b.total - a.total)
+        );
 
         // เตรียมข้อมูลกราฟคะแนนเฉลี่ย
         const avgScores = Object.keys(branchScoreMap).map(label => ({
@@ -319,12 +271,13 @@ const AdminOverview = () => {
 
         // เตรียมข้อมูลคนรอประเมิน
         const notEval = Object.keys(notEvaluatedMap).map(label => ({
-            name: label,
-            count: notEvaluatedMap[label]
+          name: label,
+          value: branchMap[label]?.value || 'other',
+          count: notEvaluatedMap[label]
         })).sort((a, b) => b.count - a.count);
         setNotEvaluatedStats(notEval);
 
-        // --- 7. Recent Activity ---
+        // --- 6. Recent Activity ---
         const toDate = value => {
           if (!value) return null;
           const date = new Date(value);
@@ -359,14 +312,33 @@ const AdminOverview = () => {
           const logsResponse = logsRes.value;
           const logs = Array.isArray(logsResponse?.items) ? logsResponse.items : (Array.isArray(logsResponse) ? logsResponse : []);
           
-          const mappedActivities = logs.map(log => ({
-            id: log.id,
-            user: log.user || log.username || 'System',
-            action: log.action,
-            type: log.action.toLowerCase().includes('login') ? 'login' : log.action.toLowerCase().includes('quiz') ? 'quiz' : 'system',
-            time: formatTimeAgo(toDate(log.timestamp || log.created_at))
-          }));
-          setRecentActivities(mappedActivities);
+          const mappedActivities = logs.map(log => {
+            const action = log.action ? String(log.action) : 'System Action';
+            return {
+              id: log.id,
+              user: log.user || log.username || 'System',
+              action: action,
+              type: action.toLowerCase().includes('login') ? 'login' : action.toLowerCase().includes('quiz') ? 'quiz' : 'system',
+              time: formatTimeAgo(toDate(log.timestamp || log.created_at))
+            };
+          });
+
+          if (mappedActivities.length > 0) {
+            setRecentActivities(mappedActivities);
+          } else {
+            const fallback = filteredItems
+              .filter(item => item.startDate)
+              .sort((a, b) => new Date(b.startDate) - new Date(a.startDate))
+              .slice(0, 5)
+              .map(item => ({
+                id: item.id,
+                user: item.name || 'System',
+                action: 'ลงทะเบียนพนักงานใหม่',
+                type: 'system',
+                time: formatTimeAgo(toDate(item.startDate))
+              }));
+            setRecentActivities(fallback);
+          }
         }
 
       } catch (error) {
@@ -397,9 +369,6 @@ const AdminOverview = () => {
       setAnimateChart(false);
     }
   }, [loading]);
-
-  // Helper for Skill Donut Chart
-  const totalEvaluated = skillDistribution.reduce((sum, item) => sum + (item.value || item.count || 0), 0);
 
   return (
     <div className="admin-overview">
@@ -490,7 +459,7 @@ const AdminOverview = () => {
                   return (
                     <div 
                       key={idx}
-                      onClick={() => navigate('/admin', { state: { initialTab: 'users', filterCategory: branch.name } })}
+                      onClick={() => navigate('/admin', { state: { initialTab: 'users', filterCategory: branch.value } })}
                       style={{ cursor: 'pointer' }}
                       title={`คลิกเพื่อดูรายชื่อพนักงานสาขา ${branch.name}`}
                     >
@@ -564,7 +533,7 @@ const AdminOverview = () => {
                   {notEvaluatedStats.map((item, idx) => (
                     <div 
                       key={idx} 
-                      onClick={() => navigate('/admin', { state: { initialTab: 'users', filterSkill: 'none', filterCategory: item.name } })}
+                      onClick={() => navigate('/admin', { state: { initialTab: 'users', filterSkill: 'none', filterCategory: item.value } })}
                       style={{ 
                         background: '#ffffff', 
                         padding: '0.75rem', 
@@ -669,18 +638,6 @@ const AdminOverview = () => {
               </div>
             </div>
           </section>
-          {/* Donut Chart: สัดส่วนระดับทักษะ */}
-          <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div className="section-header" style={{ marginBottom: '1.5rem' }}>
-              <h3>สัดส่วนระดับทักษะ</h3>
-              <span style={{ color: '#718096', fontSize: '0.9rem' }}>แบ่งตามผลการประเมิน</span>
-            </div>
-            <SkillDistributionChart 
-              data={skillDistribution} 
-              total={totalEvaluated}
-              onFilter={(key) => navigate('/admin', { state: { initialTab: 'users', filterSkill: key, filterCategory: selectedBranch } })}
-            />
-          </section>
           {/* Pending Actions (Moved to Right Column) */}
           <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div className="pending-actions-header">
@@ -698,9 +655,12 @@ const AdminOverview = () => {
                 </div>
               ) : (
                 pendingActions.map(action => (
-                  <div key={action.id} 
+                  <button
+                    key={action.id}
+                    type="button"
                     onClick={() => navigate(action.link, { state: action.state })}
                     className={`pending-action-item ${action.type}`}
+                    style={{ width: '100%', textAlign: 'left' }}
                   >
                     <div className="action-info">
                       <span className="action-icon">
@@ -711,7 +671,7 @@ const AdminOverview = () => {
                     <span className={`action-count ${action.type}`}>
                       {action.count}
                     </span>
-                  </div>
+                  </button>
                 ))
               )}
             </div>

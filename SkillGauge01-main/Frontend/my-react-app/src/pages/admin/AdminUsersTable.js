@@ -13,6 +13,18 @@ const workerErrorMessages = {
   invalid_national_id_length: 'เลขบัตรประชาชนต้องมี 13 หลัก'
 };
 
+const STATUS_LABELS = {
+  probation: 'ทดลองงาน',
+  permanent: 'พนักงานประจำ',
+  active: 'ทดลองงาน'
+};
+
+const STATUS_BADGE_CLASSES = {
+  probation: 'status-badge status-badge--probation',
+  permanent: 'status-badge status-badge--permanent',
+  active: 'status-badge status-badge--probation'
+};
+
 const AdminUsersTable = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -67,12 +79,12 @@ const AdminUsersTable = () => {
                            (worker.phone || '').includes(searchTerm);
       const matchesCategory = filterCategory === 'all' || worker.category === filterCategory;
       const matchesStatus = filterStatus === 'all' || 
-                            (filterStatus === 'probation' && worker.status === 'probation') ||
-                            (filterStatus === 'permanent' && worker.status !== 'probation');
+                (filterStatus === 'probation' && (worker.status === 'probation' || worker.status === 'active')) ||
+                (filterStatus === 'permanent' && worker.status === 'permanent');
       const matchesSkill = filterSkill === 'all' ||
-                            (filterSkill === 'none' && (worker.score === undefined || worker.score === null)) ||
-                            (filterSkill === 'passed' && worker.score >= 60) ||
-                            (filterSkill === 'failed' && worker.score !== undefined && worker.score < 60);
+                (filterSkill === 'none' && (worker.score === undefined || worker.score === null)) ||
+                (filterSkill === 'passed' && worker.score !== undefined && worker.score !== null && worker.score >= 60) ||
+                (filterSkill === 'failed' && worker.score !== undefined && worker.score !== null && worker.score < 60);
 
       return matchesSearch && matchesCategory && matchesStatus && matchesSkill;
     });
@@ -131,6 +143,25 @@ const AdminUsersTable = () => {
     openWorkerForm(worker, true);
   };
 
+  const handlePromote = async (worker) => {
+    if (!worker?.id) return;
+    if (worker.status === 'permanent') return;
+    if (!window.confirm('ยืนยันเปลี่ยนสถานะเป็นพนักงานประจำ?')) {
+      return;
+    }
+
+    try {
+      await apiRequest(`/api/admin/workers/${worker.id}/status`, {
+        method: 'PATCH',
+        body: { status: 'permanent' }
+      });
+      setWorkers(prev => prev.map(item => (item.id === worker.id ? { ...item, status: 'permanent' } : item)));
+    } catch (err) {
+      console.error('Failed to update worker status', err);
+      setError(err?.message || 'ไม่สามารถอัปเดตสถานะพนักงานได้');
+    }
+  };
+
   return (
     <div className="admin-users-table">
       <header className="admin-users-table__header">
@@ -173,14 +204,14 @@ const AdminUsersTable = () => {
             </div>
             <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
               <option value="all">ทุกประเภท</option>
-              <option value="ช่างโครงสร้าง">ช่างโครงสร้าง</option>
-              <option value="ช่างประปา">ช่างประปา</option>
-              <option value="ช่างหลังคา">ช่างหลังคา</option>
-              <option value="ช่างก่ออิฐฉาบปูน">ช่างก่ออิฐฉาบปูน</option>
-              <option value="ช่างประตูหน้าต่างอลูมิเนียม">ช่างประตูหน้าต่างอลูมิเนียม</option>
-              <option value="ช่างฝ้าเพดาล">ช่างฝ้าเพดาล</option>
-              <option value="ช่างไฟฟ้า">ช่างไฟฟ้า</option>
-              <option value="ช่างกระเบื้อง">ช่างกระเบื้อง</option>
+              <option value="structure">ช่างโครงสร้าง</option>
+              <option value="plumbing">ช่างประปา</option>
+              <option value="roofing">ช่างหลังคา</option>
+              <option value="masonry">ช่างก่ออิฐฉาบปูน</option>
+              <option value="aluminum">ช่างประตูหน้าต่างอลูมิเนียม</option>
+              <option value="ceiling">ช่างฝ้าเพดาล</option>
+              <option value="electric">ช่างไฟฟ้า</option>
+              <option value="tiling">ช่างกระเบื้อง</option>
             </select>
             <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ marginLeft: '0.5rem' }}>
               <option value="all">ทุกสถานะ</option>
@@ -203,6 +234,7 @@ const AdminUsersTable = () => {
             <div className="col col-password">รหัสผ่าน</div>
             <div className="col col-phone">เบอร์โทร</div>
             <div className="col col-role">Role</div>
+            <div className="col col-status">สถานะ</div>
             <div className="col col-actions">จัดการ</div>
           </div>
           <div className="admin-workers-table__body">
@@ -224,7 +256,22 @@ const AdminUsersTable = () => {
                   <div className="col col-password" data-label="รหัสผ่าน">{worker.passwordHash || '—'}</div>
                   <div className="col col-phone" data-label="เบอร์โทร">{worker.phone || '—'}</div>
                   <div className="col col-role" data-label="Role">{worker.role || '—'}</div>
+                  <div className="col col-status" data-label="สถานะ">
+                    <span className={STATUS_BADGE_CLASSES[worker.status] || 'status-badge'}>
+                      {STATUS_LABELS[worker.status] || '—'}
+                    </span>
+                  </div>
                   <div className="col col-actions" data-label="จัดการ">
+                    {(worker.status === 'probation' || worker.status === 'active') && (
+                      <button
+                        type="button"
+                        className="action-btn action-btn--promote"
+                        title="เปลี่ยนเป็นพนักงานประจำ"
+                        onClick={() => handlePromote(worker)}
+                      >
+                        ✓
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="action-btn action-btn--view"

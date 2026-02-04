@@ -1,7 +1,7 @@
 import React from 'react';
 
 const SkillDistributionChart = ({ data, total, onFilter }) => {
-    if (!data || data.length === 0) {
+    if (!data || data.length === 0 || total === 0) {
         return (
             <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>
                 ไม่มีข้อมูลการประเมิน
