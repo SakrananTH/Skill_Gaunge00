@@ -386,7 +386,7 @@ const AdminOverview = () => {
       )}
       <header className="admin-welcome-section">
         <div className="welcome-text">
-          <h2>ภาพรวมระบบ</h2>
+          <h2>Dashboard</h2>
           <p>สรุปสถานะและข้อมูลสำคัญของระบบ Skill Gauge</p>
         </div>
         <div className="date-display">
@@ -394,25 +394,6 @@ const AdminOverview = () => {
         </div>
         
       </header>
-
-      {/* Filter Section */}
-      <div className="filter-section" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-        <div className="branch-select-wrapper">
-          <label htmlFor="branch-filter" className="branch-select-label">เลือกสาขา:</label>
-          <select 
-            id="branch-filter"
-            value={selectedBranch} 
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="branch-select"
-          >
-            <option value="all">ทั้งหมด</option>
-            {BRANCH_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {/* 1. & 2. KPI Cards พร้อม Insight */}
       <div className="admin-stats-grid">
         {stats.map((stat, index) => (
