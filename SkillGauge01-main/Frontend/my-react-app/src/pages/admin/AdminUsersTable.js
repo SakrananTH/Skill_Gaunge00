@@ -245,7 +245,7 @@ const AdminUsersTable = () => {
               <option value="electric">ช่างไฟฟ้า</option>
               <option value="tiling">ช่างกระเบื้อง</option>
             </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ marginLeft: '0.5rem' }}>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="user-filter-select">
               <option value="all">ทุกสถานะ</option>
               <option value="permanent">ผ่านโปร (Permanent)</option>
               <option value="probation">ทดลองงาน (Probation)</option>

@@ -1,0 +1,9 @@
+.stat-card {
+  cursor: pointer;
+}
+
+.stat-card__insight {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  opacity: 0.8;
+}

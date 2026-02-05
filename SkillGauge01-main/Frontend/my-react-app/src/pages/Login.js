@@ -109,30 +109,12 @@ const Login = () => {
 
           <div className="login-card">
             {info && (
-              <div style={{
-                padding: '12px',
-                marginBottom: '16px',
-                backgroundColor: '#e6f4ea',
-                border: '1px solid #c7e8cf',
-                borderRadius: '8px',
-                color: '#137333',
-                fontSize: '14px',
-                textAlign: 'center'
-              }}>
+              <div className="login-message-info">
                 {info}
               </div>
             )}
             {error && (
-              <div style={{
-                padding: '12px',
-                marginBottom: '16px',
-                backgroundColor: 'rgba(255, 255, 255, 0)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '8px',
-                color: '#ef4444',
-                fontSize: '14px',
-                textAlign: 'center'
-              }}>
+              <div className="login-message-error">
                 {error}
               </div>
             )}

@@ -523,3 +523,8 @@
     max-width: 200px;
   }
 }
+
+.aqf-loading {
+  text-align: center;
+  padding: 2rem;
+}

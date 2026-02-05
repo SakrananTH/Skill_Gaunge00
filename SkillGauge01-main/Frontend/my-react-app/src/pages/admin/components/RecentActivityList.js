@@ -1,17 +1,18 @@
 import React from 'react';
+import './RecentActivityList.css';
 
 const RecentActivityList = ({ activities, loading, error, onViewAll }) => {
   return (
     <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-      <div className="section-header" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="recent-activity-header">
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#2d3748' }}>กิจกรรมล่าสุด</h3>
-          <span style={{ color: '#718096', fontSize: '0.85rem' }}>ประวัติการใช้งานระบบ</span>
+          <h3 className="recent-activity-title">กิจกรรมล่าสุด</h3>
+          <span className="recent-activity-subtitle">ประวัติการใช้งานระบบ</span>
         </div>
         {onViewAll && (
           <button 
             onClick={onViewAll}
-            style={{ background: 'none', border: 'none', color: '#3182ce', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500' }}
+            className="recent-activity-view-all"
           >
             ดูทั้งหมด
           </button>
@@ -20,41 +21,36 @@ const RecentActivityList = ({ activities, loading, error, onViewAll }) => {
 
       <div className="activity-list">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: '#718096', fontSize: '0.9rem' }}>
+          <div className="recent-activity-status">
             กำลังโหลดข้อมูล...
           </div>
         ) : error ? (
-          <div style={{ textAlign: 'center', padding: '1.5rem', color: '#e53e3e', fontSize: '0.9rem', background: '#fff5f5', borderRadius: '8px' }}>
+          <div className="recent-activity-error">
             {error}
           </div>
         ) : (!activities || activities.length === 0) ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: '#a0aec0' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.5 }}>📝</div>
-            <div style={{ fontSize: '0.9rem' }}>ไม่มีกิจกรรมล่าสุด</div>
+          <div className="recent-activity-empty">
+            <div className="recent-activity-empty-icon">📝</div>
+            <div>ไม่มีกิจกรรมล่าสุด</div>
           </div>
         ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          <ul className="recent-activity-list">
             {activities.map((activity, index) => (
-              <li key={activity.id || index} style={{ 
-                display: 'flex', 
-                gap: '1rem', 
-                padding: '0.75rem 0', 
-                borderBottom: index !== activities.length - 1 ? '1px solid #edf2f7' : 'none' 
-              }}>
-                <div style={{ 
-                  width: '36px', height: '36px', borderRadius: '50%', 
-                  background: activity.type === 'login' ? '#e6fffa' : activity.type === 'quiz' ? '#ebf8ff' : '#f7fafc',
-                  color: activity.type === 'login' ? '#319795' : activity.type === 'quiz' ? '#3182ce' : '#718096',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  fontSize: '1.2rem'
-                }}>
+              <li key={activity.id || index} className="activity-item">
+                <div 
+                  className="activity-icon"
+                  style={{ 
+                    background: activity.type === 'login' ? '#e6fffa' : activity.type === 'quiz' ? '#ebf8ff' : '#f7fafc',
+                    color: activity.type === 'login' ? '#319795' : activity.type === 'quiz' ? '#3182ce' : '#718096'
+                  }}
+                >
                   {activity.type === 'login' ? '🔑' : activity.type === 'quiz' ? '📝' : <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2M5 19V5h14v14z"></path><path d="M8.5 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3m2.5.5h6v2h-6zM7 7h10v2H7zm0 8h10v2H7z"></path></svg>}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.9rem', color: '#2d3748', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {activity.user} <span style={{ fontWeight: 'normal', color: '#4a5568' }}>{activity.action}</span>
+                <div className="activity-content">
+                  <div className="activity-text">
+                    {activity.user} <span className="activity-action">{activity.action}</span>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#a0aec0', marginTop: '2px' }}>{activity.time}</div>
+                  <div className="activity-time">{activity.time}</div>
                 </div>
               </li>
             ))}

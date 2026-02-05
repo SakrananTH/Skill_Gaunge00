@@ -641,3 +641,136 @@
   border-radius: 8px;
   font-size: 0.9rem;
 }
+
+/* Loader Overlay */
+.admin-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(255,255,255,0.7);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-loading-text {
+  font-size: 2rem;
+  color: #3182ce;
+}
+
+/* Error */
+.admin-error-message {
+  background: #fed7d7;
+  color: #c53030;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* Branch Chart Styles */
+.branch-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.branch-section {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.branch-section-header {
+  margin-bottom: 1.5rem;
+}
+
+.branch-section-subtitle {
+  color: #718096;
+  font-size: 0.9rem;
+}
+
+.branch-empty-state {
+  text-align: center;
+  color: #718096;
+  padding: 1rem;
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.branch-item {
+  position: relative;
+  cursor: pointer;
+}
+
+.branch-tooltip {
+  position: fixed;
+  background: #2d3748;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  z-index: 9999;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.branch-item-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+  color: #2d3748;
+  font-weight: 500;
+}
+
+.branch-bar-container {
+  width: 100%;
+  background: #f7fafc;
+  border-radius: 6px;
+  height: 12px;
+  overflow: hidden;
+  display: flex;
+}
+
+.branch-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #718096;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.branch-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.branch-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.stat-card-wrapper {
+  position: relative;
+}
+
+.branch-bar-animated {
+  height: 100%;
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: width 1s ease-out;
+}

@@ -1,0 +1,96 @@
+.skill-chart-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #718096;
+}
+
+.skill-chart-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.skill-chart-donut-outer {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.skill-chart-donut-inner {
+  width: 130px;
+  height: 130px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.skill-chart-total {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #2d3748;
+  line-height: 1;
+}
+
+.skill-chart-caption {
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.skill-chart-legend {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skill-chart-legend-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.skill-chart-legend-item:hover {
+  background: #f7fafc;
+}
+
+.skill-chart-legend-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.skill-chart-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.skill-chart-legend-name {
+  color: #4a5568;
+}
+
+.skill-chart-legend-value {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.skill-chart-legend-percent {
+  color: #718096;
+  font-weight: 400;
+  font-size: 0.8rem;
+}

@@ -413,6 +413,14 @@ select.pill option {
   display: grid;
   gap: 0.5rem;
   font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+.project-overview-placeholder {
+  height: 220px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid #2a3a59;
+  border-radius: 10px;
 }
 
 .legend-item {

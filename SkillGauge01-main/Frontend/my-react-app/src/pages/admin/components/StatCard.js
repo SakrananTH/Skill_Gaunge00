@@ -1,11 +1,11 @@
 import React from 'react';
+import './StatCard.css';
 
 const StatCard = ({ stat, onClick, ...rest }) => {
     return (
         <div
             className={`stat-card stat-card--${stat.color}`}
             onClick={onClick}
-            style={{ cursor: 'pointer' }}
             {...rest}
         >
             <div className="stat-icon-wrapper">
@@ -45,7 +45,7 @@ const StatCard = ({ stat, onClick, ...rest }) => {
                     <span className="stat-card__unit">{stat.unit}</span>
                 </div>
                 {stat.insight && (
-                    <div className="stat-card__insight" style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
+                    <div className="stat-card__insight">
                         {stat.insight}
                     </div>
                 )}

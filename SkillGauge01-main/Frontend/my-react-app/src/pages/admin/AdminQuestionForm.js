@@ -353,7 +353,7 @@ const AdminQuestionForm = () => {
   }, [goToQuizBank]);
 
   if (isLoading) {
-    return <div className="admin-question-form"><div className="aqf-content" style={{textAlign:'center', padding:'2rem'}}>กำลังโหลดข้อมูล...</div></div>;
+    return <div className="admin-question-form"><div className="aqf-content aqf-loading">กำลังโหลดข้อมูล...</div></div>;
   }
 
   return (

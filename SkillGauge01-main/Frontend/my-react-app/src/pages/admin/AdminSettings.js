@@ -117,24 +117,16 @@ const AdminSettings = ({ avatar, onAvatarChange }) => {
       </header>
 
       {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0' }}>
+      <div className="settings-tabs">
         <button 
           onClick={() => setActiveTab('profile')}
-          style={{ 
-            padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', 
-            borderBottom: activeTab === 'profile' ? '2px solid #3182ce' : '2px solid transparent',
-            color: activeTab === 'profile' ? '#3182ce' : '#718096', fontWeight: '600'
-          }}
+          className={`settings-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
         >
           ข้อมูลส่วนตัว
         </button>
         <button 
           onClick={() => setActiveTab('security')}
-          style={{ 
-            padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', 
-            borderBottom: activeTab === 'security' ? '2px solid #3182ce' : '2px solid transparent',
-            color: activeTab === 'security' ? '#3182ce' : '#718096', fontWeight: '600'
-          }}
+          className={`settings-tab-btn ${activeTab === 'security' ? 'active' : ''}`}
         >
           ความปลอดภัย
         </button>
@@ -161,7 +153,7 @@ const AdminSettings = ({ avatar, onAvatarChange }) => {
                   id="avatar-upload"
                   accept="image/*"
                   onChange={handleImageChange}
-                  style={{ display: 'none' }}
+                  className="hidden-input"
                 />
                 <label htmlFor="avatar-upload" className="btn-upload">
                   เลือกรูปภาพ
@@ -175,7 +167,7 @@ const AdminSettings = ({ avatar, onAvatarChange }) => {
             </div>
 
             <div className="settings-form">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-row-grid">
                 <div className="form-group">
                   <label>ชื่อจริง</label>
                   <input 
@@ -220,7 +212,6 @@ const AdminSettings = ({ avatar, onAvatarChange }) => {
                   value={profile.role} 
                   disabled
                   className="form-control"
-                  style={{ background: '#f7fafc', color: '#718096' }}
                 />
               </div>
             </div>

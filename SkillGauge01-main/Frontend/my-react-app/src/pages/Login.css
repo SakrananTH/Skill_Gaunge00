@@ -172,3 +172,25 @@
   .login-page > div:first-child { justify-self: start; }
   .login-logo-side { justify-self: end; }
 }
+
+.login-message-info {
+  padding: 12px;
+  margin-bottom: 16px;
+  background-color: #e6f4ea;
+  border: 1px solid #c7e8cf;
+  border-radius: 8px;
+  color: #137333;
+  font-size: 14px;
+  text-align: center;
+}
+
+.login-message-error {
+  padding: 12px;
+  margin-bottom: 16px;
+  background-color: rgba(255, 255, 255, 0);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 14px;
+  text-align: center;
+}

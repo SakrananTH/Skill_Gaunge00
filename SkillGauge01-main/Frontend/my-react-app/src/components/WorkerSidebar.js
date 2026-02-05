@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import './WorkerSidebar.css';
 
 const WorkerSidebar = ({ user, active = 'tasks', className = '' }) => {
   const navigate = useNavigate();
@@ -57,7 +58,6 @@ const WorkerSidebar = ({ user, active = 'tasks', className = '' }) => {
           type="button"
           className="menu-item logout-item"
           onClick={handleLogout}
-          style={{ color: '#ef4444', marginTop: '0.5rem' }} 
         >
           ออกจากระบบ
         </button>

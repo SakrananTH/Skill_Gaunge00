@@ -108,7 +108,7 @@ const Dashboard = () => {
               <div className="panel dark">
                 <div className="panel-title">All Projects</div>
                 <div className="donut" aria-hidden="true"></div>
-                <div className="donut-legend" style={{marginTop: '1rem'}}>
+                <div className="donut-legend">
                   <div className="legend-item"><span className="legend-dot dot-green"></span>Complete</div>
                   <div className="legend-item"><span className="legend-dot dot-blue"></span>In Progress</div>
                   <div className="legend-item"><span className="legend-dot dot-yellow"></span>Not Start</div>
@@ -155,7 +155,7 @@ const Dashboard = () => {
               </div>
               <div className="panel dark">
                 <div className="panel-title">Project Overview</div>
-                <div style={{height:'220px', background:'rgba(255,255,255,0.05)', border:'1px solid #2a3a59', borderRadius:10}}></div>
+                <div className="project-overview-placeholder"></div>
               </div>
             </div>
 

@@ -366,13 +366,13 @@ const AdminOverview = () => {
     <div className="admin-overview">
       {/* Loading Indicator */}
       {loading && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(255,255,255,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ fontSize: '2rem', color: '#3182ce' }}>⏳ กำลังโหลดข้อมูล...</div>
+        <div className="admin-loading-overlay">
+          <div className="admin-loading-text">⏳ กำลังโหลดข้อมูล...</div>
         </div>
       )}
       {/* Error Message */}
       {error && (
-        <div style={{ background: '#fed7d7', color: '#c53030', padding: '1rem', borderRadius: '8px', margin: '1rem 0', textAlign: 'center', fontWeight: 'bold' }}>
+        <div className="admin-error-message">
           {error}
         </div>
       )}
@@ -389,7 +389,7 @@ const AdminOverview = () => {
       {/* 1. & 2. KPI Cards พร้อม Insight */}
       <div className="admin-stats-grid">
         {stats.map((stat, index) => (
-          <div style={{ position: 'relative' }} key={index}>
+          <div className="stat-card-wrapper" key={index}>
             <StatCard 
               stat={stat}
               onClick={() => navigate('/admin', { 
@@ -405,7 +405,7 @@ const AdminOverview = () => {
             />
             {/* Tooltip */}
             {tooltip.show && tooltip.text === stat.insight && (
-              <div style={{ position: 'fixed', top: tooltip.y + 10, left: tooltip.x + 10, background: '#2d3748', color: 'white', padding: '0.5rem 1rem', borderRadius: '6px', zIndex: 9999, fontSize: '0.9rem', pointerEvents: 'none' }}>{tooltip.text}</div>
+              <div className="branch-tooltip" style={{ top: tooltip.y + 10, left: tooltip.x + 10 }}>{tooltip.text}</div>
             )}
           </div>
         ))}
@@ -415,16 +415,16 @@ const AdminOverview = () => {
         {/* Left Column: Main Stats & Analysis */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* New Section: Stacked Bar Chart for Branch Skills */}
-          <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div className="section-header" style={{ marginBottom: '1.5rem' }}>
+          <section className="overview-section branch-section">
+            <div className="section-header branch-section-header">
               <h3>จำนวนพนักงานแยกตามทักษะ</h3>
-              <span style={{ color: '#718096', fontSize: '0.9rem' }}>แบ่งตามสาขาและระดับ</span>
+              <span className="branch-section-subtitle">แบ่งตามสาขาและระดับ</span>
             </div>
             
             {branchStats.length === 0 ? (
-               <div style={{ textAlign: 'center', color: '#718096', padding: '1rem' }}>ไม่มีข้อมูล</div>
+               <div className="branch-empty-state">ไม่มีข้อมูล</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div className="branch-list">
                 {branchStats.map((branch, idx) => {
                   const maxTotal = Math.max(...branchStats.map(b => b.total));
                   const barWidthPercent = maxTotal > 0 ? (branch.total / maxTotal) * 100 : 0;
@@ -433,21 +433,16 @@ const AdminOverview = () => {
                     <div 
                       key={idx}
                       onClick={() => navigate('/admin', { state: { initialTab: 'users', filterCategory: branch.value } })}
-                      style={{ cursor: 'pointer' }}
+                      className="branch-item"
                       title={`คลิกเพื่อดูรายชื่อพนักงานสาขา ${branch.name}`}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.4rem', color: '#2d3748', fontWeight: '500' }}>
+                      <div className="branch-item-header">
                         <span>{branch.name}</span>
                         <span>{branch.total} คน</span>
                       </div>
-                      <div style={{ width: '100%', background: '#f7fafc', borderRadius: '6px', height: '12px', overflow: 'hidden', display: 'flex' }}>
-                         <div style={{ 
+                      <div className="branch-bar-container">
+                         <div className="branch-bar-animated" style={{ 
                            width: `${animateChart ? barWidthPercent : 0}%`, 
-                           height: '100%', 
-                           display: 'flex', 
-                           borderRadius: '6px', 
-                           overflow: 'hidden', 
-                           transition: 'width 1s ease-out',
                            transitionDelay: `${idx * 0.1}s`
                          }}>
                             {branch.levels.low > 0 && <div style={{ width: `${(branch.levels.low / branch.total) * 100}%`, background: PASTEL_COLORS.low.bg }} title={`ระดับ 1 (ต่ำ): ${branch.levels.low} คน`} />}
@@ -459,10 +454,10 @@ const AdminOverview = () => {
                   );
                 })}
                 
-                <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', fontSize: '0.85rem', color: '#718096', justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{width: 10, height: 10, background: PASTEL_COLORS.low.bg, borderRadius: '50%'}}></span> ระดับ 1 (ต่ำ)</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{width: 10, height: 10, background: PASTEL_COLORS.mid.bg, borderRadius: '50%'}}></span> ระดับ 2 (กลาง)</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{width: 10, height: 10, background: PASTEL_COLORS.high.bg, borderRadius: '50%'}}></span> ระดับ 3 (สูง)</div>
+                <div className="branch-legend">
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.low.bg }}></span> ระดับ 1 (ต่ำ)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.mid.bg }}></span> ระดับ 2 (กลาง)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.high.bg }}></span> ระดับ 3 (สูง)</div>
                 </div>
               </div>
             )}
