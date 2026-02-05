@@ -62,7 +62,6 @@ const AdminOverview = () => {
   const [branchStats, setBranchStats] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState('all');
   const [statusStats, setStatusStats] = useState({ probation: 0, permanent: 0, total: 0 });
-  const [branchAverageScores, setBranchAverageScores] = useState([]);
   const [notEvaluatedStats, setNotEvaluatedStats] = useState([]);
 
   // Loading states
@@ -262,13 +261,6 @@ const AdminOverview = () => {
         );
 
         // เตรียมข้อมูลกราฟคะแนนเฉลี่ย
-        const avgScores = Object.keys(branchScoreMap).map(label => ({
-            name: label,
-            avg: Math.round(branchScoreMap[label].sum / branchScoreMap[label].count),
-            count: branchScoreMap[label].count
-        })).sort((a, b) => b.avg - a.avg);
-        setBranchAverageScores(avgScores);
-
         // เตรียมข้อมูลคนรอประเมิน
         const notEval = Object.keys(notEvaluatedMap).map(label => ({
           name: label,
@@ -477,35 +469,6 @@ const AdminOverview = () => {
           </section>
 
           <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            {/* กราฟคะแนนเฉลี่ยรายสาขา (Average Score by Branch) */}
-            <div>
-              <h4 style={{ fontSize: '1rem', marginBottom: '1rem' }}>คะแนนเฉลี่ยรายสาขา</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {branchAverageScores.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: '#718096', padding: '1rem' }}>ยังไม่มีข้อมูลคะแนนสอบ</div>
-                ) : (
-                  branchAverageScores.map((item, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.9rem' }}>
-                      <div style={{ width: '140px', fontWeight: '500', color: '#2d3748', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {item.name}
-                      </div>
-                      <div style={{ flex: 1, background: '#edf2f7', borderRadius: '4px', height: '20px', overflow: 'hidden', position: 'relative' }}>
-                        <div style={{ 
-                          width: `${item.avg}%`, 
-                          height: '100%', 
-                          background: item.avg >= 80 ? '#48bb78' : item.avg >= 60 ? '#ecc94b' : '#f56565',
-                          borderRadius: '4px',
-                          transition: 'width 0.5s ease'
-                        }}></div>
-                      </div>
-                      <div style={{ width: '80px', textAlign: 'right', fontWeight: '600', color: '#2d3748' }}>
-                        {item.avg} <span style={{ fontSize: '0.75rem', color: '#718096', fontWeight: 'normal' }}>/ 100</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
             {/* รายการพนักงานรอการประเมิน (Pending Evaluation) */}
             {notEvaluatedStats.length > 0 && (
               <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #edf2f7' }}>
@@ -580,7 +543,7 @@ const AdminOverview = () => {
                     strokeDasharray={`${animateChart ? (2 * Math.PI * 70 * (statusStats.probation / (statusStats.total || 1))) : 0} ${2 * Math.PI * 70}`}
                     strokeDashoffset="0"
                     transform={`rotate(${-90 + (360 * (statusStats.permanent / (statusStats.total || 1)))} 90 90)`}
-                    style={{ transition: 'stroke-dasharray 1s ease-out, transform 1s ease-out' }}
+                    style={{ transition: 'stroke-dasharray 1s ease-out' }}
                   />
                 </svg>
                 <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
@@ -632,7 +595,7 @@ const AdminOverview = () => {
             <div className="pending-actions-list">
               {pendingActions.length === 0 ? (
                 <div className="empty-pending" style={{ color: '#38a169', textAlign: 'center', padding: '1rem' }}>
-                  ✅ ไม่มีรายการค้าง
+                  ยังไม่มีการแจ้งเตือน
                 </div>
               ) : (
                 pendingActions.map(action => (

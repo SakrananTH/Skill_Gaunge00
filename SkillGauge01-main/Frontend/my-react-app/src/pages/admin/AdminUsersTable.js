@@ -10,7 +10,8 @@ const workerErrorMessages = {
   worker_columns_unavailable: 'ไม่สามารถบันทึกข้อมูลพนักงานได้ กรุณาตรวจสอบโครงสร้างตาราง',
   duplicate_email: 'อีเมลนี้ถูกใช้งานแล้ว',
   duplicate_national_id: 'เลขบัตรประชาชนนี้ถูกใช้งานแล้ว',
-  invalid_national_id_length: 'เลขบัตรประชาชนต้องมี 13 หลัก'
+  invalid_national_id_length: 'เลขบัตรประชาชนต้องมี 13 หลัก',
+  assessment_not_passed: 'ยังไม่ผ่านการสอบทักษะ ไม่สามารถเลื่อนเป็นพนักงานประจำได้'
 };
 
 const STATUS_LABELS = {
@@ -146,19 +147,50 @@ const AdminUsersTable = () => {
   const handlePromote = async (worker) => {
     if (!worker?.id) return;
     if (worker.status === 'permanent') return;
+    const hasPassedAssessment = worker.assessmentPassed === true ||
+      (typeof worker.score === 'number' && worker.score >= 60);
+
+    if (!hasPassedAssessment) {
+      setError(workerErrorMessages.assessment_not_passed);
+      return;
+    }
     if (!window.confirm('ยืนยันเปลี่ยนสถานะเป็นพนักงานประจำ?')) {
       return;
     }
 
     try {
-      await apiRequest(`/api/admin/workers/${worker.id}/status`, {
+      const updated = await apiRequest(`/api/admin/workers/${worker.id}/status`, {
         method: 'PATCH',
         body: { status: 'permanent' }
       });
-      setWorkers(prev => prev.map(item => (item.id === worker.id ? { ...item, status: 'permanent' } : item)));
+      setWorkers(prev => prev.map(item => (item.id === worker.id ? { ...item, ...updated } : item)));
     } catch (err) {
       console.error('Failed to update worker status', err);
-      setError(err?.message || 'ไม่สามารถอัปเดตสถานะพนักงานได้');
+      const messageKey = err?.data?.message || err?.message;
+      setError(workerErrorMessages[messageKey] || err?.message || 'ไม่สามารถอัปเดตสถานะพนักงานได้');
+    }
+  };
+
+  const handleAssessmentAccessToggle = async (worker) => {
+    if (!worker?.id) return;
+    const nextEnabled = !Boolean(worker.assessmentEnabled);
+    const confirmMessage = nextEnabled
+      ? 'ยืนยันเปิดให้เข้าสอบทักษะสำหรับพนักงานคนนี้?'
+      : 'ยืนยันปิดการเข้าสอบทักษะสำหรับพนักงานคนนี้?';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const updated = await apiRequest(`/api/admin/workers/${worker.id}/assessment-access`, {
+        method: 'PATCH',
+        body: { enabled: nextEnabled }
+      });
+      setWorkers(prev => prev.map(item => (item.id === worker.id ? { ...item, ...updated } : item)));
+    } catch (err) {
+      console.error('Failed to toggle assessment access', err);
+      setError(err?.message || 'ไม่สามารถเปลี่ยนสถานะการเข้าสอบได้');
     }
   };
 
@@ -218,12 +250,6 @@ const AdminUsersTable = () => {
               <option value="permanent">ผ่านโปร (Permanent)</option>
               <option value="probation">ทดลองงาน (Probation)</option>
             </select>
-            <select value={filterSkill} onChange={(e) => setFilterSkill(e.target.value)} style={{ marginLeft: '0.5rem' }}>
-              <option value="all">ผลการประเมินทั้งหมด</option>
-              <option value="passed">ผ่านเกณฑ์ (≥ 60%)</option>
-              <option value="failed">ไม่ผ่านเกณฑ์ (&lt; 60%)</option>
-              <option value="none">ยังไม่ประเมิน</option>
-            </select>
           </div>
         </div>
 
@@ -247,7 +273,19 @@ const AdminUsersTable = () => {
                 {hasActiveFilters ? 'ไม่มีข้อมูลที่ตรงกับการค้นหา/ตัวกรอง' : 'ยังไม่มีข้อมูลพนักงานในระบบ' }
               </div>
             ) : (
-              filteredWorkers.map(worker => (
+              filteredWorkers.map(worker => {
+                const isProbation = worker.status === 'probation' || worker.status === 'active';
+                const hasPassedAssessment = worker.assessmentPassed === true ||
+                  (typeof worker.score === 'number' && worker.score >= 60);
+                const canPromote = isProbation && hasPassedAssessment;
+                const assessmentOpen = Boolean(worker.assessmentEnabled);
+                const promoteTitle = !isProbation
+                  ? 'พนักงานประจำแล้ว'
+                  : hasPassedAssessment
+                    ? 'เลื่อนเป็นพนักงานประจำ'
+                    : 'ยังไม่ผ่านการสอบทักษะ';
+
+                return (
                 <div key={worker.id} className="admin-workers-table__row">
                   <div className="col col-name" data-label="ชื่อ-นามสกุล">
                     <span className="worker-name">{worker.name}</span>
@@ -262,16 +300,6 @@ const AdminUsersTable = () => {
                     </span>
                   </div>
                   <div className="col col-actions" data-label="จัดการ">
-                    {(worker.status === 'probation' || worker.status === 'active') && (
-                      <button
-                        type="button"
-                        className="action-btn action-btn--promote"
-                        title="เปลี่ยนเป็นพนักงานประจำ"
-                        onClick={() => handlePromote(worker)}
-                      >
-                        ✓
-                      </button>
-                    )}
                     <button
                       type="button"
                       className="action-btn action-btn--view"
@@ -306,7 +334,8 @@ const AdminUsersTable = () => {
                     </button>
                   </div>
                 </div>
-              ))
+              );
+            })
             )}
           </div>
         </div>

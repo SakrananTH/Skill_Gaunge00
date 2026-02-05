@@ -8,6 +8,9 @@ const Layout = () => {
   const location = useLocation();
   const hideHeaderRoutes = [
     '/dashboard',
+    '/worker',
+    '/worker-settings',
+    '/worker/task-detail',
     '/pm',
     '/project-tasks',
     '/skill-assessment',

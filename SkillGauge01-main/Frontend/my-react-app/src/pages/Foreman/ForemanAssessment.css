@@ -1,0 +1,170 @@
+/* Layout หลักของหน้า */
+.assessment-container {
+  padding: 20px 40px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+.page-header p {
+  color: #7f8c8d;
+  margin-bottom: 24px;
+}
+
+/* การ์ดข้อมูลช่าง */
+.worker-info-card {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  margin-bottom: 30px;
+  border-left: 5px solid #3498db;
+}
+
+.form-group-row {
+    display: flex;
+    gap: 20px;
+    margin-top: 15px;
+}
+.form-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.form-control {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 16px;
+}
+
+/* การ์ดหัวข้อประเมิน (A, B, C...) */
+.criteria-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.criteria-title {
+  background: #f8f9fa;
+  padding: 15px 20px;
+  margin: 0;
+  font-size: 18px;
+  color: #2c3e50;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+}
+
+.criteria-questions {
+  padding: 10px 20px;
+}
+
+/* แถวคำถาม */
+.question-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.question-row:last-child {
+  border-bottom: none;
+}
+
+.q-text {
+  flex: 1;
+  font-size: 15px;
+  color: #444;
+  padding-right: 20px;
+}
+
+/* ปุ่มเลือกคะแนน 1-2-3-4 */
+.q-options {
+  display: flex;
+  gap: 8px;
+}
+
+.score-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: bold;
+  color: #aaa;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.score-btn:hover {
+  border-color: #3498db;
+  color: #3498db;
+}
+
+/* เมื่อถูกเลือก */
+.score-btn.selected {
+  background-color: #3498db;
+  border-color: #3498db;
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 2px 5px rgba(52, 152, 219, 0.4);
+}
+
+/* ปุ่มกดส่ง */
+.action-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 40px;
+  margin-bottom: 60px;
+}
+
+.btn-submit {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-submit:hover { background: #219150; transform: translateY(-2px); }
+
+.btn-cancel {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 12px 25px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: #7f8c8d; }
+
+/* Topbar styles (เสริมจากเดิม) */
+.avatar-circle {
+    width: 35px;
+    height: 35px;
+    background: #34495e;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 10px;
+}
+.username {
+    font-weight: 500;
+}

@@ -1,34 +1,46 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import '../Dashboard.css';
+import '../pm/WKDashboard.css';
 import { mockUser } from '../../mock/mockData';
-import { performLogout } from '../../utils/logout';
+// ถ้าคุณใช้ axios ในโปรเจกต์ อย่าลืม import (หรือจะใช้ fetch ตามเดิมก็ได้ครับ)
+// import axios from 'axios'; 
 
 const ProjectManager = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const navUser = location.state?.user;
-  // default to a PM user if none is passed
   const user = navUser || { ...mockUser, role: 'Project Manager' };
+
+  // ฟังก์ชัน Logout สำหรับ Sidebar
+  const handleLogout = () => {
+    if (window.confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
+      sessionStorage.clear();
+      navigate('/login');
+    }
+  };
 
   const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
-  // Filters & pagination
+  // --- State เดิมของ Dashboard ---
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState(''); // '', 'todo', 'in-progress', 'done'
+  const [status, setStatus] = useState('');
   const [sort, setSort] = useState('due_date_asc');
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
 
-  // Data state
-  const [items, setItems] = useState([]); // tasks overview
+  const [items, setItems] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [counts, setCounts] = useState([]); // per-project task counts
+  const [counts, setCounts] = useState([]); 
 
   const hasMore = items.length === Number(limit);
 
-  // Aggregates for stat cards
+  // --- State ใหม่สำหรับระบบ Auto Assign ---
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignments, setAssignments] = useState([]); // เก็บผลลัพธ์การจัดสรร
+  const [assignMsg, setAssignMsg] = useState('');
+
+  // --- Logic เดิม (Stats & Loading) ---
   const stats = useMemo(() => {
     const toNum = (v) => (v == null ? 0 : Number(v));
     const totalProjects = counts.length;
@@ -56,7 +68,6 @@ const ProjectManager = () => {
       const data = await res.json();
       setCounts(data);
     } catch (e) {
-      // non-blocking
       console.error(e);
     }
   };
@@ -88,23 +99,103 @@ const ProjectManager = () => {
 
   useEffect(() => {
     loadCounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     loadItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, status, sort, limit, offset]);
+
+  // --- 🔥 ฟังก์ชันใหม่: รันระบบจัดสรรงาน (Auto Assign) ---
+  const handleAutoAssign = async () => {
+    if (!window.confirm("ยืนยันการรันระบบจัดสรรงานอัตโนมัติ? (ระบบจะคำนวณจาก Skill และ Level ของช่าง)")) return;
+
+    setAssignLoading(true);
+    setAssignments([]);
+    setAssignMsg('');
+
+    try {
+      const token = sessionStorage.getItem('auth_token'); // ใช้ชื่อ token ให้ตรงกับในโปรเจกต์
+      
+      // ใช้ fetch ยิงไปที่ Route ใหม่ที่เราเพิ่งแก้
+      const res = await fetch(`${API}/api/job-assignments/run`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setAssignments(data.data); // เก็บผลลัพธ์มาโชว์
+        setAssignMsg(`✅ จัดสรรงานสำเร็จ! จับคู่ได้ทั้งหมด ${data.data.length} รายการ`);
+        // โหลดข้อมูล Dashboard ใหม่ด้วยเพื่อให้ตัวเลขไม่อัปเดต
+        loadCounts();
+        loadItems();
+      } else {
+        alert(data.error || "เกิดข้อผิดพลาดในการจัดสรรงาน");
+      }
+    } catch (err) {
+      console.error("Assignment Error:", err);
+      alert("เชื่อมต่อ Server ไม่สำเร็จ");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  // Helper สำหรับแสดง Badge สวยๆ ในตารางผลลัพธ์
+  const getMethodBadge = (method) => {
+    if (method.includes("MIP")) return <span className="pill" style={{background: '#e1f5fe', color: '#0288d1', border: '1px solid #b3e5fc'}}>🏆 MIP Optimal</span>;
+    if (method.includes("Evaluation")) return <span className="pill" style={{background: '#fff3e0', color: '#ef6c00', border: '1px solid #ffe0b2'}}>📝 รอประเมิน</span>;
+    return <span className="pill" style={{background: '#f5f5f5', color: '#616161'}}>🔧 งานทั่วไป</span>;
+  };
 
   return (
     <div className="dash-layout">
+      {/* Sidebar - ปรับให้เหมือน Worker/Foreman */}
       <aside className="dash-sidebar">
+        <div className="sidebar-title" style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
+          PM Portal
+        </div>
         <nav className="menu">
-          <button type="button" className="menu-item active" onClick={() => navigate('/pm', { state: { user } })}>Dashboard</button>
-          <button type="button" className="menu-item" onClick={() => navigate('/project-tasks', { state: { user } })}>Tasks</button>
-          <button type="button" className="menu-item">Projects</button>
-          <button type="button" className="menu-item">History</button>
-          <button type="button" className="menu-item">Settings</button>
+          <button 
+            type="button" 
+            className={`menu-item ${location.pathname === '/pm' || location.pathname === '/dashboard' ? 'active' : ''}`} 
+            onClick={() => navigate('/pm', { state: { user } })}
+          >
+            หน้าหลัก
+          </button>
+          <button 
+            type="button" 
+            className={`menu-item ${location.pathname === '/project-tasks' ? 'active' : ''}`} 
+            onClick={() => navigate('/project-tasks', { state: { user } })}
+          >
+            มอบหมายงาน
+          </button>
+          <button 
+            type="button" 
+            className={`menu-item ${location.pathname === '/projects' ? 'active' : ''}`} 
+            onClick={() => navigate('/projects', { state: { user } })}
+          >
+            โครงการทั้งหมด
+          </button>
+           <button 
+            type="button" 
+            className={`menu-item ${location.pathname === '/pm-settings' ? 'active' : ''}`} 
+            onClick={() => navigate('/pm-settings', { state: { user } })}
+          >
+            ตั้งค่า
+          </button>
+          
+          <button 
+            type="button" 
+            className="menu-item logout-btn" 
+            style={{ marginTop: '20px', color: '#ef4444', background: '#fef2f2', borderColor: '#fee2e2' }}
+            onClick={handleLogout}
+          >
+            ออกจากระบบ
+          </button>
         </nav>
       </aside>
 
@@ -113,9 +204,7 @@ const ProjectManager = () => {
           <div className="role-pill">{user?.role || 'Project Manager'}</div>
           <div className="top-actions">
             <span className="profile">
-              <button type="button" className="logout-btn" onClick={() => performLogout(navigate)}>
-                ออกจากระบบ
-              </button>
+              <span className="avatar" />
               {user?.email && (
                 <span className="phone" style={{ marginLeft: '2rem' }}>{user.email}</span>
               )}
@@ -133,6 +222,7 @@ const ProjectManager = () => {
               <div className="legend-item"><span className="legend-dot dot-yellow"></span>Todo: {counts.reduce((a,c)=>a+Number(c.tasks_todo||0),0)}</div>
             </div>
           </div>
+          
           <div className="panel dark">
             <div className="panel-title">Quick Actions</div>
             <div className="events">
@@ -146,9 +236,62 @@ const ProjectManager = () => {
                   <button className="pill" onClick={async()=>{ const token = sessionStorage.getItem('auth_token'); await fetch(`${API}/api/dashboard/project-task-counts?refresh=true`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined }); loadCounts(); }}>Refresh</button>
                 </div>
               </div>
+
+              {/* 🔥 เพิ่มปุ่ม Auto Assign ตรงนี้ */}
+              <div className="event" style={{ marginTop: '15px', borderTop: '1px solid #444', paddingTop: '15px' }}>
+                <div className="date"><div className="day" style={{color:'#2ecc71'}}>AI</div><div className="dow">Auto</div></div>
+                <div>
+                  <div className="title">Auto Job Assignment</div>
+                  <div className="sub">จัดสรรงานอัตโนมัติตาม Skill</div>
+                </div>
+                <div className="time">
+                  <button 
+                    className="pill" 
+                    style={{ background: assignLoading ? '#555' : '#27ae60', color: 'white', border: 'none' }}
+                    onClick={handleAutoAssign}
+                    disabled={assignLoading}
+                  >
+                    {assignLoading ? 'Processing...' : 'Run Auto Assign'}
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
+
+        {/* 🔥 ส่วนแสดงผลลัพธ์การจัดสรรงาน (จะโชว์เมื่อกดปุ่มและได้ผลลัพธ์มา) */}
+        {assignments.length > 0 && (
+          <div className="pm-row" style={{marginBottom: '20px'}}>
+             <div className="panel dark" style={{width: '100%'}}>
+                <div className="panel-title" style={{color: '#2ecc71'}}>
+                    ผลการจัดสรรงานล่าสุด ({assignments.length} รายการ)
+                </div>
+                <div className="sub" style={{color: '#aaa', marginBottom: '10px'}}>{assignMsg}</div>
+                
+                <div className="table">
+                  <div className="thead">
+                    <div>ช่าง (Worker)</div>
+                    <div>งานที่ได้รับ (Job)</div>
+                    <div>วิธีการเลือก (Method)</div>
+                    <div>คะแนน (Score)</div>
+                    <div>หมายเหตุ</div>
+                  </div>
+                  <div className="tbody">
+                    {assignments.map((item, idx) => (
+                      <div className="tr" key={idx}>
+                        <div className="td"><strong>{item.worker_name}</strong></div>
+                        <div className="td">{item.job_name}</div>
+                        <div className="td">{getMethodBadge(item.method)}</div>
+                        <div className="td">{item.score || '-'}</div>
+                        <div className="td" style={{fontSize: '0.85em', color: '#aaa'}}>{item.note}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+             </div>
+          </div>
+        )}
 
         <div className="pm-row">
           <div className="panel dark">

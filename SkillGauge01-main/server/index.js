@@ -562,7 +562,8 @@ function buildWorkerProfileFromRow(row, fallbackProfile) {
       getColumn(row, 'experience_years', 'experienceYears') !== undefined &&
       getColumn(row, 'experience_years', 'experienceYears') !== null
         ? String(getColumn(row, 'experience_years', 'experienceYears'))
-        : profile.employment?.experienceYears || ''
+        : profile.employment?.experienceYears || '',
+    assessmentEnabled: Boolean(profile.employment?.assessmentEnabled)
   };
 
   profile.credentials = {
@@ -578,7 +579,49 @@ function buildWorkerProfileFromRow(row, fallbackProfile) {
   return profile;
 }
 
-function mapWorkerRowToResponse(row, profilePayload) {
+function normalizeAssessmentSummary(row) {
+  if (!row) return { score: null, passed: null };
+  const scoreValue = row.score;
+  const score = scoreValue === null || scoreValue === undefined ? null : Number(scoreValue);
+  const passedValue = row.passed;
+  const passed = passedValue === null || passedValue === undefined ? null : Boolean(Number(passedValue));
+  return { score, passed };
+}
+
+async function fetchLatestAssessmentSummaries(userIds, connection) {
+  const ids = Array.isArray(userIds) ? userIds.map(id => String(id)).filter(Boolean) : [];
+  if (!ids.length) return new Map();
+  try {
+    const rows = await query(
+      `SELECT user_id, score, passed, finished_at
+       FROM assessments
+       WHERE user_id IN (?)
+       ORDER BY finished_at DESC`,
+      [ids],
+      connection
+    );
+
+    const summaryByUser = new Map();
+    for (const row of rows) {
+      const key = String(row.user_id);
+      if (!summaryByUser.has(key)) {
+        summaryByUser.set(key, normalizeAssessmentSummary(row));
+      }
+    }
+    return summaryByUser;
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') return new Map();
+    console.warn('Unable to read assessment summaries', error?.code || error?.message || error);
+    return new Map();
+  }
+}
+
+async function fetchLatestAssessmentSummary(userId, connection) {
+  const summaries = await fetchLatestAssessmentSummaries([userId], connection);
+  return summaries.get(String(userId)) || null;
+}
+
+function mapWorkerRowToResponse(row, profilePayload, assessmentSummary) {
   const profile = buildWorkerProfileFromRow(row, profilePayload);
   const tradeLabel = getTradeLabel(profile.employment.tradeType);
   const roleLabel = getRoleLabel(profile.employment.role);
@@ -601,6 +644,9 @@ function mapWorkerRowToResponse(row, profilePayload) {
     province: profile.address.province || 'ไม่ระบุ',
     email: profile.credentials.email || '',
     passwordHash: accountPasswordHash,
+    assessmentEnabled: Boolean(profile.employment?.assessmentEnabled),
+    score: assessmentSummary?.score ?? null,
+    assessmentPassed: assessmentSummary?.passed ?? null,
     fullData: profile
   };
 }
@@ -618,7 +664,8 @@ async function getWorkerResponseById(workerId, connection) {
 
   if (!row) return null;
   const profilePayload = await fetchWorkerProfile(connection, workerId);
-  return mapWorkerRowToResponse(row, profilePayload);
+  const assessmentSummary = await fetchLatestAssessmentSummary(workerId, connection);
+  return mapWorkerRowToResponse(row, profilePayload, assessmentSummary);
 }
 
 async function getAllWorkerResponses(connection) {
@@ -632,9 +679,16 @@ async function getAllWorkerResponses(connection) {
   );
 
   const responses = [];
+  const workerIds = rows
+    .map(row => getColumn(row, 'id'))
+    .filter(id => id !== undefined && id !== null);
+  const assessmentSummaries = await fetchLatestAssessmentSummaries(workerIds, connection);
+
   for (const row of rows) {
-    const profilePayload = await fetchWorkerProfile(undefined, getColumn(row, 'id'));
-    responses.push(mapWorkerRowToResponse(row, profilePayload));
+    const workerId = getColumn(row, 'id');
+    const profilePayload = await fetchWorkerProfile(undefined, workerId);
+    const assessmentSummary = assessmentSummaries.get(String(workerId)) || null;
+    responses.push(mapWorkerRowToResponse(row, profilePayload, assessmentSummary));
   }
   return responses;
 }
@@ -735,6 +789,28 @@ function authorizeRoles(...allowed) {
 function hasRole(req, ...allowed) {
   const currentRoles = Array.isArray(req.user?.roles) ? req.user.roles : [];
   return allowed.some(role => currentRoles.includes(role));
+}
+
+async function ensureForemanAssessmentSchema(connection) {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS foreman_assessments (
+      id CHAR(36) NOT NULL,
+      worker_id INT UNSIGNED NOT NULL,
+      foreman_user_id CHAR(36) NULL,
+      criteria_json LONGTEXT NOT NULL,
+      total_score INT NOT NULL,
+      max_score INT NOT NULL,
+      percent DECIMAL(5,2) NOT NULL,
+      grade VARCHAR(50) NOT NULL,
+      comment TEXT NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id),
+      KEY idx_foreman_assessments_worker (worker_id),
+      KEY idx_foreman_assessments_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    [],
+    connection
+  );
 }
 
 function canAccessUser(req, userId) {
@@ -1998,6 +2074,44 @@ app.put('/api/admin/workers/:id', async (req, res) => {
   }
 });
 
+app.patch('/api/admin/workers/:id/assessment-access', async (req, res) => {
+  try {
+    const params = workerIdParamSchema.safeParse({ id: req.params.id });
+    if (!params.success) return res.status(400).json({ message: 'invalid_id' });
+
+    await requireWorkerTables();
+
+    const rawEnabled = req.body?.enabled;
+    const enabled = typeof rawEnabled === 'boolean'
+      ? rawEnabled
+      : ['true', '1', 'yes'].includes(String(rawEnabled).toLowerCase());
+
+    const existingProfile = (await fetchWorkerProfile(undefined, params.data.id)) || {
+      personal: {},
+      identity: {},
+      address: {},
+      employment: {},
+      credentials: {}
+    };
+
+    existingProfile.employment = {
+      ...(existingProfile.employment || {}),
+      assessmentEnabled: enabled
+    };
+
+    await withTransaction(async connection => {
+      await saveWorkerProfile(connection, params.data.id, existingProfile);
+    });
+
+    const workerResponse = await getWorkerResponseById(params.data.id);
+    if (!workerResponse) return res.status(404).json({ message: 'not_found' });
+    res.json(workerResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.patch('/api/admin/workers/:id/status', async (req, res) => {
   try {
     const params = workerIdParamSchema.safeParse({ id: req.params.id });
@@ -2012,6 +2126,15 @@ app.patch('/api/admin/workers/:id/status', async (req, res) => {
     const nextStatus = String(req.body?.status || '').trim();
     if (!['probation', 'permanent'].includes(nextStatus)) {
       return res.status(400).json({ message: 'invalid_status' });
+    }
+
+    if (nextStatus === 'permanent') {
+      const assessmentSummary = await fetchLatestAssessmentSummary(params.data.id);
+      const passed = assessmentSummary?.passed === true ||
+        (typeof assessmentSummary?.score === 'number' && assessmentSummary.score >= 60);
+      if (!passed) {
+        return res.status(400).json({ message: 'assessment_not_passed' });
+      }
     }
 
     const result = await execute(
@@ -3068,9 +3191,70 @@ const createAssessmentSchema = z.object({
   })).min(1)
 });
 
+const foremanAssessmentSchema = z.object({
+  worker_id: z.coerce.number().int().positive(),
+  criteria: z.record(z.number().int().min(1).max(4)),
+  comment: z.string().max(2000).optional().nullable(),
+  total_score: z.number().int().nonnegative(),
+  max_score: z.number().int().positive(),
+  percent: z.number().min(0).max(100),
+  grade: z.string().max(50)
+});
+
+app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (req, res) => {
+  try {
+    const payload = foremanAssessmentSchema.parse(req.body ?? {});
+
+    await requireWorkerTables();
+    const workerRow = await queryOne('SELECT id FROM workers WHERE id = ? LIMIT 1', [payload.worker_id]);
+    if (!workerRow) return res.status(404).json({ message: 'not_found' });
+
+    const assessmentId = randomUUID();
+    const criteriaJson = JSON.stringify(payload.criteria ?? {});
+
+    await withTransaction(async connection => {
+      await ensureForemanAssessmentSchema(connection);
+      await execute(
+        `INSERT INTO foreman_assessments
+          (id, worker_id, foreman_user_id, criteria_json, total_score, max_score, percent, grade, comment)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          assessmentId,
+          payload.worker_id,
+          req.user?.id || null,
+          criteriaJson,
+          payload.total_score,
+          payload.max_score,
+          payload.percent,
+          payload.grade,
+          payload.comment ?? null
+        ],
+        connection
+      );
+    });
+
+    res.status(201).json({ id: assessmentId });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.post('/api/assessments', requireAuth, async (req, res) => {
   try {
     const payload = createAssessmentSchema.parse(req.body ?? {});
+
+    if (hasRole(req, 'worker')) {
+      await requireWorkerTables();
+      const isNumericWorkerId = workerProfilesWorkerIdIsNumeric && Number.isInteger(Number(req.user?.id));
+      if (isNumericWorkerId) {
+        const profile = await fetchWorkerProfile(undefined, req.user.id);
+        if (!profile?.employment?.assessmentEnabled) {
+          return res.status(403).json({ message: 'assessment_closed' });
+        }
+      }
+    }
     if (!canAccessUser(req, payload.user_id)) return res.status(403).json({ message: 'forbidden' });
 
     const result = await withTransaction(async connection => {

@@ -938,12 +938,12 @@
   color: #a0aec0;
 }
 
-/* Force two columns for subcategory cards, left-to-right order */
+/* Stack subcategory cards top-to-bottom */
 .subcategory-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.6rem;
-  width: 100%;
+  width: 50%;
   align-items: stretch;
   grid-auto-rows: min-content;
   margin-bottom: 0.85rem;
@@ -974,11 +974,11 @@
 }
 
 @media (max-width: 900px) {
-  .subcategory-grid { grid-template-columns: repeat(1, minmax(200px, 1fr)); }
+  .subcategory-grid { grid-template-columns: 1fr; width: 100%; }
 }
 
 @media (max-width: 768px) {
-  .subcategory-grid { grid-template-columns: repeat(1, 1fr); }
+  .subcategory-grid { grid-template-columns: 1fr; width: 100%; }
   .quota-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 
 /* make inputs shrink inside available column space */

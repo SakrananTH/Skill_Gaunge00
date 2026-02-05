@@ -212,6 +212,13 @@
   border-bottom: 2px solid #cbd5e1;
 }
 
+.admin-workers-table__header .col,
+.admin-workers-table__row .col {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .admin-workers-table__body {
   max-height: 600px;
   overflow-y: auto;
@@ -241,8 +248,18 @@
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
 }
 
+.col-name,
+.col-email,
+.col-password,
+.col-phone,
+.col-role,
+.col-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .col-password {
-  word-break: break-all;
   font-family: 'Inter', 'Noto Sans Thai', sans-serif;
   font-size: 0.9rem;
   letter-spacing: 0.02em;
@@ -293,6 +310,13 @@
   transition: all 0.2s ease;
 }
 
+.action-btn:disabled,
+.action-btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .action-btn--view {
   background: #dbeafe;
   color: #1e40af;
@@ -331,6 +355,30 @@
 
 .action-btn--promote:hover {
   background: #bbf7d0;
+  transform: translateY(-1px);
+}
+
+.action-btn--assessment {
+  font-weight: 700;
+}
+
+.action-btn--assessment.is-open {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.action-btn--assessment.is-open:hover {
+  background: #bbf7d0;
+  transform: translateY(-1px);
+}
+
+.action-btn--assessment.is-closed {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.action-btn--assessment.is-closed:hover {
+  background: #cbd5f5;
   transform: translateY(-1px);
 }
 

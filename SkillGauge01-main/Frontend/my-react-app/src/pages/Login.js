@@ -90,8 +90,8 @@ const Login = () => {
         navigate('/admin', { state: { user: navUser, source: 'login' } });
       } else if (chosenRole === 'project_manager') {
         navigate('/pm', { state: { user: navUser, source: 'login' } });
-      } else if (chosenRole === 'worker' && !hasProfile) {
-        navigate('/worker-profile', { state: { user: navUser, source: 'login' } });
+      } else if (chosenRole === 'worker') {
+        navigate('/worker-settings', { state: { user: navUser, source: 'login' } });
       } else {
         navigate('/dashboard', { state: { user: navUser, source: 'login' } });
       }

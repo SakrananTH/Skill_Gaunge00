@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import '../Dashboard.css';
+import './Dashboard.css';
 import { mockUser } from '../../mock/mockData';
-import { performLogout } from '../../utils/logout';
+import PMSidebar from '../../components/Sidebar/PMSidebar';
 
 const ProjectManager = () => {
-  const location = useLocation();
   const navigate = useNavigate();
-  const navUser = location.state?.user;
-  // default to a PM user if none is passed
-  const user = navUser || { ...mockUser, role: 'Project Manager' };
+  const location = useLocation();
+  const user = location.state?.user || { ...mockUser, role: 'Project Manager' };
 
   const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
@@ -98,24 +96,14 @@ const ProjectManager = () => {
 
   return (
     <div className="dash-layout">
-      <aside className="dash-sidebar">
-        <nav className="menu">
-          <button type="button" className="menu-item active" onClick={() => navigate('/pm', { state: { user } })}>Dashboard</button>
-          <button type="button" className="menu-item" onClick={() => navigate('/project-tasks', { state: { user } })}>Tasks</button>
-          <button type="button" className="menu-item">Projects</button>
-          <button type="button" className="menu-item">History</button>
-          <button type="button" className="menu-item">Settings</button>
-        </nav>
-      </aside>
+      <PMSidebar user={user} />
 
       <main className="dash-main">
         <div className="dash-topbar">
           <div className="role-pill">{user?.role || 'Project Manager'}</div>
           <div className="top-actions">
             <span className="profile">
-              <button type="button" className="logout-btn" onClick={() => performLogout(navigate)}>
-                ออกจากระบบ
-              </button>
+              <span className="avatar" />
               {user?.email && (
                 <span className="phone" style={{ marginLeft: '2rem' }}>{user.email}</span>
               )}

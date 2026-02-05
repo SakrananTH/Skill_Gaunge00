@@ -302,6 +302,8 @@ const AdminWorkerRegistration = () => {
     }
     if (viewOnlyFlag) {
       setIsViewOnly(true);
+      const reviewIndex = STEP_INDEX_BY_KEY.review ?? (STEP_FLOW.length - 1);
+      setCurrentStep(reviewIndex);
     }
   }, [editingWorker, viewOnlyFlag]);
 

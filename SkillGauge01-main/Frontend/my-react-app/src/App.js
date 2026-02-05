@@ -13,13 +13,13 @@ import AdminSignupCredentials from './pages/admin/SignupCredentials';
 import AdminWorkerRegistration from './pages/admin/AdminWorkerRegistration';
 import AdminQuestionForm from './pages/admin/AdminQuestionForm';
 import PendingActions from './pages/admin/PendingActions';
-import WKDashboard from './pages/WK/WKDashboard';
-import PMProjectManager from './pages/PM/PMProjectManager';
-import WKProjectTasks from './pages/WK/WKProject_Tasks';
-import WKSkillAssessmentTest from './pages/WK/WKSkill_Assessment_Test';
-import WKSkillAssessmentQuiz from './pages/WK/WKSkill_Assessment_Quiz';
-import WKWorkerProfile from './pages/WK/WKWorkerProfile';
-import WKSubmitWork from './pages/WK/WKSubmitWork';
+import WorkerDashboard from './pages/Worker/WorkerDashboard';
+import WorkerTaskDetail from './pages/Worker/WorkerTaskDetail';
+import WorkerSettings from './pages/Worker/WorkerSettings';
+import PMProjectManager from './pages/pm/PMProjectManager';
+import WKProjectTasks from './pages/pm/WKProject_Tasks';
+import SkillAssessmentTest from './pages/Worker/SkillAssessmentTest';
+import SkillAssessmentQuiz from './pages/Skill Assessment Quiz';
 import './App.css';
 
 function App() {
@@ -40,14 +40,17 @@ function App() {
             <Route path="admin/question/add" element={<AdminRoute><AdminQuestionForm /></AdminRoute>} />
             <Route path="admin/question/edit/:id" element={<AdminRoute><AdminQuestionForm /></AdminRoute>} />
             <Route path="admin/pending-actions" element={<AdminRoute><PendingActions /></AdminRoute>} />
-            <Route path="dashboard" element={<WKDashboard />} />
+            <Route path="dashboard" element={<WorkerDashboard />} />
+            <Route path="worker" element={<WorkerDashboard />} />
+            <Route path="worker-settings" element={<WorkerSettings />} />
+            <Route path="worker/task-detail" element={<WorkerTaskDetail />} />
             <Route path="admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="pm" element={<PMProjectManager />} />
             <Route path="project-tasks" element={<WKProjectTasks />} />
-            <Route path="skill-assessment" element={<WKSkillAssessmentTest />} />
-            <Route path="skill-assessment/quiz" element={<WKSkillAssessmentQuiz />} />
-            <Route path="submit-work" element={<WKSubmitWork />} />
-            <Route path="worker-profile" element={<WKWorkerProfile />} />
+            <Route path="skill-assessment" element={<SkillAssessmentTest />} />
+            <Route path="skill-assessment/quiz" element={<SkillAssessmentQuiz />} />
+            <Route path="submit-work" element={<WorkerTaskDetail />} />
+            <Route path="worker-profile" element={<WorkerSettings />} />
           </Route>
         </Routes>
       </div>
