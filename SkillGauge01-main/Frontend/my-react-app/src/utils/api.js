@@ -8,7 +8,7 @@ const inferLocalApiBase = () => {
   return `${protocol}//${hostname}:${apiPort}`;
 };
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || inferLocalApiBase();
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || inferLocalApiBase() || 'http://localhost:4000';
 
 function getAuthToken() {
   if (typeof window === 'undefined') return null;

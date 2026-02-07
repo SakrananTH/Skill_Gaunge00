@@ -31,24 +31,24 @@ services:
       mysql:
         condition: service_started
 
-  db:
-    image: postgres:16
-    container_name: skillgauge-db
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: skillgauge
-      POSTGRES_USER: skillgauge
-      POSTGRES_PASSWORD: skillgauge
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U skillgauge -d skillgauge"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
+  # x-db:
+  #   image: postgres:16
+  #   container_name: skillgauge-db
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_DB: skillgauge
+  #     POSTGRES_USER: skillgauge
+  #     POSTGRES_PASSWORD: skillgauge
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #     - ./db/init:/docker-entrypoint-initdb.d
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U skillgauge -d skillgauge"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+  #   restart: unless-stopped
   # Development service
   web-dev:
     build:
@@ -90,8 +90,8 @@ services:
     depends_on:
       mysql:
         condition: service_started
-      db:
-        condition: service_healthy
+      # db:
+      #   condition: service_healthy
     volumes:
       - .:/app
       - ./thailand-province-district-subdistrict-zipcode-latitude-longitude-master/thailand-province-district-subdistrict-zipcode-latitude-longitude-master:/data/thai-addresses:ro

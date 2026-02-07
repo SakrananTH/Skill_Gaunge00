@@ -2201,21 +2201,20 @@ const assessmentRoundUpsertSchema = z.object({
   category: z.string().max(120).optional().or(z.literal('')),
   description: z.string().max(2000).optional(),
   questionCount: z.coerce.number().int().min(1).max(200),
-  startAt: z.union([z.string().min(1), z.null()]).optional(),
-  endAt: z.union([z.string().min(1), z.null()]).optional(),
+  passingScore: z.coerce.number().min(0).max(100).optional(),
+  durationMinutes: z.coerce.number().int().min(1).max(600).optional(),
+  showScore: z.boolean().optional(),
+  showAnswers: z.boolean().optional(),
+  showBreakdown: z.boolean().optional(),
+  subcategoryQuotas: z.record(z.any()).optional(),
+  difficultyWeights: z.record(z.any()).optional(),
+  criteria: z.record(z.any()).optional(),
+  status: z.string().max(50).optional(),
+  active: z.boolean().optional(),
   frequencyMonths: z.union([z.coerce.number().int().min(1).max(24), z.null()]).optional()
 }).superRefine((data, ctx) => {
-  if (data.startAt && data.endAt) {
-    const start = new Date(data.startAt);
-    const end = new Date(data.endAt);
-    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'start_after_end',
-        path: ['startAt']
-      });
-    }
-  }
+  void data;
+  void ctx;
 });
 
 let assessmentSchemaPromise = null;
@@ -2460,6 +2459,17 @@ async function getAssessmentSettings(connection) {
   return mapAssessmentSettingsRow(created);
 }
 
+function parseJsonField(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('Failed to parse JSON field', error);
+    return fallback;
+  }
+}
+
 function mapAssessmentRoundRow(row) {
   if (!row) return null;
   return {
@@ -2468,8 +2478,23 @@ function mapAssessmentRoundRow(row) {
     category: row.category ?? null,
     description: row.description ?? null,
     questionCount: row.question_count ? Number(row.question_count) : 0,
-    startAt: row.start_at instanceof Date ? row.start_at.toISOString() : null,
-    endAt: row.end_at instanceof Date ? row.end_at.toISOString() : null,
+    passingScore: row.passing_score !== null && row.passing_score !== undefined
+      ? Number(row.passing_score)
+      : 0,
+    durationMinutes: row.duration_minutes !== null && row.duration_minutes !== undefined
+      ? Number(row.duration_minutes)
+      : 0,
+    showScore: row.show_score !== undefined ? Boolean(row.show_score) : false,
+    showAnswers: row.show_answers !== undefined ? Boolean(row.show_answers) : false,
+    showBreakdown: row.show_breakdown !== undefined ? Boolean(row.show_breakdown) : false,
+    subcategoryQuotas: parseJsonField(row.subcategory_quotas, null),
+    difficultyWeights: parseJsonField(row.difficulty_weights, null),
+    criteria: parseJsonField(row.criteria, null),
+    status: row.status ?? null,
+    active: row.active !== undefined ? Boolean(row.active) : false,
+    history: parseJsonField(row.history, null),
+    createdBy: row.created_by ?? null,
+    updatedBy: row.updated_by ?? null,
     frequencyMonths: row.frequency_months !== null && row.frequency_months !== undefined
       ? Number(row.frequency_months)
       : null,
@@ -2484,17 +2509,113 @@ function sanitizeAssessmentRoundPayload(payload) {
     category: toNullableString(payload.category),
     description: toNullableString(payload.description),
     questionCount: Number(payload.questionCount) || 0,
-    startAt: parseDateTimeInput(payload.startAt),
-    endAt: parseDateTimeInput(payload.endAt),
+    passingScore: payload.passingScore === null || payload.passingScore === undefined
+      ? 60
+      : Number(payload.passingScore),
+    durationMinutes: payload.durationMinutes === null || payload.durationMinutes === undefined
+      ? 60
+      : Number(payload.durationMinutes),
+    showScore: payload.showScore !== false,
+    showAnswers: payload.showAnswers === true,
+    showBreakdown: payload.showBreakdown !== false,
+    subcategoryQuotas: payload.subcategoryQuotas ?? {},
+    difficultyWeights: payload.difficultyWeights ?? { easy: 0, medium: 0, hard: 0 },
+    criteria: payload.criteria ?? { level1: 60, level2: 70, level3: 80 },
+    status: toNullableString(payload.status) || 'draft',
+    active: payload.active === undefined ? true : Boolean(payload.active),
     frequencyMonths: payload.frequencyMonths === null || payload.frequencyMonths === undefined
       ? null
       : Number(payload.frequencyMonths)
   };
 }
 
+const ASSESSMENT_ROUND_HISTORY_FIELDS = [
+  { key: 'title', label: 'ชื่อกิจกรรม' },
+  { key: 'category', label: 'ประเภทช่าง' },
+  { key: 'description', label: 'รายละเอียด' },
+  { key: 'questionCount', label: 'จำนวนข้อ' },
+  { key: 'passingScore', label: 'คะแนนผ่าน' },
+  { key: 'durationMinutes', label: 'เวลาทำข้อสอบ' },
+  { key: 'showScore', label: 'แสดงคะแนน' },
+  { key: 'showAnswers', label: 'แสดงเฉลย' },
+  { key: 'showBreakdown', label: 'แยกผลตามหมวด' },
+  { key: 'subcategoryQuotas', label: 'สัดส่วนหมวดหมู่ย่อย' },
+  { key: 'difficultyWeights', label: 'น้ำหนักความยาก' },
+  { key: 'criteria', label: 'เกณฑ์คะแนน' },
+  { key: 'status', label: 'สถานะ' },
+  { key: 'active', label: 'เปิดใช้งาน' },
+  { key: 'frequencyMonths', label: 'รอบการสอบ (เดือน)' }
+];
+
+function buildAssessmentRoundComparable(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return value;
+}
+
+function buildAssessmentRoundHistoryChanges(previous, next) {
+  const changes = [];
+  ASSESSMENT_ROUND_HISTORY_FIELDS.forEach(field => {
+    const prevVal = previous ? previous[field.key] : null;
+    const nextVal = next ? next[field.key] : null;
+    if (buildAssessmentRoundComparable(prevVal) !== buildAssessmentRoundComparable(nextVal)) {
+      changes.push({ field: field.label, from: prevVal ?? null, to: nextVal ?? null });
+    }
+  });
+  return changes;
+}
+
+function buildAssessmentRoundHistoryEntry(action, userId, changes) {
+  return {
+    action,
+    user: userId || 'system',
+    timestamp: new Date().toISOString(),
+    changes: Array.isArray(changes) ? changes : []
+  };
+}
+
+function appendAssessmentRoundHistory(currentHistory, entry, limit = 50) {
+  const base = Array.isArray(currentHistory) ? [...currentHistory] : [];
+  base.push(entry);
+  if (base.length > limit) {
+    return base.slice(base.length - limit);
+  }
+  return base;
+}
+
+function buildAssessmentRoundSnapshot(payload) {
+  return {
+    title: payload.title,
+    category: payload.category,
+    description: payload.description,
+    questionCount: payload.questionCount,
+    passingScore: payload.passingScore,
+    durationMinutes: payload.durationMinutes,
+    showScore: payload.showScore,
+    showAnswers: payload.showAnswers,
+    showBreakdown: payload.showBreakdown,
+    subcategoryQuotas: payload.subcategoryQuotas,
+    difficultyWeights: payload.difficultyWeights,
+    criteria: payload.criteria,
+    status: payload.status,
+    active: payload.active,
+    frequencyMonths: payload.frequencyMonths
+  };
+}
+
 async function fetchAssessmentRoundById(roundId, connection) {
   const row = await queryOne(
-    `SELECT id, title, category, description, question_count, start_at, end_at, frequency_months, created_at, updated_at
+    `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+            show_score, show_answers, show_breakdown,
+            subcategory_quotas, difficulty_weights, criteria,
+            status, active, history,
+          frequency_months, created_by, updated_by, created_at, updated_at
      FROM assessment_rounds
      WHERE id = ?
      LIMIT 1`,
@@ -2506,9 +2627,13 @@ async function fetchAssessmentRoundById(roundId, connection) {
 
 async function fetchAssessmentRounds(connection) {
   const rows = await query(
-    `SELECT id, title, category, description, question_count, start_at, end_at, frequency_months, created_at, updated_at
-     FROM assessment_rounds
-     ORDER BY start_at IS NULL ASC, start_at ASC, created_at DESC`,
+        `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+          show_score, show_answers, show_breakdown,
+          subcategory_quotas, difficulty_weights, criteria,
+          status, active, history,
+          frequency_months, created_by, updated_by, created_at, updated_at
+         FROM assessment_rounds
+         ORDER BY updated_at DESC, created_at DESC`,
     [],
     connection
   );
@@ -2625,29 +2750,42 @@ app.post('/api/admin/assessments/rounds', requireAuth, authorizeRoles('admin'), 
     if (!sanitized.title) {
       return res.status(400).json({ message: 'invalid_title' });
     }
-    if (payload.startAt && !sanitized.startAt) {
-      return res.status(400).json({ message: 'invalid_start_at' });
-    }
-    if (payload.endAt && !sanitized.endAt) {
-      return res.status(400).json({ message: 'invalid_end_at' });
-    }
-    if (sanitized.startAt && sanitized.endAt && sanitized.endAt <= sanitized.startAt) {
-      return res.status(400).json({ message: 'end_before_start' });
-    }
 
     const roundId = randomUUID();
+    const snapshot = buildAssessmentRoundSnapshot(sanitized);
+    const historyEntry = buildAssessmentRoundHistoryEntry(
+      'สร้างกิจกรรมข้อสอบ',
+      req.user?.id || null,
+      buildAssessmentRoundHistoryChanges(null, snapshot)
+    );
+    const history = appendAssessmentRoundHistory([], historyEntry);
     await execute(
-      `INSERT INTO assessment_rounds (id, title, category, description, question_count, start_at, end_at, frequency_months)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO assessment_rounds (
+         id, title, category, description, question_count, passing_score, duration_minutes,
+         show_score, show_answers, show_breakdown,
+         subcategory_quotas, difficulty_weights, criteria,
+         status, active, frequency_months, history, created_by, updated_by
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       , [
         roundId,
         sanitized.title,
         sanitized.category,
         sanitized.description,
         sanitized.questionCount,
-        sanitized.startAt,
-        sanitized.endAt,
-        sanitized.frequencyMonths
+        sanitized.passingScore,
+        sanitized.durationMinutes,
+        sanitized.showScore ? 1 : 0,
+        sanitized.showAnswers ? 1 : 0,
+        sanitized.showBreakdown ? 1 : 0,
+        JSON.stringify(sanitized.subcategoryQuotas),
+        JSON.stringify(sanitized.difficultyWeights),
+        JSON.stringify(sanitized.criteria),
+        sanitized.status,
+        sanitized.active ? 1 : 0,
+        sanitized.frequencyMonths,
+        JSON.stringify(history),
+        req.user?.id || null,
+        req.user?.id || null
       ]
     );
 
@@ -2670,8 +2808,8 @@ app.put('/api/admin/assessments/rounds/:id', requireAuth, authorizeRoles('admin'
       return res.status(400).json({ message: 'invalid_id' });
     }
 
-    const exists = await queryOne('SELECT id FROM assessment_rounds WHERE id = ? LIMIT 1', [roundId]);
-    if (!exists) {
+    const existing = await fetchAssessmentRoundById(roundId);
+    if (!existing) {
       return res.status(404).json({ message: 'not_found' });
     }
 
@@ -2681,28 +2819,43 @@ app.put('/api/admin/assessments/rounds/:id', requireAuth, authorizeRoles('admin'
     if (!sanitized.title) {
       return res.status(400).json({ message: 'invalid_title' });
     }
-    if (payload.startAt && !sanitized.startAt) {
-      return res.status(400).json({ message: 'invalid_start_at' });
-    }
-    if (payload.endAt && !sanitized.endAt) {
-      return res.status(400).json({ message: 'invalid_end_at' });
-    }
-    if (sanitized.startAt && sanitized.endAt && sanitized.endAt <= sanitized.startAt) {
-      return res.status(400).json({ message: 'end_before_start' });
-    }
+
+    const snapshot = buildAssessmentRoundSnapshot(sanitized);
+    const changes = buildAssessmentRoundHistoryChanges(existing, snapshot);
+    const historyEntry = buildAssessmentRoundHistoryEntry(
+      changes.length ? 'แก้ไขโครงสร้างข้อสอบ' : 'บันทึกโครงสร้างข้อสอบ',
+      req.user?.id || null,
+      changes
+    );
+    const nextHistory = appendAssessmentRoundHistory(existing.history, historyEntry);
 
     await execute(
       `UPDATE assessment_rounds
-       SET title = ?, category = ?, description = ?, question_count = ?, start_at = ?, end_at = ?, frequency_months = ?, updated_at = NOW(6)
+       SET title = ?, category = ?, description = ?, question_count = ?, passing_score = ?, duration_minutes = ?,
+           show_score = ?, show_answers = ?, show_breakdown = ?,
+           subcategory_quotas = ?, difficulty_weights = ?, criteria = ?,
+           status = ?, active = ?, frequency_months = ?, history = ?,
+           created_by = COALESCE(created_by, ?), updated_by = ?, updated_at = NOW(6)
        WHERE id = ?`,
       [
         sanitized.title,
         sanitized.category,
         sanitized.description,
         sanitized.questionCount,
-        sanitized.startAt,
-        sanitized.endAt,
+        sanitized.passingScore,
+        sanitized.durationMinutes,
+        sanitized.showScore ? 1 : 0,
+        sanitized.showAnswers ? 1 : 0,
+        sanitized.showBreakdown ? 1 : 0,
+        JSON.stringify(sanitized.subcategoryQuotas),
+        JSON.stringify(sanitized.difficultyWeights),
+        JSON.stringify(sanitized.criteria),
+        sanitized.status,
+        sanitized.active ? 1 : 0,
         sanitized.frequencyMonths,
+        JSON.stringify(nextHistory),
+        req.user?.id || null,
+        req.user?.id || null,
         roundId
       ]
     );
@@ -3603,6 +3756,245 @@ app.get('/api/admin/dashboard/skill-distribution', requireAuth, authorizeRoles('
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Worker Profile & Tasks (Real Data)
+// ---------------------------------------------------------------------------
+const workerStatusByUserId = new Map();
+
+function parseWorkerId(value) {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+app.get('/api/worker/profile', async (req, res) => {
+  try {
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+    const workerId = parseWorkerId(req.query.workerId);
+    const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
+
+    if (workerId) {
+      const rows = await query(
+        `SELECT w.id, w.full_name, w.phone, w.role_code, w.province, w.district, w.subdistrict, w.postal_code,
+                w.current_address, a.email
+           FROM workers w
+           LEFT JOIN worker_accounts a ON a.worker_id = w.id
+          WHERE w.id = ?
+          LIMIT 1`,
+        [workerId]
+      );
+      if (!rows?.length) return res.status(404).json({ message: 'Worker not found' });
+      const row = rows[0];
+      return res.json({
+        id: row.id,
+        name: row.full_name,
+        email: row.email,
+        phone: row.phone,
+        role: row.role_code || 'worker'
+      });
+    }
+
+    if (userId) {
+      const rows = await query(
+        `SELECT id, full_name, phone, email, status
+           FROM users
+          WHERE id = ?
+          LIMIT 1`,
+        [userId]
+      );
+      if (!rows?.length) return res.status(404).json({ message: 'User not found' });
+      const row = rows[0];
+      return res.json({
+        id: row.id,
+        name: row.full_name,
+        email: row.email,
+        phone: row.phone,
+        role: 'worker'
+      });
+    }
+
+    if (email) {
+      const rows = await query(
+        `SELECT w.id, w.full_name, w.phone, w.role_code, a.email
+           FROM worker_accounts a
+           INNER JOIN workers w ON w.id = a.worker_id
+          WHERE LOWER(a.email) = LOWER(?)
+          LIMIT 1`,
+        [email]
+      );
+      if (!rows?.length) return res.status(404).json({ message: 'Worker not found' });
+      const row = rows[0];
+      return res.json({
+        id: row.id,
+        name: row.full_name,
+        email: row.email,
+        phone: row.phone,
+        role: row.role_code || 'worker'
+      });
+    }
+
+    return res.status(400).json({ message: 'userId, workerId, or email is required' });
+  } catch (error) {
+    console.error('GET /api/worker/profile error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/status', async (req, res) => {
+  try {
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+    const workerId = parseWorkerId(req.query.workerId);
+
+    if (workerId) {
+      const rows = await query(
+        `SELECT payload FROM worker_profiles WHERE worker_id = ? LIMIT 1`,
+        [workerId]
+      );
+      if (!rows?.length) return res.json({ status: 'idle' });
+      const payload = rows[0]?.payload;
+      const parsed = payload ? JSON.parse(payload) : {};
+      return res.json({ status: parsed.availability || 'idle' });
+    }
+
+    if (userId) {
+      return res.json({ status: workerStatusByUserId.get(userId) || 'idle' });
+    }
+
+    return res.status(400).json({ message: 'userId or workerId is required' });
+  } catch (error) {
+    console.error('GET /api/worker/status error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/worker/status', async (req, res) => {
+  try {
+    const { userId, workerId, status } = req.body || {};
+    const normalizedStatus = status === 'online' ? 'online' : 'idle';
+    const numericWorkerId = parseWorkerId(workerId);
+
+    if (numericWorkerId) {
+      const payload = JSON.stringify({ availability: normalizedStatus, updatedAt: new Date().toISOString() });
+      await query(
+        `INSERT INTO worker_profiles (worker_id, payload)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE payload = VALUES(payload)`,
+        [numericWorkerId, payload]
+      );
+      return res.json({ status: normalizedStatus });
+    }
+
+    if (userId) {
+      workerStatusByUserId.set(userId, normalizedStatus);
+      return res.json({ status: normalizedStatus });
+    }
+
+    return res.status(400).json({ message: 'userId or workerId is required' });
+  } catch (error) {
+    console.error('PUT /api/worker/status error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/tasks', async (req, res) => {
+  try {
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+    if (!userId) return res.json([]);
+
+    const rows = await query(
+      `SELECT t.id, t.title, t.status, t.due_date,
+              p.name AS project_name, s.name AS site_name
+         FROM tasks t
+         LEFT JOIN projects p ON p.id = t.project_id
+         LEFT JOIN sites s ON s.id = t.site_id
+        WHERE t.assignee_user_id = ?
+        ORDER BY t.created_at DESC
+        LIMIT 50`,
+      [userId]
+    );
+
+    const result = rows.map(row => ({
+      id: row.id,
+      project: row.project_name || row.title,
+      location: row.site_name || '-',
+      foreman: null,
+      date: row.due_date ? new Date(row.due_date).toLocaleDateString('th-TH') : '-',
+      status: row.status
+    }));
+
+    return res.json(result);
+  } catch (error) {
+    console.error('GET /api/worker/tasks error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/worker/tasks/:id/accept', async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const result = await execute(
+      `UPDATE tasks SET status = 'in-progress', updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?`,
+      [taskId]
+    );
+    if (!result?.affectedRows) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    return res.json({ id: taskId, status: 'in-progress' });
+  } catch (error) {
+    console.error('POST /api/worker/tasks/:id/accept error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/worker/tasks/:id/submit', async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const result = await execute(
+      `UPDATE tasks SET status = 'submitted', updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?`,
+      [taskId]
+    );
+    if (!result?.affectedRows) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    return res.json({ id: taskId, status: 'submitted' });
+  } catch (error) {
+    console.error('POST /api/worker/tasks/:id/submit error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/history', async (req, res) => {
+  try {
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+    if (!userId) return res.json([]);
+
+    const rows = await query(
+      `SELECT t.id, t.title, t.status, t.due_date,
+              p.name AS project_name, s.name AS site_name
+         FROM tasks t
+         LEFT JOIN projects p ON p.id = t.project_id
+         LEFT JOIN sites s ON s.id = t.site_id
+        WHERE t.assignee_user_id = ?
+          AND t.status IN ('done', 'submitted')
+        ORDER BY t.updated_at DESC
+        LIMIT 100`,
+      [userId]
+    );
+
+    const result = rows.map(row => ({
+      id: row.id,
+      project: row.project_name || row.title,
+      location: row.site_name || '-',
+      date: row.due_date ? new Date(row.due_date).toLocaleDateString('th-TH') : '-',
+      status: row.status
+    }));
+
+    return res.json(result);
+  } catch (error) {
+    console.error('GET /api/worker/history error:', error);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 

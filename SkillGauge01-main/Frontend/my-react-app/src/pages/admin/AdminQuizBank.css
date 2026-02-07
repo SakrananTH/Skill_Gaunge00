@@ -97,10 +97,11 @@
 
 /* Inner grid used for date pickers and similar pairs */
 .form-grid--inner {
-  display: flex;             /* เปลี่ยนเป็น flex */
-  flex-direction: column;    /* ให้เรียงจากบนลงล่าง */
-  gap: 1.5rem;               /* เพิ่มระยะห่างระหว่างหัวข้อ */
-  width: 100%;               /* ให้กว้างเต็มจอ */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+  align-items: start;
 }
 
 
@@ -192,6 +193,58 @@
   gap: 0.4rem;
   margin: 0;
   width: 100%;
+}
+
+.level-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  background: #f8fafc;
+}
+
+.level-selector__label {
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 0.95rem;
+}
+
+.level-selector__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.level-option {
+  border-radius: 999px;
+  border: 1px solid #cbd5e0;
+  background: #ffffff;
+  color: #2d3748;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.level-option.is-active {
+  background: #4d6de2;
+  color: #ffffff;
+  border-color: #4d6de2;
+}
+
+.level-selector__hint {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.level-selector__note {
+  font-size: 0.8rem;
+  color: #4d6de2;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
 }
 
 /* Make sure flex/grid children are allowed to shrink instead of forcing overflow */

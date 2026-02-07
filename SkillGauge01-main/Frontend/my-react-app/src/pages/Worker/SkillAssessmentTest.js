@@ -8,14 +8,31 @@ const SkillAssessmentTest = () => {
   // State หลัก
   const [step, setStep] = useState('intro'); 
   const [questions, setQuestions] = useState([]); 
+  const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const storedUserStr = sessionStorage.getItem('user');
+    const storedUser = storedUserStr ? JSON.parse(storedUserStr) : null;
+    if (storedUser) {
+      setUser(prev => ({ ...prev, ...storedUser }));
+    }
+  }, []);
+
   
   // Config เริ่มต้น
   const [examConfig, setExamConfig] = useState({ 
       duration_minutes: 60, 
       total_questions: 60,
-      cat_rebar_percent: 25, cat_concrete_percent: 25, cat_formwork_percent: 20,
-      cat_element_percent: 20, cat_theory_percent: 10,
-      level_1_percent: 40, level_2_percent: 40, level_3_percent: 20
+      cat_rebar_percent: 25, cat_concrete_percent: 25, cat_formwork_percent: 20, cat_element_percent: 20, cat_theory_percent: 10
   }); 
 
   const [loading, setLoading] = useState(false);
@@ -31,31 +48,30 @@ const SkillAssessmentTest = () => {
   const timerRef = useRef(null); 
   const questionsPerPage = 15; 
 
-  // --- Logic การดึงข้อมูล (เหมือนเดิม) ---
+  // --- Logic การดึงข้อมูล ---
   useEffect(() => {
     const fetchExamData = async () => {
         setLoading(true);
+        const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
         try {
-          const API = 'http://localhost:4000'; 
-          const token = localStorage.getItem('token');
-          const res = await fetch(`${API}/api/skillAssessment/test`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          // Explicitly fetch LV1 (set_no=1)
+          const res = await fetch(`${apiBase}/api/questions/structural?set_no=1`);
           if (!res.ok) throw new Error('Failed to fetch exam data');
           const data = await res.json();
-          if (data) {
-            if (data.questions) {
-                const transformedQuestions = data.questions.map(q => ({
-                    id: q.id,
-                    text: q.question_text,
-                    choices: [q.choice_a, q.choice_b, q.choice_c, q.choice_d]
-                }));
-                setQuestions(transformedQuestions);
-            }
-            if (data.exam_config) {
-                setExamConfig(data.exam_config);
-                setTimeLeft(data.exam_config.duration_minutes * 60);
-            }
+          // Backend returns { questions: [...] } wrapped in object with pagination
+          const qList = data.questions || data; 
+          
+          if (Array.isArray(qList)) {
+            const transformedQuestions = qList.map(q => ({
+                id: q.id,
+                text: q.text || q.question, // Backend uses 'text', Frontend mock used 'question'
+                choices: q.choices || q.options || [] // Backend uses 'choices'
+            }));
+            setQuestions(transformedQuestions);
+            
+            // Set simple mock config based on question count
+            setExamConfig(prev => ({ ...prev, total_questions: transformedQuestions.length }));
+            setTimeLeft(60 * 60); // 60 minutes
           }
         } catch (err) {
           console.error("Error fetching data:", err);
@@ -148,12 +164,6 @@ const SkillAssessmentTest = () => {
     window.scrollTo(0, 0);
   };
 
-  const handleTimeoutSubmit = async () => {
-    showWarning("หมดเวลาสอบ! ระบบจะส่งคำตอบของคุณโดยอัตโนมัติ");
-    await submitToBackend();
-  };
-
-  // --- Logic การกดปุ่มส่ง (เปลี่ยนจาก window.confirm เป็น showConfirmModal) ---
   const handlePreSubmit = () => {
     const unansweredCount = questions.length - Object.keys(answers).length;
     if (unansweredCount > 0) {
@@ -163,120 +173,173 @@ const SkillAssessmentTest = () => {
     setShowConfirmModal(true); // เปิด Modal ยืนยัน
   };
 
-  // ฟังก์ชันยิง API (ใช้ร่วมกัน)
-  const submitToBackend = async () => {
-    setShowConfirmModal(false); // ปิด Modal (ถ้าเปิดอยู่)
-    try {
-        const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
-        const user = userStr ? JSON.parse(userStr) : {};
-        const token = localStorage.getItem('token');
-        const choiceMap = ['A', 'B', 'C', 'D'];
-        const formattedAnswers = {};
-        Object.keys(answers).forEach(qId => {
-            formattedAnswers[qId] = choiceMap[answers[qId]];
-        });
+  const handleTimeoutSubmit = async () => {
+    showWarning("หมดเวลาสอบ! ระบบจะส่งคำตอบของคุณโดยอัตโนมัติ");
+    await submitToBackend();
+  };
 
-        const API = 'http://localhost:4000';
-        const res = await fetch(`${API}/api/skillAssessment/submit`, {
+  // ฟังก์ชันยิง API
+  const submitToBackend = async () => {
+    setShowConfirmModal(false); 
+    try {
+        const userStr = sessionStorage.getItem('user'); // Use session
+        const user = userStr ? JSON.parse(userStr) : { id: 1 };
+        
+        let score = 0;
+        // Simple client-side scoring for the demo since API is mock
+         // In real world, server calculates score.
+         // But here we just send what we have.
+        
+        const res = await fetch(`http://localhost:4000/api/worker/score`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              user_id: user.id,
-              answers: formattedAnswers
+              userId: user.id || 1,
+              score: 0, // Mock, normally server checks
+              answers: answers
             })
         });
+        
         if (!res.ok) throw new Error('submit failed');
         setStep('review'); 
         window.scrollTo(0, 0);
     } catch (err) {
         console.error("Error submitting:", err);
-        setStep('review');
+        setStep('review'); // Just go to review on error for UX
+    }
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
+      sessionStorage.clear();
+      navigate('/login');
     }
   };
 
   // --- Styles สำหรับ Modal ---
   const modalOverlayStyle = {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
     display: 'flex', justifyContent: 'center', alignItems: 'center'
   };
   const modalContentStyle = {
-    background: 'white', padding: '30px', borderRadius: '8px', 
-    width: '90%', maxWidth: '400px', textAlign: 'center', 
-    boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+    background: 'white', padding: '30px', borderRadius: '16px', 
+    width: '90%', maxWidth: '450px', textAlign: 'center', 
+    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'
   };
   const btnStyle = {
-    padding: '10px 20px', borderRadius: '4px', border: 'none', 
-    cursor: 'pointer', fontSize: '16px', margin: '0 10px'
+    padding: '10px 24px', borderRadius: '10px', border: 'none', 
+    cursor: 'pointer', fontSize: '15px', margin: '0 8px', fontWeight: '600', transition: 'transform 0.1s'
   };
 
   // --- Step 1: Intro ---
   if (step === 'intro') {
     return (
-      <div style={{ minHeight: '100vh', background: '#f4f6f9', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
-        <div style={{ background: 'white', maxWidth: '800px', width: '100%', padding: '40px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', borderTop: '5px solid #2c3e50' }}>
+      <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
+        
+        {/* Top Navigation Bar */}
+        <nav style={{ 
+            background: isScrolled ? 'rgba(255, 255, 255, 0.95)' : 'white', 
+            padding: '15px 40px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            boxShadow: isScrolled ? '0 4px 20px -5px rgba(0,0,0,0.1)' : '0 4px 6px -1px rgba(0,0,0,0.05)',
+            backdropFilter: isScrolled ? 'blur(10px)' : 'none',
+            transition: 'all 0.3s ease',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+               <div style={{ 
+                  width: '36px', height: '36px', 
+                  background: '#fef3c7', borderRadius: '8px', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#d97706', fontSize: '20px'
+               }}>
+                  
+               </div>
+               <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{user.technician_type || 'ช่างทั่วไป'}</h2>
+          </div>
           
-          <h2 style={{ color: '#2c3e50', textAlign: 'center', marginBottom: '30px', borderBottom: '1px solid #eee', paddingBottom: '15px' }}>
-            ข้อตกลงและเงื่อนไขการสอบ
-          </h2>
-          
-          <div style={{ marginBottom: '25px', padding: '20px', background: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef' }}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#34495e', fontSize: '18px' }}>เงื่อนไขการสอบ</h3>
-            <ul style={{ margin: 0, paddingLeft: '20px', color: '#555', lineHeight: '1.8' }}>
-              <li>เวลาในการทำข้อสอบ: <strong>{examConfig.duration_minutes} นาที</strong></li>
-              <li>จำนวนข้อสอบ: <strong>{examConfig.total_questions} ข้อ</strong> (ทำทีละหน้า)</li>
-              <li>ต้องทำครบทุกข้อในหน้าปัจจุบันจึงจะเปลี่ยนหน้าได้</li>
-              <li>เมื่อหมดเวลา ระบบจะส่งคำตอบอัตโนมัติ (ข้อที่ทำไม่ทันจะได้ 0 คะแนน)</li>
-            </ul>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h1v7c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-7h1c.4 0 .77-.24.92-.62.15-.37.07-.8-.22-1.09l-8.99-9a.996.996 0 0 0-1.41 0l-9.01 9c-.29.29-.37.72-.22 1.09s.52.62.92.62Zm9-8.59 6 6V20H6v-9.59z"></path></svg>} label="หน้าหลัก" onClick={() => navigate('/worker')} />
+            <SidebarItem active icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h9v2H8z"></path><path d="M20 2H6C4.35 2 3 3.35 3 5v14c0 1.65 1.35 3 3 3h15v-2H6c-.55 0-1-.45-1-1s.45-1 1-1h14c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1m-6 14H6c-.35 0-.69.07-1 .18V5c0-.55.45-1 1-1h13v12z"></path></svg>} label="แบบทดสอบ" onClick={() => navigate('/skill-assessment')} />
+            <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2M9 4h6v2H9zM8 8h12v3.07l-.83.39a16.78 16.78 0 0 1-14.34 0L4 11.07V8zM4 20v-6.72c2.54 1.19 5.27 1.79 8 1.79s5.46-.6 8-1.79V20z"></path></svg>} label="ประวัติงาน" onClick={() => navigate('/worker/history')} />
+            <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg>} label="ตั้งค่า" onClick={() => navigate('/worker-settings')} />
+            
+            <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 10px' }}></div>
 
-          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '30px' }}>
-              {/* ตารางที่ 1: โครงสร้างเนื้อหา */}
-              <div style={{ flex: 1, minWidth: '300px' }}>
-                <h3 style={{ fontSize: '18px', color: '#34495e', marginBottom: '10px' }}>โครงสร้างเนื้อหา</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                    <thead>
-                        <tr style={{ background: '#f1f2f6', color: '#555' }}>
-                            <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #ddd' }}>หัวข้อการประเมิน</th>
-                            <th style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>น้ำหนัก</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>1. งานเหล็กเสริม (Rebar)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.cat_rebar_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>2. งานคอนกรีต (Concrete)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.cat_concrete_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>3. งานไม้แบบ (Formwork)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.cat_formwork_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>4. องค์อาคาร (คาน/เสา/ฐานราก)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.cat_element_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>5. การออกแบบ/ทฤษฎี</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.cat_theory_percent}%</td></tr>
-                    </tbody>
-                </table>
-              </div>
-              {/* ตารางที่ 2: โครงสร้างระดับ */}
-              <div style={{ flex: 1, minWidth: '250px' }}>
-                <h3 style={{ fontSize: '18px', color: '#34495e', marginBottom: '10px' }}>โครงสร้างระดับความยาก</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                    <thead>
-                        <tr style={{ background: '#f1f2f6', color: '#555' }}>
-                            <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #ddd' }}>ระดับ</th>
-                            <th style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>น้ำหนัก</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>ระดับ 1 (พื้นฐาน)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.level_1_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>ระดับ 2 (ปานกลาง)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.level_2_percent}%</td></tr>
-                        <tr><td style={{ padding: '8px', border: '1px solid #ddd' }}>ระดับ 3 (ยาก)</td><td style={{ padding: '8px', textAlign: 'center', border: '1px solid #ddd' }}>{examConfig.level_3_percent}%</td></tr>
-                    </tbody>
-                </table>
-              </div>
+            <button onClick={handleLogout} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px', fontWeight: '600', borderRadius: '8px', transition: 'background 0.2s' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="m20.2 4.02-10-2a.99.99 0 0 0-.83.21C9.14 2.42 9 2.7 9 3v1H4c-.55 0-1 .45-1 1v14c0 .55.45 1 1 1h5v1c0 .3.13.58.37.77.18.15.4.23.63.23.07 0 .13 0 .2-.02l10-2c.47-.09.8-.5.8-.98V5c0-.48-.34-.89-.8-.98M5 18V6h4v12zm14 .18-8 1.6V4.22l8 1.6z"></path><path d="M13 11a1 1 0 1 0 0 2 1 1 0 1 0 0-2"></path></svg>
+                ออกจากระบบ
+            </button>
           </div>
+        </nav>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => navigate('/worker')} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}>ยกเลิก</button>
-            <button onClick={() => setStep('test')} style={{ flex: 2, padding: '12px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>เริ่มทำข้อสอบ</button>
+        <main style={{ flex: 1, padding: '40px 20px', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ background: 'white', maxWidth: '900px', width: '100%', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', overflow: 'hidden', border: '1px solid #e2e8f0', margin: '0 auto' }}>
+            
+            <div style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', padding: '40px', color: 'white', textAlign: 'center' }}>
+               <h2 style={{ margin: 0, fontSize: '28px', fontWeight: '800' }}>ข้อตกลงและเงื่อนไขการสอบ</h2>
+               <p style={{ margin: '10px 0 0', opacity: 0.9, fontSize: '18px' }}>โปรดอ่านรายละเอียดก่อนเริ่มทำแบบทดสอบ</p>
+            </div>
+            
+            <div style={{ padding: '40px' }}>
+              <div style={{ marginBottom: '30px', padding: '25px', background: '#eff6ff', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                  <h3 style={{ margin: '0 0 15px 0', color: '#1e40af', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      📋 เงื่อนไขการสอบ
+                  </h3>
+                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#334155', lineHeight: '1.8' }}>
+                    <li>เวลาในการทำข้อสอบ: <strong>{examConfig.duration_minutes} นาที</strong></li>
+                    <li>จำนวนข้อสอบ: <strong>{examConfig.total_questions} ข้อ</strong> (ทำทีละหน้า)</li>
+                    <li>ต้องทำครบทุกข้อในหน้าปัจจุบันจึงจะเปลี่ยนหน้าได้</li>
+                    <li>เมื่อหมดเวลา ระบบจะส่งคำตอบอัตโนมัติ (ข้อที่ทำไม่ทันจะได้ 0 คะแนน)</li>
+                  </ul>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
+                  {/* ตารางที่ 1: โครงสร้างเนื้อหา */}
+                  <div style={{ flex: 1, maxWidth: '600px' }}>
+                    <h3 style={{ fontSize: '16px', color: '#1e293b', marginBottom: '15px', fontWeight: '700' }}>โครงสร้างเนื้อหา</h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                        <thead>
+                            <tr style={{ background: '#f8fafc', color: '#64748b' }}>
+                                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '600' }}>หัวข้อการประเมิน</th>
+                                <th style={{ padding: '12px 15px', textAlign: 'center', fontWeight: '600' }}>น้ำหนัก</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {[
+                              { icon: '🏗️', text: '1. งานเหล็กเสริม (Rebar)', val: examConfig.cat_rebar_percent },
+                              { icon: '🧱', text: '2. งานคอนกรีต (Concrete)', val: examConfig.cat_concrete_percent },
+                              { icon: '🪵', text: '3. งานไม้แบบ (Formwork)', val: examConfig.cat_formwork_percent },
+                              { icon: '🏛️', text: '4. องค์อาคาร (คาน/เสา/ฐานราก)', val: examConfig.cat_element_percent },
+                              { icon: '📐', text: '5. การออกแบบ/ทฤษฎี', val: examConfig.cat_theory_percent }
+                            ].map((item, idx) => (
+                              <tr key={idx} style={{ borderTop: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '10px 15px', color: '#334155' }}>
+                                      <span style={{ marginRight: '10px' }}>{item.icon}</span>
+                                      {item.text}
+                                  </td>
+                                  <td style={{ padding: '10px 15px', textAlign: 'center', color: '#64748b' }}>{item.val}%</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                  </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+                <button onClick={() => navigate('/worker')} style={{ padding: '12px 30px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', cursor: 'pointer', color: '#64748b', fontWeight: '600', fontSize: '16px', transition: 'background 0.2s' }}>ยกเลิก</button>
+                <button onClick={() => setStep('test')} style={{ padding: '12px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)', transition: 'transform 0.2s' }}>เริ่มทำข้อสอบ</button>
+              </div>
+            </div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -284,15 +347,57 @@ const SkillAssessmentTest = () => {
   // --- Step 3: Review ---
   if (step === 'review') {
     return (
-       <div style={{ minHeight: '100vh', background: '#f4f6f9', padding: '50px 20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
-          <div style={{ background: 'white', maxWidth: '600px', margin: '0 auto', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
-             <h2 style={{ color: '#27ae60', margin: '0 0 15px 0' }}>ส่งคำตอบเรียบร้อยแล้ว</h2>
-             <p style={{ fontSize: '18px', color: '#555', margin: '10px 0' }}>โปรดรอการประเมินถัดไป</p>
-             <p style={{ fontSize: '16px', color: '#777', marginTop: '5px' }}>จาก Foreman</p>
+       <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
+          
+          {/* Top Navigation Bar */}
+          <nav style={{ 
+              background: 'white', 
+              padding: '15px 40px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
+              position: 'sticky',
+              top: 0,
+              zIndex: 50
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                 <div style={{ 
+                    width: '36px', height: '36px', 
+                    background: '#fef3c7', borderRadius: '8px', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#d97706', fontSize: '20px'
+                 }}>
+                    <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="m21,15c0-.61-.06-1.22-.18-1.81-.12-.58-.3-1.15-.53-1.69-.22-.53-.5-1.05-.83-1.53-.32-.47-.69-.92-1.1-1.33-.41-.41-.86-.78-1.33-1.1-.33-.22-.68-.41-1.03-.59v7.05h-1V5c0-.55-.45-1-1-1h-4c-.55,0-1,.45-1,1v9h-1v-7.05c-.35.18-.7.37-1.03.59-.48.32-.92.69-1.33,1.1-.41.41-.77.85-1.1,1.33-.33.48-.6,1-.83,1.53-.23.54-.41,1.11-.53,1.69-.12.59-.18,1.2-.18,1.81v3h-1v2h20v-2h-1v-3Z"/></svg>
+                 </div>
+                 <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{user.technician_type || 'ช่างทั่วไป'}</h2>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h1v7c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-7h1c.4 0 .77-.24.92-.62.15-.37.07-.8-.22-1.09l-8.99-9a.996.996 0 0 0-1.41 0l-9.01 9c-.29.29-.37.72-.22 1.09s.52.62.92.62Zm9-8.59 6 6V20H6v-9.59z"></path></svg>} label="หน้าหลัก" onClick={() => navigate('/worker')} />
+              <SidebarItem active icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h9v2H8z"></path><path d="M20 2H6C4.35 2 3 3.35 3 5v14c0 1.65 1.35 3 3 3h15v-2H6c-.55 0-1-.45-1-1s.45-1 1-1h14c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1m-6 14H6c-.35 0-.69.07-1 .18V5c0-.55.45-1 1-1h13v12z"></path></svg>} label="แบบทดสอบ" onClick={() => navigate('/skill-assessment')} />
+              <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2M9 4h6v2H9zM8 8h12v3.07l-.83.39a16.78 16.78 0 0 1-14.34 0L4 11.07V8zM4 20v-6.72c2.54 1.19 5.27 1.79 8 1.79s5.46-.6 8-1.79V20z"></path></svg>} label="ประวัติงาน" onClick={() => navigate('/worker/history')} />
+              <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg>} label="ตั้งค่า" onClick={() => navigate('/worker-settings')} />
+              
+              <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 10px' }}></div>
+
+              <button onClick={handleLogout} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px', fontWeight: '600', borderRadius: '8px', transition: 'background 0.2s' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="m20.2 4.02-10-2a.99.99 0 0 0-.83.21C9.14 2.42 9 2.7 9 3v1H4c-.55 0-1 .45-1 1v14c0 .55.45 1 1 1h5v1c0 .3.13.58.37.77.18.15.4.23.63.23.07 0 .13 0 .2-.02l10-2c.47-.09.8-.5.8-.98V5c0-.48-.34-.89-.8-.98M5 18V6h4v12zm14 .18-8 1.6V4.22l8 1.6z"></path><path d="M13 11a1 1 0 1 0 0 2 1 1 0 1 0 0-2"></path></svg>
+                  ออกจากระบบ
+              </button>
+            </div>
+          </nav>
+
+          <main style={{ flex: 1, padding: '60px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: 'white', maxWidth: '500px', width: '100%', padding: '50px 40px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+             <div style={{ width: '80px', height: '80px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', color: '#166534', fontSize: '40px', border: '4px solid #f0fdf4' }}>✓</div>
+             <h2 style={{ color: '#1e293b', margin: '0 0 10px 0', fontSize: '24px' }}>ส่งคำตอบเรียบร้อยแล้ว</h2>
+             <p style={{ fontSize: '16px', color: '#64748b', margin: '0 0 30px 0', lineHeight: '1.6' }}>ระบบได้บันทึกคำตอบของคุณแล้ว<br/>โปรดรอผลการประเมินจากหัวหน้างาน (Foreman)</p>
              <div style={{ marginTop: '40px' }}>
-                <button onClick={() => navigate('/worker')} style={{ padding: '12px 30px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px' }}>กลับหน้าหลัก</button>
+                <button onClick={() => navigate('/worker')} style={{ padding: '12px 30px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '16px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)' }}>กลับหน้าหลัก</button>
              </div>
-          </div>
+            </div>
+          </main>
        </div>
     );
   }
@@ -305,20 +410,20 @@ const SkillAssessmentTest = () => {
   const indexOfFirstQ = indexOfLastQ - questionsPerPage;
   const currentQuestions = questions.slice(indexOfFirstQ, indexOfLastQ);
   const totalPages = Math.ceil(questions.length / questionsPerPage);
-  const timerColor = timeLeft < 300 ? '#e74c3c' : '#2c3e50';
+  const timerColor = timeLeft < 300 ? '#ef4444' : '#10b981';
 
   return (
-    <div style={{ backgroundColor: '#f0f2f5', minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'sans-serif', position: 'relative' }}>
+    <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Kanit', sans-serif", position: 'relative' }}>
        
        {/* === MODAL 1: Warning (แจ้งเตือน) === */}
        {warningModal.show && (
          <div style={modalOverlayStyle}>
            <div style={modalContentStyle}>
-             <h3 style={{ margin: '0 0 15px 0', color: '#e74c3c' }}>แจ้งเตือน</h3>
-             <p style={{ fontSize: '16px', color: '#555', marginBottom: '20px' }}>{warningModal.message}</p>
+             <h3 style={{ margin: '0 0 15px 0', color: '#ef4444', fontSize: '20px' }}>แจ้งเตือน</h3>
+             <p style={{ fontSize: '16px', color: '#475569', marginBottom: '25px', lineHeight: '1.5' }}>{warningModal.message}</p>
              <button 
                 onClick={() => setWarningModal({ show: false, message: '' })}
-                style={{ ...btnStyle, background: '#3498db', color: 'white' }}
+                style={{ ...btnStyle, background: '#3b82f6', color: 'white' }}
              >
                 ตกลง
              </button>
@@ -330,18 +435,18 @@ const SkillAssessmentTest = () => {
        {showConfirmModal && (
          <div style={modalOverlayStyle}>
            <div style={modalContentStyle}>
-             <h3 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>ยืนยันการส่งคำตอบ?</h3>
-             <p style={{ fontSize: '14px', color: '#777', marginBottom: '20px' }}>เมื่อส่งแล้วจะไม่สามารถแก้ไขได้อีก</p>
+             <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '22px' }}>ยืนยันการส่งคำตอบ?</h3>
+             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '30px' }}>เมื่อส่งแล้วจะไม่สามารถแก้ไขได้อีก</p>
              <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <button 
                     onClick={() => setShowConfirmModal(false)}
-                    style={{ ...btnStyle, background: '#95a5a6', color: 'white' }}
+                    style={{ ...btnStyle, background: '#f1f5f9', color: '#475569' }}
                 >
                     ยกเลิก
                 </button>
                 <button 
                     onClick={submitToBackend}
-                    style={{ ...btnStyle, background: '#27ae60', color: 'white' }}
+                    style={{ ...btnStyle, background: '#10b981', color: 'white', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)' }}
                 >
                     ยืนยัน
                 </button>
@@ -350,28 +455,30 @@ const SkillAssessmentTest = () => {
          </div>
        )}
 
-       <header style={{ background: '#fff', height: '60px', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'sticky', top: 0, zIndex: 100 }}>
-            <h3 style={{ margin: 0, color: '#2c3e50' }}>แบบทดสอบวัดทักษะ</h3>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: timerColor, background: '#f8f9fa', padding: '5px 15px', borderRadius: '4px', border: `1px solid ${timerColor}` }}>
-                เวลาที่เหลือ: {formatTime(timeLeft)}
+       <header style={{ background: '#fff', height: '70px', padding: '0 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 100 }}>
+            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '700' }}>📝 แบบทดสอบวัดทักษะ</h3>
+            <div style={{ fontSize: '20px', fontWeight: '800', color: timerColor, background: timeLeft < 300 ? '#fef2f2' : '#f0fdf4', padding: '8px 20px', borderRadius: '30px', border: `1px solid ${timeLeft < 300 ? '#fecaca' : '#bbf7d0'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>⏱</span> {formatTime(timeLeft)}
             </div>
-            <span style={{ fontSize: '14px', background: '#e3f2fd', color: '#1565c0', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold' }}>
+            <span style={{ fontSize: '14px', background: '#f1f5f9', color: '#475569', padding: '6px 16px', borderRadius: '20px', fontWeight: '600' }}>
                 หน้า {currentPage} / {totalPages}
             </span>
        </header>
 
-       <div style={{ maxWidth: '1100px', margin: '20px auto', width: '100%', padding: '0 20px', display: 'flex', gap: '25px', alignItems: 'flex-start' }}>
+       <div style={{ maxWidth: '1100px', margin: '30px auto', width: '100%', padding: '0 20px', display: 'flex', gap: '25px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
                 {currentQuestions.map((q, index) => {
                     const displayNum = indexOfFirstQ + index + 1;
                     return (
-                        <div key={q.id} id={`q-${q.id}`} style={{ background: 'white', padding: '25px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '15px', color: '#333', fontSize: '16px', lineHeight: '1.5' }}>{displayNum}. {q.text}</div>
+                        <div key={q.id} id={`q-${q.id}`} style={{ background: 'white', padding: '30px', borderRadius: '16px', marginBottom: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+                            <div style={{ fontWeight: '700', marginBottom: '20px', color: '#1e293b', fontSize: '18px', lineHeight: '1.6' }}>
+                                <span style={{ color: '#2563eb', marginRight: '8px' }}>{displayNum}.</span> {q.text}
+                            </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {q.choices.map((choice, cIdx) => (
-                                    <label key={cIdx} style={{ display: 'flex', alignItems: 'center', padding: '12px 15px', border: answers[q.id] === cIdx ? '1px solid #3498db' : '1px solid #eee', borderRadius: '6px', cursor: 'pointer', background: answers[q.id] === cIdx ? '#f0f9ff' : 'white', transition: 'all 0.2s' }}>
-                                        <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === cIdx} onChange={() => handleAnswer(q.id, cIdx)} style={{ marginRight: '12px', accentColor: '#3498db' }} />
-                                        <span style={{ color: answers[q.id] === cIdx ? '#2980b9' : '#555' }}>{choice}</span>
+                                    <label key={cIdx} style={{ display: 'flex', alignItems: 'center', padding: '15px 20px', border: answers[q.id] === cIdx ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', background: answers[q.id] === cIdx ? '#eff6ff' : 'white', transition: 'all 0.2s' }}>
+                                        <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === cIdx} onChange={() => handleAnswer(q.id, cIdx)} style={{ marginRight: '15px', accentColor: '#2563eb', width: '18px', height: '18px' }} />
+                                        <span style={{ color: answers[q.id] === cIdx ? '#1e40af' : '#475569', fontSize: '16px', fontWeight: answers[q.id] === cIdx ? '600' : '400' }}>{choice}</span>
                                     </label>
                                 ))}
                             </div>
@@ -379,32 +486,57 @@ const SkillAssessmentTest = () => {
                     );
                 })}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '30px', marginBottom: '60px' }}>
-                  <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo(0,0); }} style={{ padding: '12px 25px', background: currentPage === 1 ? '#eee' : 'white', color: currentPage === 1 ? '#aaa' : '#555', border: '1px solid #ccc', borderRadius: '4px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>&lt; ย้อนกลับ</button>
+                  <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo(0,0); }} style={{ padding: '12px 25px', background: currentPage === 1 ? '#f1f5f9' : 'white', color: currentPage === 1 ? '#94a3b8' : '#475569', border: '1px solid #e2e8f0', borderRadius: '10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '600' }}>&lt; ย้อนกลับ</button>
                   {currentPage < totalPages ? (
-                    <button onClick={handleNextPage} style={{ padding: '12px 30px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(52, 152, 219, 0.2)' }}>ถัดไป &gt;</button>
+                    <button onClick={handleNextPage} style={{ padding: '12px 35px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)' }}>ถัดไป &gt;</button>
                   ) : (
-                    <button onClick={handlePreSubmit} style={{ padding: '12px 30px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(39, 174, 96, 0.2)' }}>ส่งคำตอบ</button>
+                    <button onClick={handlePreSubmit} style={{ padding: '12px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.4)', fontSize: '16px' }}>ส่งคำตอบ</button>
                   )}
                 </div>
               </div>
 
-              <div style={{ width: '320px', background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', position: 'sticky', top: '80px' }}>
-                <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>รายการคำถาม</h4>
+              <div style={{ width: '320px', background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', position: 'sticky', top: '90px' }}>
+                <h4 style={{ margin: '0 0 20px 0', color: '#1e293b', fontSize: '16px', fontWeight: '700' }}>รายการคำถาม</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
                   {questions.map((q, index) => {
                     const isAnswered = answers[q.id] !== undefined;
                     const pageOfQ = Math.ceil((index + 1) / questionsPerPage);
                     const isCurrentPage = pageOfQ === currentPage;
                     return (
-                      <button key={q.id} onClick={() => jumpToQuestion(q.id)} style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', border: isCurrentPage ? '2px solid #3498db' : (isAnswered ? '1px solid #2ecc71' : '1px solid #ddd'), borderRadius: '4px', background: isAnswered ? '#eafaf1' : 'white', color: isAnswered ? '#27ae60' : '#555', fontSize: '12px', fontWeight: isCurrentPage ? 'bold' : 'normal', cursor: 'pointer' }}>{index + 1}</button>
+                      <button key={q.id} onClick={() => jumpToQuestion(q.id)} style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', border: isCurrentPage ? '2px solid #2563eb' : (isAnswered ? '1px solid #2563eb' : '1px solid #e2e8f0'), borderRadius: '8px', background: isAnswered ? '#2563eb' : 'white', color: isAnswered ? 'white' : '#64748b', fontSize: '14px', fontWeight: isCurrentPage || isAnswered ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.1s' }}>{index + 1}</button>
                     );
                   })}
                 </div>
-                <div style={{ marginTop: '15px', fontSize: '12px', textAlign: 'center', color: '#666' }}>ทำไปแล้ว {Object.keys(answers).length} / {questions.length} ข้อ</div>
+                <div style={{ marginTop: '20px', fontSize: '14px', textAlign: 'center', color: '#64748b', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
+                    ทำไปแล้ว <strong style={{ color: '#2563eb' }}>{Object.keys(answers).length}</strong> / {questions.length} ข้อ
+                </div>
             </div>
        </div>
     </div>
   );
 };
+
+// Internal Component for Sidebar Item
+const SidebarItem = ({ icon, label, active, onClick }) => (
+    <div 
+        onClick={onClick}
+        style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            padding: '8px 16px', 
+            borderRadius: '20px', 
+            cursor: 'pointer', 
+            background: active ? '#eff6ff' : 'transparent',
+            color: active ? '#2563eb' : '#64748b',
+            fontWeight: active ? '600' : '500',
+            transition: 'all 0.2s',
+            fontSize: '15px'
+        }}
+    >
+        <span style={{ fontSize: '18px' }}>{icon}</span>
+        <span>{label}</span>
+    </div>
+);
 
 export default SkillAssessmentTest;

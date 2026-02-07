@@ -1,0 +1,84 @@
+
+/* Worker Dashboard Responsive Styles */
+@media (max-width: 768px) {
+    .dash-window {
+        flex-direction: column !important;
+        height: auto !important;
+        overflow-y: auto !important;
+    }
+
+    .worker-sidebar {
+        width: 100% !important;
+        padding: 15px !important;
+        flex-direction: row !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        overflow-x: auto;
+        white-space: nowrap;
+        background: #dcecf9 !important;
+    }
+
+    .worker-sidebar > div:first-child { /* Logo/Title area */
+        display: none !important; /* Hide title on mobile to save space, or make smaller */
+    }
+
+    .worker-sidebar nav {
+        flex-direction: row !important;
+        gap: 10px !important;
+        width: 100%;
+        overflow-x: auto;
+    }
+    
+    .worker-sidebar nav > div {
+        padding: 8px 12px !important;
+        flex-shrink: 0;
+    }
+
+    .worker-sidebar button { /* Logout button */
+        display: none !important; /* Hide logout on top bar, maybe move to profile? or keep simple */
+    }
+
+    .worker-main {
+        padding: 15px !important;
+    }
+
+    .worker-header {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .worker-banner {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        padding: 25px !important;
+        min-height: auto !important;
+        background-position: center !important;
+        gap: 15px;
+    }
+    
+    .worker-banner h1 {
+        font-size: 24px !important;
+    }
+    
+    .worker-banner p {
+        font-size: 14px !important;
+    }
+
+    .worker-grid {
+        grid-template-columns: 1fr !important;
+        gap: 15px !important;
+    }
+
+    .worker-task-card {
+        flex-direction: column !important;
+        padding: 20px !important;
+        gap: 15px;
+        text-align: left;
+    }
+
+    .worker-task-card button {
+        width: 100%;
+        margin-top: 10px;
+    }
+}

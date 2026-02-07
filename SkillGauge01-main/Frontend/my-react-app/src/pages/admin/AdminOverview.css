@@ -710,6 +710,10 @@
 .branch-item {
   position: relative;
   cursor: pointer;
+  display: flex; /* Explicitly set flex */
+  flex-direction: column; /* Stack vertically! */
+  align-items: stretch; /* Full width */
+  gap: 0.25rem; /* Small gap between text and bar */
 }
 
 .branch-tooltip {
@@ -726,10 +730,12 @@
 .branch-item-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 0.9rem;
   margin-bottom: 0.4rem;
   color: #2d3748;
   font-weight: 500;
+  white-space: nowrap; /* Prevent wrapping */
 }
 
 .branch-bar-container {

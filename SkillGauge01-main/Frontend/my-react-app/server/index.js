@@ -2224,21 +2224,20 @@ const assessmentRoundUpsertSchema = z.object({
   category: z.string().max(120).optional().or(z.literal('')),
   description: z.string().max(2000).optional(),
   questionCount: z.coerce.number().int().min(1).max(200),
-  startAt: z.union([z.string().min(1), z.null()]).optional(),
-  endAt: z.union([z.string().min(1), z.null()]).optional(),
+  passingScore: z.coerce.number().min(0).max(100).optional(),
+  durationMinutes: z.coerce.number().int().min(1).max(600).optional(),
+  showScore: z.boolean().optional(),
+  showAnswers: z.boolean().optional(),
+  showBreakdown: z.boolean().optional(),
+  subcategoryQuotas: z.record(z.any()).optional(),
+  difficultyWeights: z.record(z.any()).optional(),
+  criteria: z.record(z.any()).optional(),
+  status: z.string().max(50).optional(),
+  active: z.boolean().optional(),
   frequencyMonths: z.union([z.coerce.number().int().min(1).max(24), z.null()]).optional()
 }).superRefine((data, ctx) => {
-  if (data.startAt && data.endAt) {
-    const start = new Date(data.startAt);
-    const end = new Date(data.endAt);
-    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'start_after_end',
-        path: ['startAt']
-      });
-    }
-  }
+  void data;
+  void ctx;
 });
 
 let assessmentSchemaPromise = null;
@@ -2483,6 +2482,17 @@ async function getAssessmentSettings(connection) {
   return mapAssessmentSettingsRow(created);
 }
 
+function parseJsonField(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('Failed to parse JSON field', error);
+    return fallback;
+  }
+}
+
 function mapAssessmentRoundRow(row) {
   if (!row) return null;
   return {
@@ -2491,8 +2501,23 @@ function mapAssessmentRoundRow(row) {
     category: row.category ?? null,
     description: row.description ?? null,
     questionCount: row.question_count ? Number(row.question_count) : 0,
-    startAt: row.start_at instanceof Date ? row.start_at.toISOString() : null,
-    endAt: row.end_at instanceof Date ? row.end_at.toISOString() : null,
+    passingScore: row.passing_score !== null && row.passing_score !== undefined
+      ? Number(row.passing_score)
+      : 0,
+    durationMinutes: row.duration_minutes !== null && row.duration_minutes !== undefined
+      ? Number(row.duration_minutes)
+      : 0,
+    showScore: row.show_score !== undefined ? Boolean(row.show_score) : false,
+    showAnswers: row.show_answers !== undefined ? Boolean(row.show_answers) : false,
+    showBreakdown: row.show_breakdown !== undefined ? Boolean(row.show_breakdown) : false,
+    subcategoryQuotas: parseJsonField(row.subcategory_quotas, null),
+    difficultyWeights: parseJsonField(row.difficulty_weights, null),
+    criteria: parseJsonField(row.criteria, null),
+    status: row.status ?? null,
+    active: row.active !== undefined ? Boolean(row.active) : false,
+    history: parseJsonField(row.history, null),
+    createdBy: row.created_by ?? null,
+    updatedBy: row.updated_by ?? null,
     frequencyMonths: row.frequency_months !== null && row.frequency_months !== undefined
       ? Number(row.frequency_months)
       : null,
@@ -2507,17 +2532,113 @@ function sanitizeAssessmentRoundPayload(payload) {
     category: toNullableString(payload.category),
     description: toNullableString(payload.description),
     questionCount: Number(payload.questionCount) || 0,
-    startAt: parseDateTimeInput(payload.startAt),
-    endAt: parseDateTimeInput(payload.endAt),
+    passingScore: payload.passingScore === null || payload.passingScore === undefined
+      ? 60
+      : Number(payload.passingScore),
+    durationMinutes: payload.durationMinutes === null || payload.durationMinutes === undefined
+      ? 60
+      : Number(payload.durationMinutes),
+    showScore: payload.showScore !== false,
+    showAnswers: payload.showAnswers === true,
+    showBreakdown: payload.showBreakdown !== false,
+    subcategoryQuotas: payload.subcategoryQuotas ?? {},
+    difficultyWeights: payload.difficultyWeights ?? { easy: 0, medium: 0, hard: 0 },
+    criteria: payload.criteria ?? { level1: 60, level2: 70, level3: 80 },
+    status: toNullableString(payload.status) || 'draft',
+    active: payload.active === undefined ? true : Boolean(payload.active),
     frequencyMonths: payload.frequencyMonths === null || payload.frequencyMonths === undefined
       ? null
       : Number(payload.frequencyMonths)
   };
 }
 
+const ASSESSMENT_ROUND_HISTORY_FIELDS = [
+  { key: 'title', label: 'ชื่อกิจกรรม' },
+  { key: 'category', label: 'ประเภทช่าง' },
+  { key: 'description', label: 'รายละเอียด' },
+  { key: 'questionCount', label: 'จำนวนข้อ' },
+  { key: 'passingScore', label: 'คะแนนผ่าน' },
+  { key: 'durationMinutes', label: 'เวลาทำข้อสอบ' },
+  { key: 'showScore', label: 'แสดงคะแนน' },
+  { key: 'showAnswers', label: 'แสดงเฉลย' },
+  { key: 'showBreakdown', label: 'แยกผลตามหมวด' },
+  { key: 'subcategoryQuotas', label: 'สัดส่วนหมวดหมู่ย่อย' },
+  { key: 'difficultyWeights', label: 'น้ำหนักความยาก' },
+  { key: 'criteria', label: 'เกณฑ์คะแนน' },
+  { key: 'status', label: 'สถานะ' },
+  { key: 'active', label: 'เปิดใช้งาน' },
+  { key: 'frequencyMonths', label: 'รอบการสอบ (เดือน)' }
+];
+
+function buildAssessmentRoundComparable(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return value;
+}
+
+function buildAssessmentRoundHistoryChanges(previous, next) {
+  const changes = [];
+  ASSESSMENT_ROUND_HISTORY_FIELDS.forEach(field => {
+    const prevVal = previous ? previous[field.key] : null;
+    const nextVal = next ? next[field.key] : null;
+    if (buildAssessmentRoundComparable(prevVal) !== buildAssessmentRoundComparable(nextVal)) {
+      changes.push({ field: field.label, from: prevVal ?? null, to: nextVal ?? null });
+    }
+  });
+  return changes;
+}
+
+function buildAssessmentRoundHistoryEntry(action, userId, changes) {
+  return {
+    action,
+    user: userId || 'system',
+    timestamp: new Date().toISOString(),
+    changes: Array.isArray(changes) ? changes : []
+  };
+}
+
+function appendAssessmentRoundHistory(currentHistory, entry, limit = 50) {
+  const base = Array.isArray(currentHistory) ? [...currentHistory] : [];
+  base.push(entry);
+  if (base.length > limit) {
+    return base.slice(base.length - limit);
+  }
+  return base;
+}
+
+function buildAssessmentRoundSnapshot(payload) {
+  return {
+    title: payload.title,
+    category: payload.category,
+    description: payload.description,
+    questionCount: payload.questionCount,
+    passingScore: payload.passingScore,
+    durationMinutes: payload.durationMinutes,
+    showScore: payload.showScore,
+    showAnswers: payload.showAnswers,
+    showBreakdown: payload.showBreakdown,
+    subcategoryQuotas: payload.subcategoryQuotas,
+    difficultyWeights: payload.difficultyWeights,
+    criteria: payload.criteria,
+    status: payload.status,
+    active: payload.active,
+    frequencyMonths: payload.frequencyMonths
+  };
+}
+
 async function fetchAssessmentRoundById(roundId, connection) {
   const row = await queryOne(
-    `SELECT id, title, category, description, question_count, start_at, end_at, frequency_months, created_at, updated_at
+    `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+            show_score, show_answers, show_breakdown,
+            subcategory_quotas, difficulty_weights, criteria,
+            status, active, history,
+          frequency_months, created_by, updated_by, created_at, updated_at
      FROM assessment_rounds
      WHERE id = ?
      LIMIT 1`,
@@ -2529,9 +2650,13 @@ async function fetchAssessmentRoundById(roundId, connection) {
 
 async function fetchAssessmentRounds(connection) {
   const rows = await query(
-    `SELECT id, title, category, description, question_count, start_at, end_at, frequency_months, created_at, updated_at
+    `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+            show_score, show_answers, show_breakdown,
+            subcategory_quotas, difficulty_weights, criteria,
+            status, active, history,
+          frequency_months, created_by, updated_by, created_at, updated_at
      FROM assessment_rounds
-     ORDER BY start_at IS NULL ASC, start_at ASC, created_at DESC`,
+     ORDER BY updated_at DESC, created_at DESC`,
     [],
     connection
   );
@@ -2648,29 +2773,42 @@ app.post('/api/admin/assessments/rounds', requireAuth, authorizeRoles('admin'), 
     if (!sanitized.title) {
       return res.status(400).json({ message: 'invalid_title' });
     }
-    if (payload.startAt && !sanitized.startAt) {
-      return res.status(400).json({ message: 'invalid_start_at' });
-    }
-    if (payload.endAt && !sanitized.endAt) {
-      return res.status(400).json({ message: 'invalid_end_at' });
-    }
-    if (sanitized.startAt && sanitized.endAt && sanitized.endAt <= sanitized.startAt) {
-      return res.status(400).json({ message: 'end_before_start' });
-    }
 
     const roundId = randomUUID();
+    const snapshot = buildAssessmentRoundSnapshot(sanitized);
+    const historyEntry = buildAssessmentRoundHistoryEntry(
+      'สร้างกิจกรรมข้อสอบ',
+      req.user?.id || null,
+      buildAssessmentRoundHistoryChanges(null, snapshot)
+    );
+    const history = appendAssessmentRoundHistory([], historyEntry);
     await execute(
-      `INSERT INTO assessment_rounds (id, title, category, description, question_count, start_at, end_at, frequency_months)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO assessment_rounds (
+         id, title, category, description, question_count, passing_score, duration_minutes,
+         show_score, show_answers, show_breakdown,
+         subcategory_quotas, difficulty_weights, criteria,
+         status, active, frequency_months, history, created_by, updated_by
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       , [
         roundId,
         sanitized.title,
         sanitized.category,
         sanitized.description,
         sanitized.questionCount,
-        sanitized.startAt,
-        sanitized.endAt,
-        sanitized.frequencyMonths
+        sanitized.passingScore,
+        sanitized.durationMinutes,
+        sanitized.showScore ? 1 : 0,
+        sanitized.showAnswers ? 1 : 0,
+        sanitized.showBreakdown ? 1 : 0,
+        JSON.stringify(sanitized.subcategoryQuotas),
+        JSON.stringify(sanitized.difficultyWeights),
+        JSON.stringify(sanitized.criteria),
+        sanitized.status,
+        sanitized.active ? 1 : 0,
+        sanitized.frequencyMonths,
+        JSON.stringify(history),
+        req.user?.id || null,
+        req.user?.id || null
       ]
     );
 
@@ -2693,8 +2831,8 @@ app.put('/api/admin/assessments/rounds/:id', requireAuth, authorizeRoles('admin'
       return res.status(400).json({ message: 'invalid_id' });
     }
 
-    const exists = await queryOne('SELECT id FROM assessment_rounds WHERE id = ? LIMIT 1', [roundId]);
-    if (!exists) {
+    const existing = await fetchAssessmentRoundById(roundId);
+    if (!existing) {
       return res.status(404).json({ message: 'not_found' });
     }
 
@@ -2704,28 +2842,43 @@ app.put('/api/admin/assessments/rounds/:id', requireAuth, authorizeRoles('admin'
     if (!sanitized.title) {
       return res.status(400).json({ message: 'invalid_title' });
     }
-    if (payload.startAt && !sanitized.startAt) {
-      return res.status(400).json({ message: 'invalid_start_at' });
-    }
-    if (payload.endAt && !sanitized.endAt) {
-      return res.status(400).json({ message: 'invalid_end_at' });
-    }
-    if (sanitized.startAt && sanitized.endAt && sanitized.endAt <= sanitized.startAt) {
-      return res.status(400).json({ message: 'end_before_start' });
-    }
+
+    const snapshot = buildAssessmentRoundSnapshot(sanitized);
+    const changes = buildAssessmentRoundHistoryChanges(existing, snapshot);
+    const historyEntry = buildAssessmentRoundHistoryEntry(
+      changes.length ? 'แก้ไขโครงสร้างข้อสอบ' : 'บันทึกโครงสร้างข้อสอบ',
+      req.user?.id || null,
+      changes
+    );
+    const nextHistory = appendAssessmentRoundHistory(existing.history, historyEntry);
 
     await execute(
       `UPDATE assessment_rounds
-       SET title = ?, category = ?, description = ?, question_count = ?, start_at = ?, end_at = ?, frequency_months = ?, updated_at = NOW(6)
+       SET title = ?, category = ?, description = ?, question_count = ?, passing_score = ?, duration_minutes = ?,
+           show_score = ?, show_answers = ?, show_breakdown = ?,
+           subcategory_quotas = ?, difficulty_weights = ?, criteria = ?,
+           status = ?, active = ?, frequency_months = ?, history = ?,
+           created_by = COALESCE(created_by, ?), updated_by = ?, updated_at = NOW(6)
        WHERE id = ?`,
       [
         sanitized.title,
         sanitized.category,
         sanitized.description,
         sanitized.questionCount,
-        sanitized.startAt,
-        sanitized.endAt,
+        sanitized.passingScore,
+        sanitized.durationMinutes,
+        sanitized.showScore ? 1 : 0,
+        sanitized.showAnswers ? 1 : 0,
+        sanitized.showBreakdown ? 1 : 0,
+        JSON.stringify(sanitized.subcategoryQuotas),
+        JSON.stringify(sanitized.difficultyWeights),
+        JSON.stringify(sanitized.criteria),
+        sanitized.status,
+        sanitized.active ? 1 : 0,
         sanitized.frequencyMonths,
+        JSON.stringify(nextHistory),
+        req.user?.id || null,
+        req.user?.id || null,
         roundId
       ]
     );
@@ -3599,6 +3752,71 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Worker API Endpoints (Mock Implementation for Frontend Integration)
+// ---------------------------------------------------------------------------
+
+// In-memory store for demo
+let workerTasks = [
+  {
+    id: 'T-1024',
+    project: 'โครงการหมู่บ้านจัดสรร The Zenith',
+    location: 'โซน B - งานเทคานชั้น 2',
+    foreman: 'หัวหน้าวิชัย',
+    date: '08/01/2026',
+    status: 'pending_acceptance',
+    description: '',
+    description_detail: 'งานเทคานคอนกรีตเสริมเหล็ก ชั้น 2 อาคาร A'
+  }
+];
+
+app.get('/api/worker/tasks', (req, res) => {
+  // In a real app, filtering by req.user.id
+  res.json(workerTasks);
+});
+
+app.post('/api/worker/tasks/:id/accept', (req, res) => {
+  const task = workerTasks.find(t => t.id === req.params.id);
+  if (task) {
+    task.status = 'accepted';
+    res.json(task);
+  } else {
+    res.status(404).json({ message: 'Task not found' });
+  }
+});
+
+app.post('/api/worker/tasks/:id/submit', (req, res) => {
+  const task = workerTasks.find(t => t.id === req.params.id);
+  if (task) {
+    task.status = 'submitted';
+    task.submitted_at = new Date();
+    task.submission_data = req.body; // { description, photo }
+    res.json(task);
+  } else {
+    res.status(404).json({ message: 'Task not found' });
+  }
+});
+
+app.get('/api/worker/assessment/questions', (req, res) => {
+    // Return mock questions for the skill test
+    const questions = [
+        { id: 1, question: "ข้อใดคืออัตราส่วนผสมคอนกรีตโครงสร้างทั่วไป (ปูน:ทราย:หิน)?", options: ["1:2:4", "1:3:5", "1:1:2", "1:4:8"], answer: "1:2:4" },
+        { id: 2, question: "ระยะหุ้มคอนกรีต (Covering) สำหรับเสาเข็มควรอยู่ที่เท่าไหร่?", options: ["3 ซม.", "5 ซม.", "7.5 ซม.", "10 ซม."], answer: "7.5 ซม." },
+        { id: 3, question: "หากต้องการตัดเหล็กเส้น DB12 ต้องใช้เครื่องมืออะไรเหมาะสมที่สุด?", options: ["เลื่อยตัดเหล็ก", "กรรไกรตัดเหล็ก", "ไฟเบอร์ตัดเหล็ก", "คีมตัดสายไฟ"], answer: "ไฟเบอร์ตัดเหล็ก" },
+        { id: 4, question: "มาตรฐานความปลอดภัยในการทำงานบนที่สูงคือกี่เมตรขึ้นไป?", options: ["1 เมตร", "2 เมตร", "4 เมตร", "5 เมตร"], answer: "2 เมตร" },
+        { id: 5, question: "ชนิดของปูนซีเมนต์ปอร์ตแลนด์ประเภทใดที่แข็งตัวเร็ว?", options: ["ประเภท 1", "ประเภท 2", "ประเภท 3", "ประเภท 5"], answer: "ประเภท 3" }
+    ];
+    res.json(questions);
+});
+
+app.post('/api/worker/score', async (req, res) => {
+    // In real app, save to DB
+    const { score, total } = req.body;
+    console.log(`Worker Score: ${score}/${total}`);
+    res.json({ success: true, message: 'Score saved' });
+});
+
 
 // ---------------------------------------------------------------------------
 // Server bootstrap

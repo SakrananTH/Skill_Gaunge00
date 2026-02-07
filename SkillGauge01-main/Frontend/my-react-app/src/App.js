@@ -16,6 +16,7 @@ import PendingActions from './pages/admin/PendingActions';
 import WorkerDashboard from './pages/Worker/WorkerDashboard';
 import WorkerTaskDetail from './pages/Worker/WorkerTaskDetail';
 import WorkerSettings from './pages/Worker/WorkerSettings';
+import WorkHistory from './pages/Worker/WorkHistory';
 import PMProjectManager from './pages/pm/PMProjectManager';
 import WKProjectTasks from './pages/pm/WKProject_Tasks';
 import SkillAssessmentTest from './pages/Worker/SkillAssessmentTest';
@@ -43,6 +44,7 @@ function App() {
             <Route path="dashboard" element={<WorkerDashboard />} />
             <Route path="worker" element={<WorkerDashboard />} />
             <Route path="worker-settings" element={<WorkerSettings />} />
+            <Route path="worker/history" element={<WorkHistory />} />
             <Route path="worker/task-detail" element={<WorkerTaskDetail />} />
             <Route path="admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="pm" element={<PMProjectManager />} />
