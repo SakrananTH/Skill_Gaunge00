@@ -112,11 +112,9 @@ async function loadThaiAddressDataset(dataPath = resolvedThaiAddressPath) {
         searchZipcode: normalizeSearchText(zipcode)
       });
     }
-
     thaiAddressRecords = nextRecords;
     thaiAddressLastLoadedAt = new Date();
     thaiAddressLoadError = null;
-
     if (thaiAddressRecords.length > 0) {
       console.info(
         `[addresses] Loaded ${thaiAddressRecords.length.toLocaleString()} Thai address records from ${dataPath}`
@@ -175,7 +173,6 @@ function searchThaiAddressRecords({ field, query, provinceFilter, districtFilter
       record => `${record.searchProvince}|${record.searchDistrict}|${record.searchSubdistrict}|${record.zipcode}`
     );
   }
-
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 12;
   return results.slice(0, safeLimit);
 }
@@ -253,10 +250,56 @@ function normalizePhoneTH(input) {
 
 const uuidSchema = z.string().uuid();
 
+function getRequestIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || null;
+}
+
 async function execute(sql, params = [], connection) {
   const executor = connection ?? pool;
   const [result] = await executor.execute(sql, params);
   return result;
+}
+
+async function writeAuditLog({ req, username, role, action, details, status }) {
+  try {
+    await ensureAuditLogSchemaReady();
+    const ipAddress = getRequestIp(req);
+    try {
+      await execute(
+        `INSERT INTO audit_logs (username, role, action, details, ip_address, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW(6))`,
+        [
+          username || null,
+          role || null,
+          action,
+          details ? JSON.stringify(details) : null,
+          ipAddress,
+          status || 'success'
+        ]
+      );
+    } catch (error) {
+      if (error?.code === 'ER_BAD_FIELD_ERROR') {
+        await execute(
+          `INSERT INTO audit_logs (actor_user_id, action, details, ip_address, created_at)
+           VALUES (?, ?, ?, ?, NOW(6))`,
+          [
+            null,
+            action,
+            details ? JSON.stringify(details) : null,
+            ipAddress
+          ]
+        );
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.warn('[audit-logs] Failed to write log', error?.message || error);
+  }
 }
 
 async function query(sql, params = [], connection) {
@@ -580,30 +623,36 @@ function buildWorkerProfileFromRow(row, fallbackProfile) {
 }
 
 function normalizeAssessmentSummary(row) {
-  if (!row) return { score: null, passed: null };
-  const scoreValue = row.score;
-  const score = scoreValue === null || scoreValue === undefined ? null : Number(scoreValue);
+  if (!row) return { score: null, passed: null, totalScore: null, totalQuestions: null };
+  const totalScore = row.total_score ?? row.totalScore ?? null;
+  const totalQuestions = row.total_questions ?? row.totalQuestions ?? null;
+  const scorePercent = totalScore !== null && totalQuestions
+    ? Math.round((Number(totalScore) / Number(totalQuestions)) * 100)
+    : (row.score === null || row.score === undefined ? null : Number(row.score));
   const passedValue = row.passed;
   const passed = passedValue === null || passedValue === undefined ? null : Boolean(Number(passedValue));
-  return { score, passed };
+  return { score: scorePercent, passed, totalScore, totalQuestions };
 }
 
 async function fetchLatestAssessmentSummaries(userIds, connection) {
   const ids = Array.isArray(userIds) ? userIds.map(id => String(id)).filter(Boolean) : [];
   if (!ids.length) return new Map();
   try {
+    await ensureAssessmentSessionSchemaReady(connection);
+    await ensureAssessmentResultSchemaReady(connection);
+    const placeholders = ids.map(() => '?').join(',');
     const rows = await query(
-      `SELECT user_id, score, passed, finished_at
-       FROM assessments
-       WHERE user_id IN (?)
+      `SELECT worker_id, total_score, total_questions, passed, finished_at
+       FROM worker_assessment_results
+       WHERE worker_id IN (${placeholders})
        ORDER BY finished_at DESC`,
-      [ids],
+      ids,
       connection
     );
 
     const summaryByUser = new Map();
     for (const row of rows) {
-      const key = String(row.user_id);
+      const key = String(row.worker_id);
       if (!summaryByUser.has(key)) {
         summaryByUser.set(key, normalizeAssessmentSummary(row));
       }
@@ -932,6 +981,15 @@ app.post('/api/auth/login', async (req, res) => {
         audience: 'skillgauge-spa'
       });
 
+      await writeAuditLog({
+        req,
+        username: ADMIN_BYPASS.email || ADMIN_BYPASS.phone,
+        role: 'admin',
+        action: 'admin_login',
+        details: { method: 'bypass' },
+        status: 'success'
+      });
+
       return res.json({
         token,
         user: {
@@ -1001,10 +1059,30 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
 
-    if (!user) return res.status(401).json({ message: 'invalid_credentials' });
+    if (!user) {
+      await writeAuditLog({
+        req,
+        username: identifier,
+        role: 'unknown',
+        action: 'login_failed',
+        details: { reason: 'invalid_credentials' },
+        status: 'error'
+      });
+      return res.status(401).json({ message: 'invalid_credentials' });
+    }
 
     const isMatch = await bcrypt.compare(parsed.password, user.password_hash ?? '');
-    if (!isMatch) return res.status(401).json({ message: 'invalid_credentials' });
+    if (!isMatch) {
+      await writeAuditLog({
+        req,
+        username: user.email || user.phone || identifier,
+        role: 'unknown',
+        action: 'login_failed',
+        details: { reason: 'invalid_credentials' },
+        status: 'error'
+      });
+      return res.status(401).json({ message: 'invalid_credentials' });
+    }
 
     if (userSource === 'worker_accounts' && (!user.status || user.status !== 'active')) {
       return res.status(403).json({ message: 'account_inactive' });
@@ -1027,6 +1105,15 @@ app.post('/api/auth/login', async (req, res) => {
       expiresIn: JWT_EXPIRES_IN,
       issuer: 'skillgauge-api',
       audience: 'skillgauge-spa'
+    });
+
+    await writeAuditLog({
+      req,
+      username: user.email || user.phone || identifier,
+      role: roles.join(','),
+      action: 'login_success',
+      details: { source: userSource },
+      status: 'success'
     });
 
     res.json({
@@ -1343,8 +1430,9 @@ const auditLogQuerySchema = z.object({
   endDate: z.string().max(20).optional()
 });
 
-app.get('/api/admin/audit-logs', requireAuth, authorizeRoles('admin'), async (req, res) => {
+app.get('/api/admin/audit-logs', async (req, res) => {
   try {
+    await ensureAuditLogSchemaReady();
     const params = auditLogQuerySchema.parse(req.query ?? {});
     const limitValue = Number.isFinite(params.limit) ? params.limit : 10;
     const pageValue = Number.isFinite(params.page) ? params.page : 1;
@@ -1382,19 +1470,35 @@ app.get('/api/admin/audit-logs', requireAuth, authorizeRoles('admin'), async (re
     }
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limitValue)));
     const safeOffset = Math.max(0, Math.floor(offset));
-    const rows = await query(
-      `SELECT id, created_at, username, role, action, details, ip_address, status
-       FROM audit_logs
-       ${whereClause}
-       ORDER BY created_at DESC
-       LIMIT ${safeLimit} OFFSET ${safeOffset}`,
-      values
-    );
+    let rows = [];
+    try {
+      rows = await query(
+        `SELECT id, created_at, username, role, action, details, ip_address, status
+         FROM audit_logs
+         ${whereClause}
+         ORDER BY created_at DESC
+         LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+        values
+      );
+    } catch (error) {
+      if (error?.code === 'ER_BAD_FIELD_ERROR') {
+        rows = await query(
+          `SELECT id, created_at, actor_user_id, action, details, ip_address
+           FROM audit_logs
+           ${whereClause}
+           ORDER BY created_at DESC
+           LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+          values
+        );
+      } else {
+        throw error;
+      }
+    }
 
     const items = rows.map(row => ({
       id: row.id,
       timestamp: row.created_at,
-      user: row.username || 'Unknown',
+      user: row.username || row.actor_user_id || 'Unknown',
       role: row.role || '-',
       action: row.action,
       details: row.details,
@@ -2321,6 +2425,125 @@ async function ensureAssessmentSchema(connection) {
   `);
 }
 
+let assessmentSessionSchemaPromise = null;
+
+async function ensureAssessmentSessionSchema(connection) {
+  const executor = connection ?? pool;
+  await executor.execute(`
+    CREATE TABLE IF NOT EXISTS assessment_sessions (
+      id CHAR(36) NOT NULL,
+      round_id CHAR(36) NOT NULL,
+      worker_id INT UNSIGNED NULL,
+      user_id CHAR(36) NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'in_progress',
+      started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      finished_at DATETIME(6) NULL,
+      last_seen_at DATETIME(6) NULL,
+      question_count INT UNSIGNED NOT NULL DEFAULT 0,
+      source VARCHAR(50) NULL,
+      PRIMARY KEY (id),
+      KEY idx_assessment_sessions_round (round_id),
+      KEY idx_assessment_sessions_worker (worker_id),
+      KEY idx_assessment_sessions_user (user_id),
+      CONSTRAINT fk_assessment_sessions_round FOREIGN KEY (round_id) REFERENCES assessment_rounds(id) ON DELETE CASCADE,
+      CONSTRAINT fk_assessment_sessions_worker FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
+      CONSTRAINT fk_assessment_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await executor.execute(`
+    CREATE TABLE IF NOT EXISTS assessment_session_questions (
+      session_id CHAR(36) NOT NULL,
+      question_id VARCHAR(36) NOT NULL,
+      display_order INT UNSIGNED NOT NULL,
+      source_table VARCHAR(40) NOT NULL DEFAULT 'questions',
+      PRIMARY KEY (session_id, question_id),
+      KEY idx_assessment_session_questions_order (session_id, display_order),
+      CONSTRAINT fk_assessment_session_questions_session FOREIGN KEY (session_id) REFERENCES assessment_sessions(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+function ensureAssessmentSessionSchemaReady(connection) {
+  if (!assessmentSessionSchemaPromise) {
+    assessmentSessionSchemaPromise = ensureAssessmentSessionSchema(connection).catch(error => {
+      console.error('[assessment-session] Failed to ensure schema', error);
+      assessmentSessionSchemaPromise = null;
+      throw error;
+    });
+  }
+  return assessmentSessionSchemaPromise;
+}
+
+let assessmentResultSchemaPromise = null;
+
+async function ensureAssessmentResultSchema(connection) {
+  const executor = connection ?? pool;
+  await executor.execute(`
+    CREATE TABLE IF NOT EXISTS worker_assessment_results (
+      id CHAR(36) NOT NULL,
+      worker_id INT UNSIGNED NOT NULL,
+      round_id CHAR(36) NULL,
+      session_id CHAR(36) NULL,
+      category VARCHAR(120) NOT NULL DEFAULT 'structure',
+      total_score INT UNSIGNED NOT NULL DEFAULT 0,
+      total_questions INT UNSIGNED NOT NULL DEFAULT 0,
+      passed TINYINT(1) NOT NULL DEFAULT 0,
+      breakdown JSON NULL,
+      finished_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_worker_assessment_once (worker_id, category),
+      KEY idx_worker_assessment_round (round_id),
+      CONSTRAINT fk_worker_assessment_worker FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+      CONSTRAINT fk_worker_assessment_round FOREIGN KEY (round_id) REFERENCES assessment_rounds(id) ON DELETE SET NULL,
+      CONSTRAINT fk_worker_assessment_session FOREIGN KEY (session_id) REFERENCES assessment_sessions(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+function ensureAssessmentResultSchemaReady(connection) {
+  if (!assessmentResultSchemaPromise) {
+    assessmentResultSchemaPromise = ensureAssessmentResultSchema(connection).catch(error => {
+      console.error('[assessment-result] Failed to ensure schema', error);
+      assessmentResultSchemaPromise = null;
+      throw error;
+    });
+  }
+  return assessmentResultSchemaPromise;
+}
+
+let auditLogSchemaPromise = null;
+
+async function ensureAuditLogSchema(connection) {
+  const executor = connection ?? pool;
+  await executor.execute(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      username VARCHAR(120) NULL,
+      role VARCHAR(60) NULL,
+      action VARCHAR(120) NOT NULL,
+      details JSON NULL,
+      ip_address VARCHAR(45) NULL,
+      status VARCHAR(30) NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+function ensureAuditLogSchemaReady(connection) {
+  if (!auditLogSchemaPromise) {
+    auditLogSchemaPromise = ensureAuditLogSchema(connection).catch(error => {
+      console.error('[audit-logs] Failed to ensure schema', error);
+      auditLogSchemaPromise = null;
+      throw error;
+    });
+  }
+  return auditLogSchemaPromise;
+}
+
 function ensureAssessmentSchemaReady(connection) {
   if (!assessmentSchemaPromise) {
     assessmentSchemaPromise = ensureAssessmentSchema(connection).catch(error => {
@@ -2910,6 +3133,472 @@ app.get('/api/question-structural/all', requireAuth, authorizeRoles('admin'), as
       return res.json([]);
     }
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Worker structural questions (session-based)
+// ---------------------------------------------------------------------------
+
+app.get('/api/questions/structural', async (req, res) => {
+  try {
+    await ensureAssessmentSchemaReady();
+    await ensureAssessmentSessionSchemaReady();
+
+    const setNo = parseInt(req.query.set_no, 10) || 1;
+    const pageParam = parseInt(req.query.page, 10);
+    const perPageParam = parseInt(req.query.per_page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+    const perPageRequest = Number.isFinite(perPageParam) && perPageParam > 0 ? perPageParam : null;
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
+    const workerId = parseWorkerId(req.query.workerId);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : null;
+    const requestedRoundId = typeof req.query.roundId === 'string' ? req.query.roundId.trim() : null;
+
+    let session = null;
+    let roundMeta = null;
+
+    if (!sessionId) {
+      let roundId = requestedRoundId || null;
+      if (!roundId) {
+        const roundRows = await query(
+          `SELECT id
+             FROM assessment_rounds
+            WHERE category = 'structure'
+            ORDER BY created_at DESC
+            LIMIT 1`,
+          []
+        );
+        roundId = roundRows[0]?.id || null;
+      }
+
+      if (!roundId) {
+        return res.status(409).json({ error: 'No assessment round found for structure' });
+      }
+
+      roundMeta = await fetchAssessmentRoundById(roundId);
+
+      const difficultyParamRaw = req.query.difficulty_level ?? req.query.level ?? req.query.difficulty;
+      const parsedDifficulty = Number.isFinite(Number(difficultyParamRaw))
+        ? Number(difficultyParamRaw)
+        : null;
+      const difficultyMap = { easy: 1, medium: 2, hard: 3 };
+      const normalizedDifficultyKey = typeof difficultyParamRaw === 'string'
+        ? difficultyParamRaw.trim().toLowerCase()
+        : '';
+      const difficultyFromQuery = parsedDifficulty
+        ? parsedDifficulty
+        : (difficultyMap[normalizedDifficultyKey] || null);
+
+      let difficultyFromRound = null;
+      if (roundMeta?.difficultyWeights && typeof roundMeta.difficultyWeights === 'object') {
+        const weights = roundMeta.difficultyWeights;
+        const activeKeys = Object.keys(difficultyMap)
+          .filter(key => Number(weights?.[key]) > 0);
+        if (activeKeys.length === 1) {
+          difficultyFromRound = difficultyMap[activeKeys[0]] || null;
+        }
+      }
+
+      const selectedDifficulty = difficultyFromQuery || difficultyFromRound;
+
+      let rows;
+      const buildQuestionQuery = (includeSetNo) => {
+        const filters = [];
+        const params = [];
+        if (includeSetNo) {
+          filters.push('set_no = ?');
+          params.push(setNo);
+        }
+        if (selectedDifficulty) {
+          filters.push('difficulty_level = ?');
+          params.push(selectedDifficulty);
+        }
+        const whereSql = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
+        return {
+          sql: `SELECT id FROM question_Structural${whereSql} ORDER BY RAND() LIMIT 60`,
+          params
+        };
+      };
+
+      try {
+        const queryWithSet = buildQuestionQuery(true);
+        rows = await query(queryWithSet.sql, queryWithSet.params);
+      } catch (error) {
+        if (error?.code === 'ER_BAD_FIELD_ERROR') {
+          const queryWithoutSet = buildQuestionQuery(false);
+          rows = await query(queryWithoutSet.sql, queryWithoutSet.params);
+        } else {
+          throw error;
+        }
+      }
+
+      if (!rows.length) {
+        return res.status(404).json({ error: 'No questions found for requested criteria' });
+      }
+
+      const qids = rows.map(row => row.id);
+      let questionLimit = null;
+      if (roundMeta?.questionCount) {
+        const parsedLimit = Number(roundMeta.questionCount);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          questionLimit = parsedLimit;
+        }
+      }
+
+      const finalLimit = questionLimit || 60;
+      const perPage = perPageRequest || finalLimit;
+      const limitedIds = qids.slice(0, finalLimit);
+
+      const newSessionId = randomUUID();
+      await withTransaction(async connection => {
+        await execute(
+          `INSERT INTO assessment_sessions
+             (id, round_id, worker_id, user_id, status, question_count, source)
+           VALUES (?, ?, ?, ?, 'in_progress', ?, 'question_Structural')`,
+          [newSessionId, roundId, workerId, userId, limitedIds.length],
+          connection
+        );
+
+        const values = limitedIds.map((qid, index) => [newSessionId, String(qid), index + 1, 'question_Structural']);
+        const placeholders = values.map(() => '(?, ?, ?, ?)').join(', ');
+        await execute(
+          `INSERT INTO assessment_session_questions (session_id, question_id, display_order, source_table)
+           VALUES ${placeholders}`,
+          values.flat(),
+          connection
+        );
+      });
+
+      session = { id: newSessionId, question_ids: limitedIds };
+      session.perPage = perPage;
+    } else {
+      const sessRows = await query(
+        'SELECT id, round_id FROM assessment_sessions WHERE id = ? LIMIT 1',
+        [sessionId]
+      );
+      if (!sessRows.length) return res.status(404).json({ error: 'Session not found' });
+
+      roundMeta = await fetchAssessmentRoundById(sessRows[0].round_id);
+
+      const qidRows = await query(
+        `SELECT question_id
+           FROM assessment_session_questions
+          WHERE session_id = ?
+          ORDER BY display_order ASC`,
+        [sessionId]
+      );
+
+      const qids = qidRows.map(row => row.question_id);
+      session = { id: sessionId, question_ids: qids };
+
+      await execute(
+        'UPDATE assessment_sessions SET last_seen_at = NOW(6) WHERE id = ? LIMIT 1',
+        [sessionId]
+      );
+    }
+
+    const total = session.question_ids.length;
+    const perPage = session.perPage || perPageRequest || total;
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    const pageIndex = Math.min(totalPages, page) - 1;
+    const start = pageIndex * perPage;
+    const end = Math.min(total, start + perPage);
+    const pageIds = session.question_ids.slice(start, end);
+
+    if (!pageIds.length) {
+      return res.json({
+        sessionId: session.id,
+        page,
+        per_page: perPage,
+        total,
+        totalPages,
+        questions: []
+      });
+    }
+
+    const placeholders = pageIds.map(() => '?').join(',');
+    const qrows = await query(
+      `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+         FROM question_Structural WHERE id IN (${placeholders})`,
+      pageIds
+    );
+
+    const qmap = {};
+    qrows.forEach(row => { qmap[row.id] = row; });
+
+    const questions = pageIds.map((id, idx) => {
+      const row = qmap[id];
+      if (!row) return null;
+      return {
+        id: row.id,
+        question_no: start + idx + 1,
+        text: row.question_text,
+        choices: [row.choice_a, row.choice_b, row.choice_c, row.choice_d]
+      };
+    }).filter(Boolean);
+
+    res.json({
+      sessionId: session.id,
+      page,
+      per_page: perPage,
+      total,
+      totalPages,
+      questions,
+      round: roundMeta
+    });
+  } catch (error) {
+    console.error('GET /api/questions/structural error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Worker assessment summary & submit
+// ---------------------------------------------------------------------------
+
+const toAnswerKey = (value) => {
+  const mapping = ['a', 'b', 'c', 'd'];
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return mapping[value] || null;
+  }
+  const trimmed = String(value).trim();
+  if (trimmed === '') return null;
+  if (/^[0-3]$/.test(trimmed)) {
+    return mapping[Number(trimmed)] || null;
+  }
+  const normalized = trimmed.toLowerCase();
+  return mapping.includes(normalized) ? normalized : null;
+};
+
+async function fetchWorkerAssessmentSummary(workerId, category = null) {
+  await ensureAssessmentResultSchemaReady();
+  const params = [workerId];
+  let whereClause = 'WHERE worker_id = ?';
+  if (category) {
+    whereClause += ' AND category = ?';
+    params.push(category);
+  }
+  const row = await queryOne(
+    `SELECT id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at
+       FROM worker_assessment_results
+      ${whereClause}
+      ORDER BY finished_at DESC
+      LIMIT 1`,
+    params
+  );
+  if (!row) return null;
+  let breakdown = null;
+  if (row.breakdown) {
+    try {
+      breakdown = typeof row.breakdown === 'string' ? JSON.parse(row.breakdown) : row.breakdown;
+    } catch (error) {
+      breakdown = null;
+    }
+  }
+  return {
+    id: row.id,
+    workerId: row.worker_id,
+    roundId: row.round_id,
+    sessionId: row.session_id,
+    category: row.category,
+    score: Number(row.total_score) || 0,
+    totalQuestions: Number(row.total_questions) || 0,
+    passed: Boolean(Number(row.passed)),
+    breakdown: Array.isArray(breakdown) ? breakdown : [],
+    finishedAt: row.finished_at
+  };
+}
+
+app.get('/api/worker/assessment/summary', async (req, res) => {
+  try {
+    const workerId = parseWorkerId(req.query.workerId);
+    if (!workerId) {
+      return res.status(400).json({ success: false, message: 'invalid_worker' });
+    }
+    const summary = await fetchWorkerAssessmentSummary(workerId);
+    if (!summary) {
+      return res.status(404).json({ success: false, message: 'not_found' });
+    }
+    return res.json({ success: true, result: summary });
+  } catch (error) {
+    console.error('GET /api/worker/assessment/summary error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+app.post('/api/worker/score', async (req, res) => {
+  try {
+    await ensureAssessmentSchemaReady();
+    await ensureAssessmentSessionSchemaReady();
+    await ensureAssessmentResultSchemaReady();
+
+    const { userId, answers, sessionId } = req.body || {};
+    const workerId = parseWorkerId(userId);
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'missing_session' });
+    }
+
+    const sessionRows = await query(
+      'SELECT id, worker_id, round_id, status, question_count FROM assessment_sessions WHERE id = ? LIMIT 1',
+      [sessionId]
+    );
+    const session = sessionRows?.[0];
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'session_not_found' });
+    }
+    if (workerId && session.worker_id && Number(session.worker_id) !== workerId) {
+      return res.status(403).json({ success: false, message: 'session_mismatch' });
+    }
+    const resolvedWorkerId = workerId || Number(session.worker_id) || null;
+    if (!resolvedWorkerId) {
+      return res.status(400).json({ success: false, message: 'missing_worker' });
+    }
+
+    const roundRows = await query(
+      'SELECT id, category, passing_score FROM assessment_rounds WHERE id = ? LIMIT 1',
+      [session.round_id]
+    );
+    const round = roundRows?.[0] || null;
+    const category = round?.category || 'structure';
+
+    const existing = await fetchWorkerAssessmentSummary(resolvedWorkerId, category);
+    if (existing) {
+      await writeAuditLog({
+        req,
+        username: String(resolvedWorkerId),
+        role: 'worker',
+        action: 'assessment_submit_duplicate',
+        details: { workerId: resolvedWorkerId, sessionId, category },
+        status: 'warning'
+      });
+      return res.status(409).json({ success: false, message: 'already_completed', result: existing });
+    }
+
+    const questionRows = await query(
+      'SELECT question_id FROM assessment_session_questions WHERE session_id = ? ORDER BY display_order ASC',
+      [sessionId]
+    );
+    const questionIds = questionRows.map(row => Number(row.question_id)).filter(id => Number.isFinite(id));
+    if (!questionIds.length) {
+      return res.status(404).json({ success: false, message: 'no_questions' });
+    }
+
+    const placeholders = questionIds.map(() => '?').join(',');
+    let answerRows = [];
+    try {
+      answerRows = await query(
+        `SELECT id, answer, category
+           FROM question_Structural
+          WHERE id IN (${placeholders})`,
+        questionIds
+      );
+    } catch (error) {
+      if (error?.code === 'ER_BAD_FIELD_ERROR') {
+        answerRows = await query(
+          `SELECT id, answer
+             FROM question_Structural
+            WHERE id IN (${placeholders})`,
+          questionIds
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    const answerMap = new Map();
+    answerRows.forEach(row => {
+      answerMap.set(String(row.id), {
+        answer: String(row.answer || '').toLowerCase(),
+        category: row.category || 'structure'
+      });
+    });
+
+    const breakdownByCategory = new Map();
+    let totalScore = 0;
+    questionIds.forEach(qid => {
+      const key = String(qid);
+      const meta = answerMap.get(key);
+      if (!meta) return;
+      const selected = answers ? toAnswerKey(answers[key]) : null;
+      const isCorrect = selected && selected === meta.answer;
+      if (isCorrect) totalScore += 1;
+      const bucket = breakdownByCategory.get(meta.category) || { correct: 0, total: 0 };
+      bucket.total += 1;
+      if (isCorrect) bucket.correct += 1;
+      breakdownByCategory.set(meta.category, bucket);
+    });
+
+    const totalQuestions = Number(session.question_count) || questionIds.length;
+    const breakdown = Array.from(breakdownByCategory.entries()).map(([label, stats]) => ({
+      label,
+      correct: stats.correct,
+      total: stats.total,
+      percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
+    }));
+
+    const passingScore = round?.passing_score ? Number(round.passing_score) : null;
+    const passed = passingScore ? totalScore >= passingScore : totalScore >= Math.ceil(totalQuestions * 0.7);
+
+    const resultId = randomUUID();
+    await execute(
+      `INSERT INTO worker_assessment_results
+        (id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6))`,
+      [
+        resultId,
+        resolvedWorkerId,
+        session.round_id,
+        sessionId,
+        category,
+        totalScore,
+        totalQuestions,
+        passed ? 1 : 0,
+        JSON.stringify(breakdown)
+      ]
+    );
+
+    await execute(
+      'UPDATE assessment_sessions SET status = ?, finished_at = NOW(6) WHERE id = ? LIMIT 1',
+      ['completed', sessionId]
+    );
+
+    await writeAuditLog({
+      req,
+      username: String(resolvedWorkerId),
+      role: 'worker',
+      action: 'assessment_submit',
+      details: { workerId: resolvedWorkerId, sessionId, category, score: totalScore, totalQuestions },
+      status: 'success'
+    });
+
+    return res.json({
+      success: true,
+      result: {
+        id: resultId,
+        workerId: resolvedWorkerId,
+        roundId: session.round_id,
+        sessionId,
+        category,
+        score: totalScore,
+        totalQuestions,
+        passed,
+        breakdown,
+        finishedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('POST /api/worker/score error:', error);
+    await writeAuditLog({
+      req,
+      username: String(req.body?.userId || ''),
+      role: 'worker',
+      action: 'assessment_submit_failed',
+      details: { message: error?.message || 'Server error' },
+      status: 'error'
+    });
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
@@ -3568,6 +4257,80 @@ app.get('/api/admin/assessments/expiring', requireAuth, authorizeRoles('admin'),
   res.json({ items: [] });
 });
 
+app.get('/api/admin/assessment-results', async (req, res) => {
+  try {
+    await ensureAssessmentSchemaReady();
+    await ensureAssessmentSessionSchemaReady();
+    await ensureAssessmentResultSchemaReady();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+    const offset = (page - 1) * limit;
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const safeOffset = Math.max(0, Math.floor(offset));
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+    const passed = typeof req.query.passed === 'string' ? req.query.passed.trim() : '';
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (w.full_name LIKE ? OR a.email LIKE ? OR CAST(r.worker_id AS CHAR) LIKE ? OR r.id LIKE ?)';
+      const term = `%${search}%`;
+      params.push(term, term, term, term);
+    }
+
+    if (category && category !== 'all') {
+      whereClause += ' AND r.category = ?';
+      params.push(category);
+    }
+
+    if (passed && passed !== 'all') {
+      whereClause += ' AND r.passed = ?';
+      params.push(passed === '1' ? 1 : 0);
+    }
+
+    let total = 0;
+    let rows = [];
+    try {
+      const countRows = await query(
+        `SELECT COUNT(*) AS total
+           FROM worker_assessment_results r
+           LEFT JOIN workers w ON w.id = r.worker_id
+           LEFT JOIN worker_accounts a ON a.worker_id = w.id
+          ${whereClause}`,
+        params
+      );
+      total = Number(countRows?.[0]?.total) || 0;
+
+      rows = await query(
+        `SELECT r.id, r.worker_id, r.round_id, r.session_id, r.category, r.total_score, r.total_questions,
+                r.passed, r.finished_at, w.full_name AS worker_name, a.email AS worker_email
+           FROM worker_assessment_results r
+           LEFT JOIN workers w ON w.id = r.worker_id
+           LEFT JOIN worker_accounts a ON a.worker_id = w.id
+          ${whereClause}
+          ORDER BY r.finished_at DESC
+          LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+        params
+      );
+    } catch (error) {
+      if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_TABLE_ERROR') {
+        return res.json({ items: [], total: 0 });
+      }
+      throw error;
+    }
+
+    res.json({ items: rows || [], total });
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_TABLE_ERROR') {
+      return res.json({ items: [], total: 0 });
+    }
+    console.error('GET /api/admin/assessment-results error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.get('/api/admin/assessments/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
   try {
     const assessmentId = req.params.id;
@@ -3777,7 +4540,7 @@ app.get('/api/worker/profile', async (req, res) => {
 
     if (workerId) {
       const rows = await query(
-        `SELECT w.id, w.full_name, w.phone, w.role_code, w.province, w.district, w.subdistrict, w.postal_code,
+        `SELECT w.id, w.full_name, w.phone, w.role_code, w.trade_type, w.province, w.district, w.subdistrict, w.postal_code,
                 w.current_address, a.email
            FROM workers w
            LEFT JOIN worker_accounts a ON a.worker_id = w.id
@@ -3792,7 +4555,8 @@ app.get('/api/worker/profile', async (req, res) => {
         name: row.full_name,
         email: row.email,
         phone: row.phone,
-        role: row.role_code || 'worker'
+        role: row.role_code || 'worker',
+        technician_type: row.trade_type || null
       });
     }
 
@@ -3811,13 +4575,14 @@ app.get('/api/worker/profile', async (req, res) => {
         name: row.full_name,
         email: row.email,
         phone: row.phone,
-        role: 'worker'
+        role: 'worker',
+        technician_type: null
       });
     }
 
     if (email) {
       const rows = await query(
-        `SELECT w.id, w.full_name, w.phone, w.role_code, a.email
+        `SELECT w.id, w.full_name, w.phone, w.role_code, w.trade_type, a.email
            FROM worker_accounts a
            INNER JOIN workers w ON w.id = a.worker_id
           WHERE LOWER(a.email) = LOWER(?)
@@ -3831,7 +4596,8 @@ app.get('/api/worker/profile', async (req, res) => {
         name: row.full_name,
         email: row.email,
         phone: row.phone,
-        role: row.role_code || 'worker'
+        role: row.role_code || 'worker',
+        technician_type: row.trade_type || null
       });
     }
 

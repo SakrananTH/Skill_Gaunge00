@@ -36,7 +36,7 @@ const Header = () => {
     <header className="header">
       <div className="container">
         <Link to="/" className="logo">
-          <img src="/logo192.png" alt="Skill Gauge Logo" className="logo-img" />
+          <img src="/logo123.png" alt="Skill Gauge Logo" className="logo-img" />
           <h1>Skill Gauge</h1>
         </Link>
         

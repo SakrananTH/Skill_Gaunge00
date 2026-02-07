@@ -1,165 +1,159 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../pm/WKDashboard.css'; 
+import { 
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend 
+} from 'recharts';
+import './ForemanDashboard.css';
 
 const ForemanDashboard = () => {
   const navigate = useNavigate();
-  const user = { name: 'หัวหน้าวิชัย', role: 'Foreman' };
-  
-  const [pendingWorkers, setPendingWorkers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(''); // ✅ เพิ่ม State สำหรับค้นหา
+  const [selectedWorkers, setSelectedWorkers] = useState([1, 2]); // ID ของช่างที่เลือกมาเทียบ
 
-  const fetchWorkers = async () => {
-    setLoading(true);
-    try {
-      // จำลองข้อมูล (Mock Data)
-      setPendingWorkers([
-        { id: 1, name: 'นายสมชาย ใจดี', roleName: 'ช่างก่ออิฐ', date: '2023-10-25' },
-        { id: 2, name: 'นายมีชัย รักดี', roleName: 'ช่างปูน', date: '2023-10-26' },
-        { id: 3, name: 'นายเอกพล คนขยัน', roleName: 'ช่างไฟฟ้า', date: '2023-10-27' },
-        { id: 4, name: 'นายมานะ อดทน', roleName: 'ช่างประปา', date: '2023-10-28' },
-      ]); 
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setLoading(false);
+  // Mock Data: ข้อมูลช่างและคะแนนทักษะ
+  const workers = [
+    { id: 1, name: 'นายสมชาย ใจดี', role: 'ช่างโครงสร้าง', totalScore: 85, skills: { rebar: 90, concrete: 80, formwork: 85, element: 70, theory: 95 } },
+    { id: 2, name: 'นายวิชัย สายลุย', role: 'ช่างโครงสร้าง', totalScore: 72, skills: { rebar: 60, concrete: 85, formwork: 70, element: 80, theory: 65 } },
+    { id: 3, name: 'นายมานะ ขยันทำ', role: 'ช่างทั่วไป', totalScore: 65, skills: { rebar: 50, concrete: 60, formwork: 75, element: 65, theory: 55 } },
+  ];
+
+  // แปลงข้อมูลสำหรับ Radar Chart
+  const radarData = [
+    { subject: 'งานเหล็ก', fullMark: 100 },
+    { subject: 'งานคอนกรีต', fullMark: 100 },
+    { subject: 'งานไม้แบบ', fullMark: 100 },
+    { subject: 'องค์อาคาร', fullMark: 100 },
+    { subject: 'ทฤษฎี', fullMark: 100 },
+  ].map(item => {
+    const keyMap = { 'งานเหล็ก': 'rebar', 'งานคอนกรีต': 'concrete', 'งานไม้แบบ': 'formwork', 'องค์อาคาร': 'element', 'ทฤษฎี': 'theory' };
+    const key = keyMap[item.subject];
+    const newItem = { ...item };
+    selectedWorkers.forEach(id => {
+      const worker = workers.find(w => w.id === id);
+      if (worker) newItem[worker.name] = worker.skills[key];
+    });
+    return newItem;
+  });
+
+  const handleWorkerToggle = (id) => {
+    if (selectedWorkers.includes(id)) {
+      if (selectedWorkers.length > 1) setSelectedWorkers(selectedWorkers.filter(item => item !== id));
+    } else {
+      if (selectedWorkers.length < 3) setSelectedWorkers([...selectedWorkers, id]);
     }
   };
-
-  useEffect(() => {
-    fetchWorkers();
-  }, []);
-
-  const handleAssessClick = (worker) => {
-    navigate('/foreman/assessment', { state: { worker } });
-  };
-
-  const handleLogout = () => {
-    if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
-      sessionStorage.clear();
-      navigate('/login');
-    }
-  };
-
-  // ✅ Logic กรองข้อมูลตามคำค้นหา
-  const filteredWorkers = pendingWorkers.filter(worker => 
-    worker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    worker.roleName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   return (
-    <div className="dash-layout">
-      <aside className="dash-sidebar">
-        <nav className="menu">
-            <div style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
-                Foreman Panel
-            </div>
-            
-            <button className="menu-item active" onClick={() => navigate('/foreman')}>Dashboard</button>
-            <button className="menu-item" onClick={() => navigate('/foreman-reports')}>รายงานสรุปงาน</button>
-            <button className="menu-item" onClick={() => navigate('/project-detail')}>My Projects</button>
-            <button className="menu-item" onClick={() => navigate('/foreman-settings')}>ตั้งค่า</button>
+    <div className="foreman-dash">
+      <header className="f-header">
+        <div className="f-brand">
+          <img src="/logo123.png" alt="Logo" />
+          <h1>Foreman Console</h1>
+        </div>
+        <div className="f-user">
+          <span>หัวหน้างาน: <strong>คุณวิศรุต (Foreman)</strong></span>
+          <button onClick={() => navigate('/login')} className="f-logout">ออกจากระบบ</button>
+        </div>
+      </header>
 
-            <button 
-              className="menu-item" 
-              onClick={handleLogout}
-              style={{ marginTop: '20px', color: '#ef4444', border: '1px solid #fee2e2', background: '#fef2f2' }}
-            >
-              ออกจากระบบ
-            </button>
-        </nav>
-      </aside>
-
-      <main className="dash-main">
-        <header className="dash-header">
-          <div className="header-info">
-            <h1>สวัสดี, {user.name}</h1>
-            <p>บทบาท: {user.role}</p>
-          </div>
-        </header>
-
-        <section className="dash-content">
+      <main className="f-content">
+        <div className="f-grid">
           
-          {/* ✅ ส่วนหัว: หัวข้อ + ช่องค้นหา + ปุ่มอัปเดต */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-            <div>
-               <h2 style={{ margin: 0, color: '#1e293b' }}>รายการช่างที่รอการประเมิน</h2>
-               <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '14px' }}>จัดการและประเมินผลงานช่างในโครงการ</p>
+          {/* ส่วนที่ 1: กราฟเปรียบเทียบทักษะ (Radar Chart) */}
+          <section className="f-card radar-section">
+            <div className="card-header">
+              <h3>📊 เปรียบเทียบสมรรถนะรายบุคคล</h3>
+              <p>แสดงจุดแข็ง-จุดอ่อนแยกตามหมวดหมู่ (เลือกได้สูงสุด 3 คน)</p>
             </div>
-            
-            <div style={{ display: 'flex', gap: '10px' }}>
-                {/* 🔍 ช่องค้นหา */}
-                <input 
-                    type="text" 
-                    placeholder="🔍 ค้นหาชื่อ หรือตำแหน่ง..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ 
-                        padding: '10px 15px', borderRadius: '8px', border: '1px solid #cbd5e1', 
-                        width: '250px', outline: 'none' 
-                    }}
-                />
-                <button onClick={fetchWorkers} style={{ padding: '8px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                    อัปเดตข้อมูล
+            <div className="worker-selector">
+              {workers.map(w => (
+                <button 
+                  key={w.id} 
+                  className={`select-btn ${selectedWorkers.includes(w.id) ? 'active' : ''}`}
+                  onClick={() => handleWorkerToggle(w.id)}
+                >
+                  {w.name}
                 </button>
+              ))}
             </div>
-          </div>
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height={400}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="#e2e8f0" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 14 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                  {selectedWorkers.map((id, index) => {
+                    const worker = workers.find(w => w.id === id);
+                    const colors = ['#2563eb', '#10b981', '#f59e0b'];
+                    return (
+                      <Radar
+                        key={id}
+                        name={worker.name}
+                        dataKey={worker.name}
+                        stroke={colors[index]}
+                        fill={colors[index]}
+                        fillOpacity={0.3}
+                      />
+                    );
+                  })}
+                  <Tooltip />
+                  <Legend />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
 
-          {loading ? (
-            <div className="loading">กำลังโหลดข้อมูล...</div>
-          ) : (
-            // ✅ เปลี่ยนจาก Grid Card เป็น Table
-            <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '16px', color: '#64748b', fontWeight: '600' }}>ชื่อ-นามสกุล</th>
-                            <th style={{ padding: '16px', color: '#64748b', fontWeight: '600' }}>ตำแหน่งงาน</th>
-                            <th style={{ padding: '16px', color: '#64748b', fontWeight: '600' }}>วันที่ส่งงาน</th>
-                            <th style={{ padding: '16px', color: '#64748b', fontWeight: '600', textAlign: 'right' }}>จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredWorkers.length > 0 ? (
-                            filteredWorkers.map((worker) => (
-                                <tr key={worker.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '16px', fontWeight: 'bold', color: '#1e293b' }}>
-                                        {worker.name}
-                                    </td>
-                                    <td style={{ padding: '16px' }}>
-                                        <span style={{ background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
-                                            {worker.roleName}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '16px', color: '#64748b' }}>
-                                        📅 {worker.date}
-                                    </td>
-                                    <td style={{ padding: '16px', textAlign: 'right' }}>
-                                        <button 
-                                            onClick={() => handleAssessClick(worker)}
-                                            style={{ 
-                                                padding: '8px 16px', background: '#0f172a', color: 'white', 
-                                                border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500', fontSize: '13px' 
-                                            }}
-                                        >
-                                            ประเมินผลงาน
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))
-                        ) : (
-                            <tr>
-                                <td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                                    ไม่พบข้อมูลที่ค้นหา
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
+          {/* ส่วนที่ 2: ภาพรวมคะแนนทั้งหมด (Bar Chart) */}
+          <section className="f-card bar-section">
+            <div className="card-header">
+              <h3>🏆 อันดับคะแนนรวม</h3>
+              <p>ภาพรวมคะแนนทดสอบวัดทักษะของช่างทั้งหมดในทีม</p>
             </div>
-          )}
-        </section>
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={workers}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} />
+                  <Bar dataKey="totalScore" name="คะแนนรวม (%)" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* ส่วนที่ 3: ตารางข้อมูลช่าง */}
+          <section className="f-card table-section">
+            <div className="card-header">
+              <h3>📋 รายชื่อและสถานะการประเมิน</h3>
+            </div>
+            <table className="f-table">
+              <thead>
+                <tr>
+                  <th>ชื่อ-นามสกุล</th>
+                  <th>ประเภทช่าง</th>
+                  <th>คะแนนรวม</th>
+                  <th>สถานะ</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workers.map(w => (
+                  <tr key={w.id}>
+                    <td><strong>{w.name}</strong></td>
+                    <td>{w.role}</td>
+                    <td><span className="score-badge">{w.totalScore}%</span></td>
+                    <td><span className={`status-pill ${w.totalScore >= 70 ? 'pass' : 'pending'}`}>
+                      {w.totalScore >= 70 ? 'ผ่านเกณฑ์' : 'รอพัฒนา'}
+                    </span></td>
+                    <td><button className="view-btn">ดูรายละเอียด</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+        </div>
       </main>
     </div>
   );

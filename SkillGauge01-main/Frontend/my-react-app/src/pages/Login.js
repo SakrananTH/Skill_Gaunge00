@@ -84,7 +84,17 @@ const Login = () => {
 
       // Check if worker profile is completed
       const hasProfile = sessionStorage.getItem('worker_profile');
-      const navUser = { username: user?.phone || username, role: chosenRole };
+      const navUser = { username: user?.phone || user?.email || username, role: chosenRole };
+      try {
+        const sessionUser = {
+          id: user?.id ?? null,
+          username: user?.phone || user?.email || username,
+          phone: user?.phone || null,
+          email: user?.email || null,
+          role: chosenRole
+        };
+        sessionStorage.setItem('user', JSON.stringify(sessionUser));
+      } catch {}
       
       if (chosenRole === 'admin') {
         navigate('/admin', { state: { user: navUser, source: 'login' } });

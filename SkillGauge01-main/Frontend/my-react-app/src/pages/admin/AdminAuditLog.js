@@ -46,7 +46,19 @@ const AdminAuditLog = () => {
         setTotalPages(Math.ceil(total / itemsPerPage));
       } catch (err) {
         console.error('Failed to fetch logs', err);
+        const status = err?.status ? ` [${err.status}]` : '';
+        const message = err?.message ? ` ${err.message}` : '';
         setLogs([]);
+        setSelectedLog({
+          id: 'error',
+          timestamp: new Date().toISOString(),
+          user: 'System',
+          role: '-',
+          action: 'โหลดประวัติการใช้งานไม่สำเร็จ',
+          details: `ไม่สามารถโหลดประวัติการใช้งานได้${status}${message}`.trim(),
+          ip: '-',
+          status: 'error'
+        });
       } finally {
         setLoading(false);
       }
@@ -66,6 +78,16 @@ const AdminAuditLog = () => {
       case 'warning': return '#ed8936'; // สีส้ม
       case 'error': return '#f56565';   // สีแดง
       default: return '#a0aec0';        // สีเทา
+    }
+  };
+
+  const formatDetails = (details) => {
+    if (details === null || details === undefined) return '-';
+    if (typeof details === 'string') return details;
+    try {
+      return JSON.stringify(details, null, 2);
+    } catch (error) {
+      return String(details);
     }
   };
 
@@ -153,7 +175,7 @@ const AdminAuditLog = () => {
                       {log.action}
                     </span>
                   </td>
-                  <td className="details-cell">{log.details}</td>
+                  <td className="details-cell">{formatDetails(log.details)}</td>
                   <td className="ip-cell">{log.ip}</td>
                   <td className="status-cell">
                     <span 
@@ -252,7 +274,7 @@ const AdminAuditLog = () => {
                 
                 <div className="detail-label">รายละเอียด:</div>
                 <div className="detail-json-box">
-                    {selectedLog.details}
+                  {formatDetails(selectedLog.details)}
                 </div>
             </div>
           </div>

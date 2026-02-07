@@ -8,6 +8,13 @@ const assessmentController = require('../controllers/assessmentController');
  */
 
 /**
+ * GET /api/worker/assessments/rounds
+ * ดึงรายการรอบการประเมิน (เฉพาะที่ active)
+ * Query params: ?category=structure
+ */
+router.get('/rounds', assessmentController.getWorkerRounds);
+
+/**
  * GET /api/worker/assessments/rounds/:id/questions
  * ดึงข้อสอบสำหรับ Worker ตาม Round ID
  * Query params: ?sessionId=xxx (optional)

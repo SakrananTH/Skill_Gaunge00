@@ -17,6 +17,9 @@ app.use('/api', require('./routes/auth'));
 // 3. โหลด Routes Assessment Rounds (Admin)
 app.use('/api/admin/assessments', require('./routes/assessmentRoutes'));
 
+// 3.1 โหลด Routes Audit Logs (Admin)
+app.use('/api/admin/audit-logs', require('./routes/auditLogRoutes'));
+
 // 4. โหลด Routes Worker Assessments
 app.use('/api/worker/assessments', require('./routes/workerAssessmentRoutes'));
 
@@ -46,6 +49,54 @@ function parseWorkerId(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const toAnswerKey = (value) => {
+  const mapping = ['a', 'b', 'c', 'd'];
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return mapping[value] || null;
+  }
+  const trimmed = String(value).trim();
+  if (trimmed === '') return null;
+  if (/^[0-3]$/.test(trimmed)) {
+    return mapping[Number(trimmed)] || null;
+  }
+  const normalized = trimmed.toLowerCase();
+  return mapping.includes(normalized) ? normalized : null;
+};
+
+async function fetchWorkerAssessmentSummary(workerId) {
+  const rows = await safeQuery(
+    `SELECT id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at
+       FROM worker_assessment_results
+      WHERE worker_id = ?
+      ORDER BY finished_at DESC
+      LIMIT 1`,
+    [workerId]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  let breakdown = null;
+  if (row.breakdown) {
+    try {
+      breakdown = typeof row.breakdown === 'string' ? JSON.parse(row.breakdown) : row.breakdown;
+    } catch (err) {
+      breakdown = null;
+    }
+  }
+  return {
+    id: row.id,
+    workerId: row.worker_id,
+    roundId: row.round_id,
+    sessionId: row.session_id,
+    category: row.category,
+    score: Number(row.total_score) || 0,
+    totalQuestions: Number(row.total_questions) || 0,
+    passed: Boolean(Number(row.passed)),
+    breakdown: Array.isArray(breakdown) ? breakdown : [],
+    finishedAt: row.finished_at
+  };
+}
+
 // ----------------------------------------------------
 // API: Get Questions (Structural) 
 // (เก็บไว้เฉพาะดึงข้อสอบ แต่ลบ Submit/Result ออกแล้ว)
@@ -55,34 +106,128 @@ app.get('/api/questions/structural', async (req, res) => {
     const set_no = parseInt(req.query.set_no, 10) || 1;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const per_page = Math.max(1, parseInt(req.query.per_page, 10) || 20);
+    const difficultyParamRaw = req.query.difficulty_level ?? req.query.level ?? req.query.difficulty;
+    const parsedDifficulty = Number.isFinite(Number(difficultyParamRaw))
+      ? Number(difficultyParamRaw)
+      : null;
+    const difficultyMap = { easy: 1, medium: 2, hard: 3 };
+    const normalizedDifficultyKey = typeof difficultyParamRaw === 'string'
+      ? difficultyParamRaw.trim().toLowerCase()
+      : '';
+    const difficultyLevel = parsedDifficulty
+      ? parsedDifficulty
+      : (difficultyMap[normalizedDifficultyKey] || null);
     const sessionId = req.query.sessionId || null;
+    const workerId = parseWorkerId(req.query.workerId);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : null;
+    const requestedRoundId = typeof req.query.roundId === 'string' ? req.query.roundId.trim() : null;
 
     let session = null;
     if (!sessionId) {
-      // สุ่ม 60 ข้อ
-      const [rows] = await pool.query(
-        'SELECT id FROM question_Structural WHERE set_no = ? ORDER BY RAND() LIMIT 60',
-        [set_no]
-      );
+      // สุ่ม 60 ข้อและเก็บไว้ใน session
+      const buildQuestionQuery = (includeSetNo) => {
+        const filters = [];
+        const params = [];
+        if (includeSetNo) {
+          filters.push('set_no = ?');
+          params.push(set_no);
+        }
+        if (difficultyLevel) {
+          filters.push('difficulty_level = ?');
+          params.push(difficultyLevel);
+        }
+        const whereSql = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
+        return {
+          sql: `SELECT id FROM question_Structural${whereSql} ORDER BY RAND() LIMIT 60`,
+          params
+        };
+      };
+
+      let rows;
+      try {
+        const queryWithSet = buildQuestionQuery(true);
+        [rows] = await pool.query(queryWithSet.sql, queryWithSet.params);
+      } catch (err) {
+        if (err?.code === 'ER_BAD_FIELD_ERROR') {
+          const queryWithoutSet = buildQuestionQuery(false);
+          [rows] = await pool.query(queryWithoutSet.sql, queryWithoutSet.params);
+        } else {
+          throw err;
+        }
+      }
       if (!rows.length) return res.status(404).json({ error: 'No questions found for set_no' });
 
       const qids = rows.map(r => r.id);
       const newSessionId = uuidHex();
-      await pool.query(
-        'INSERT INTO exam_sessions (id, set_no, question_ids) VALUES (?, ?, ?)',
-        [newSessionId, set_no, JSON.stringify(qids)]
-      );
-      session = { id: newSessionId, question_ids: qids };
+
+      let roundId = requestedRoundId || null;
+      if (!roundId) {
+        const [roundRows] = await pool.query(
+          `SELECT id
+             FROM assessment_rounds
+            WHERE category = 'structure'
+              AND (status = 'active' OR status = 'draft')
+            ORDER BY created_at DESC
+            LIMIT 1`
+        );
+        roundId = roundRows[0]?.id || null;
+      }
+
+      if (!roundId) {
+        return res.status(409).json({ error: 'No assessment round found for structure' });
+      }
+
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.query(
+          `INSERT INTO assessment_sessions
+             (id, round_id, worker_id, user_id, status, question_count, source)
+           VALUES (?, ?, ?, ?, 'in_progress', ?, 'question_Structural')`,
+          [newSessionId, roundId, workerId, userId, qids.length]
+        );
+
+        const values = qids.map((qid, index) => [newSessionId, String(qid), index + 1, 'question_Structural']);
+        await connection.query(
+          'INSERT INTO assessment_session_questions (session_id, question_id, display_order, source_table) VALUES ?',
+          [values]
+        );
+
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
+
+      session = { id: newSessionId, question_ids: qids, round_id: roundId };
     } else {
       // โหลด Session เดิม
-      const [sessRows] = await pool.query('SELECT id, question_ids FROM exam_sessions WHERE id = ? LIMIT 1', [sessionId]);
+      const [sessRows] = await pool.query(
+        `SELECT id FROM assessment_sessions WHERE id = ? LIMIT 1`,
+        [sessionId]
+      );
       if (!sessRows.length) return res.status(404).json({ error: 'Session not found' });
-      session = sessRows[0];
-      try {
-        session.question_ids = typeof session.question_ids === 'string' ? JSON.parse(session.question_ids) : session.question_ids;
-      } catch (e) {
-        return res.status(500).json({ error: 'Invalid session data' });
-      }
+
+      const [qidRows] = await pool.query(
+        `SELECT question_id
+           FROM assessment_session_questions
+          WHERE session_id = ?
+          ORDER BY display_order ASC`,
+        [sessionId]
+      );
+      const qids = qidRows.map(row => row.question_id);
+      const [roundRows] = await pool.query(
+        'SELECT round_id FROM assessment_sessions WHERE id = ? LIMIT 1',
+        [sessionId]
+      );
+      session = { id: sessionId, question_ids: qids, round_id: roundRows[0]?.round_id || null };
+
+      await pool.query(
+        'UPDATE assessment_sessions SET last_seen_at = NOW(6) WHERE id = ? LIMIT 1',
+        [sessionId]
+      );
     }
 
     const total = session.question_ids.length;
@@ -125,6 +270,7 @@ app.get('/api/questions/structural', async (req, res) => {
 
     res.json({
       sessionId: session.id,
+      roundId: session.round_id || null,
       page,
       per_page,
       total,
@@ -135,6 +281,221 @@ app.get('/api/questions/structural', async (req, res) => {
   } catch (err) {
     console.error('GET /api/questions/structural error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ----------------------------------------------------
+// API: Worker Assessment Summary
+// ----------------------------------------------------
+app.get('/api/worker/assessment/summary', async (req, res) => {
+  try {
+    const workerId = parseWorkerId(req.query.workerId);
+    if (!workerId) {
+      return res.status(400).json({ success: false, message: 'invalid_worker' });
+    }
+    const summary = await fetchWorkerAssessmentSummary(workerId);
+    if (!summary) {
+      return res.status(404).json({ success: false, message: 'not_found' });
+    }
+    res.json({ success: true, result: summary });
+  } catch (err) {
+    console.error('GET /api/worker/assessment/summary error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ----------------------------------------------------
+// API: Admin Assessment Results
+// ----------------------------------------------------
+app.get('/api/admin/assessment-results', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+    const offset = (page - 1) * limit;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+    const passed = typeof req.query.passed === 'string' ? req.query.passed.trim() : '';
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (w.full_name LIKE ? OR a.email LIKE ? OR CAST(r.worker_id AS CHAR) LIKE ? OR r.id LIKE ?)';
+      const term = `%${search}%`;
+      params.push(term, term, term, term);
+    }
+
+    if (category && category !== 'all') {
+      whereClause += ' AND r.category = ?';
+      params.push(category);
+    }
+
+    if (passed && passed !== 'all') {
+      whereClause += ' AND r.passed = ?';
+      params.push(passed === '1' ? 1 : 0);
+    }
+
+    const countRows = await safeQuery(
+      `SELECT COUNT(*) AS total
+         FROM worker_assessment_results r
+         LEFT JOIN workers w ON w.id = r.worker_id
+         LEFT JOIN worker_accounts a ON a.worker_id = w.id
+        ${whereClause}`,
+      params
+    );
+    const total = Number(countRows?.[0]?.total) || 0;
+
+    const rows = await safeQuery(
+      `SELECT r.id, r.worker_id, r.round_id, r.session_id, r.category, r.total_score, r.total_questions,
+              r.passed, r.finished_at, w.full_name AS worker_name, a.email AS worker_email
+         FROM worker_assessment_results r
+         LEFT JOIN workers w ON w.id = r.worker_id
+         LEFT JOIN worker_accounts a ON a.worker_id = w.id
+        ${whereClause}
+        ORDER BY r.finished_at DESC
+        LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    res.json({ items: rows || [], total });
+  } catch (err) {
+    console.error('GET /api/admin/assessment-results error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ----------------------------------------------------
+// API: Worker Submit Score (persist results)
+// ----------------------------------------------------
+app.post('/api/worker/score', async (req, res) => {
+  try {
+    const { userId, answers, sessionId } = req.body || {};
+    const workerId = parseWorkerId(userId);
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'missing_session' });
+    }
+
+    const [sessionRows] = await pool.query(
+      'SELECT id, worker_id, round_id, status, question_count FROM assessment_sessions WHERE id = ? LIMIT 1',
+      [sessionId]
+    );
+    const session = sessionRows[0];
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'session_not_found' });
+    }
+    if (workerId && session.worker_id && Number(session.worker_id) !== workerId) {
+      return res.status(403).json({ success: false, message: 'session_mismatch' });
+    }
+    const resolvedWorkerId = workerId || Number(session.worker_id) || null;
+    if (!resolvedWorkerId) {
+      return res.status(400).json({ success: false, message: 'missing_worker' });
+    }
+
+    const existing = await fetchWorkerAssessmentSummary(resolvedWorkerId);
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'already_completed', result: existing });
+    }
+
+    const [roundRows] = await pool.query(
+      'SELECT id, category, passingScore FROM assessment_rounds WHERE id = ? LIMIT 1',
+      [session.round_id]
+    );
+    const round = roundRows[0] || null;
+    const category = round?.category || 'structure';
+
+    const [questionRows] = await pool.query(
+      'SELECT question_id FROM assessment_session_questions WHERE session_id = ? ORDER BY display_order ASC',
+      [sessionId]
+    );
+    const questionIds = questionRows.map(row => Number(row.question_id)).filter(id => Number.isFinite(id));
+    if (!questionIds.length) {
+      return res.status(404).json({ success: false, message: 'no_questions' });
+    }
+
+    const placeholders = questionIds.map(() => '?').join(',');
+    const [answerRows] = await pool.query(
+      `SELECT id, answer, category
+         FROM question_Structural
+        WHERE id IN (${placeholders})`,
+      questionIds
+    );
+
+    const answerMap = new Map();
+    answerRows.forEach(row => {
+      answerMap.set(String(row.id), {
+        answer: String(row.answer || '').toLowerCase(),
+        category: row.category || 'structure'
+      });
+    });
+
+    const breakdownByCategory = new Map();
+    let totalScore = 0;
+    questionIds.forEach((qid) => {
+      const key = String(qid);
+      const meta = answerMap.get(key);
+      if (!meta) return;
+      const selected = answers ? toAnswerKey(answers[key]) : null;
+      const isCorrect = selected && selected === meta.answer;
+      if (isCorrect) totalScore += 1;
+      const bucket = breakdownByCategory.get(meta.category) || { correct: 0, total: 0 };
+      bucket.total += 1;
+      if (isCorrect) bucket.correct += 1;
+      breakdownByCategory.set(meta.category, bucket);
+    });
+
+    const totalQuestions = Number(session.question_count) || questionIds.length;
+    const breakdown = Array.from(breakdownByCategory.entries()).map(([label, stats]) => ({
+      label,
+      correct: stats.correct,
+      total: stats.total,
+      percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
+    }));
+
+    const passed = round?.passingScore
+      ? totalScore >= Number(round.passingScore)
+      : totalScore >= Math.ceil(totalQuestions * 0.7);
+
+    const resultId = crypto.randomUUID ? crypto.randomUUID() : uuidHex();
+    await pool.query(
+      `INSERT INTO worker_assessment_results
+        (id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6))`,
+      [
+        resultId,
+        resolvedWorkerId,
+        session.round_id,
+        sessionId,
+        category,
+        totalScore,
+        totalQuestions,
+        passed ? 1 : 0,
+        JSON.stringify(breakdown)
+      ]
+    );
+
+    await pool.query(
+      'UPDATE assessment_sessions SET status = ?, finished_at = NOW(6) WHERE id = ? LIMIT 1',
+      ['completed', sessionId]
+    );
+
+    res.json({
+      success: true,
+      result: {
+        id: resultId,
+        workerId: resolvedWorkerId,
+        roundId: session.round_id,
+        sessionId,
+        category,
+        score: totalScore,
+        totalQuestions,
+        passed,
+        breakdown,
+        finishedAt: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error('POST /api/worker/score error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 

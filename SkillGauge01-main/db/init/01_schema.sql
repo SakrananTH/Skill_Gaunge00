@@ -150,6 +150,27 @@ CREATE TABLE IF NOT EXISTS assessments (
   CONSTRAINT fk_assessments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS worker_assessment_results (
+  id CHAR(36) NOT NULL,
+  worker_id INT UNSIGNED NOT NULL,
+  round_id CHAR(36) NULL,
+  session_id CHAR(36) NULL,
+  category VARCHAR(120) NOT NULL DEFAULT 'structure',
+  total_score INT UNSIGNED NOT NULL DEFAULT 0,
+  total_questions INT UNSIGNED NOT NULL DEFAULT 0,
+  passed TINYINT(1) NOT NULL DEFAULT 0,
+  breakdown JSON NULL,
+  finished_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_worker_assessment_once (worker_id, category),
+  KEY idx_worker_assessment_round (round_id),
+  CONSTRAINT fk_worker_assessment_worker FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_worker_assessment_round FOREIGN KEY (round_id) REFERENCES assessment_rounds(id) ON DELETE SET NULL,
+  CONSTRAINT fk_worker_assessment_session FOREIGN KEY (session_id) REFERENCES assessment_sessions(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS assessment_answers (
   assessment_id CHAR(36) NOT NULL,
   question_id CHAR(36) NOT NULL,
@@ -159,6 +180,36 @@ CREATE TABLE IF NOT EXISTS assessment_answers (
   CONSTRAINT fk_assessment_answers_assessment FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
   CONSTRAINT fk_assessment_answers_question FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
   CONSTRAINT fk_assessment_answers_option FOREIGN KEY (chosen_option_id) REFERENCES question_options(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assessment_sessions (
+  id CHAR(36) NOT NULL,
+  round_id CHAR(36) NOT NULL,
+  worker_id INT UNSIGNED NULL,
+  user_id CHAR(36) NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'in_progress',
+  started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  finished_at DATETIME(6) NULL,
+  last_seen_at DATETIME(6) NULL,
+  question_count INT UNSIGNED NOT NULL DEFAULT 0,
+  source VARCHAR(50) NULL,
+  PRIMARY KEY (id),
+  KEY idx_assessment_sessions_round (round_id),
+  KEY idx_assessment_sessions_worker (worker_id),
+  KEY idx_assessment_sessions_user (user_id),
+  CONSTRAINT fk_assessment_sessions_round FOREIGN KEY (round_id) REFERENCES assessment_rounds(id) ON DELETE CASCADE,
+  CONSTRAINT fk_assessment_sessions_worker FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
+  CONSTRAINT fk_assessment_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assessment_session_questions (
+  session_id CHAR(36) NOT NULL,
+  question_id VARCHAR(36) NOT NULL,
+  display_order INT UNSIGNED NOT NULL,
+  source_table VARCHAR(40) NOT NULL DEFAULT 'questions',
+  PRIMARY KEY (session_id, question_id),
+  KEY idx_assessment_session_questions_order (session_id, display_order),
+  CONSTRAINT fk_assessment_session_questions_session FOREIGN KEY (session_id) REFERENCES assessment_sessions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Worker management tables

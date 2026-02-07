@@ -20,6 +20,7 @@ import WorkHistory from './pages/Worker/WorkHistory';
 import PMProjectManager from './pages/pm/PMProjectManager';
 import WKProjectTasks from './pages/pm/WKProject_Tasks';
 import SkillAssessmentTest from './pages/Worker/SkillAssessmentTest';
+import SkillAssessmentSummary from './pages/Worker/SkillAssessmentSummary';
 import SkillAssessmentQuiz from './pages/Skill Assessment Quiz';
 import './App.css';
 
@@ -50,6 +51,7 @@ function App() {
             <Route path="pm" element={<PMProjectManager />} />
             <Route path="project-tasks" element={<WKProjectTasks />} />
             <Route path="skill-assessment" element={<SkillAssessmentTest />} />
+            <Route path="skill-assessment/summary" element={<SkillAssessmentSummary />} />
             <Route path="skill-assessment/quiz" element={<SkillAssessmentQuiz />} />
             <Route path="submit-work" element={<WorkerTaskDetail />} />
             <Route path="worker-profile" element={<WorkerSettings />} />

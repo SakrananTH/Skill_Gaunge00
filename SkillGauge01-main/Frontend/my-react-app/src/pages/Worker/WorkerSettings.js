@@ -8,15 +8,35 @@ const WorkerSettings = () => {
   const location = useLocation();
   const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
 
+  const tradeLabel = (value) => {
+    const key = String(value || '').toLowerCase();
+    const map = {
+      structure: 'ช่างโครงสร้าง',
+      plumbing: 'ช่างประปา',
+      roofing: 'ช่างหลังคา',
+      masonry: 'ช่างก่ออิฐฉาบปูน',
+      aluminum: 'ช่างประตูหน้าต่างอลูมิเนียม',
+      ceiling: 'ช่างฝ้าเพดาน',
+      electric: 'ช่างไฟฟ้า',
+      tiling: 'ช่างกระเบื้อง'
+    };
+    return map[key] || value || 'ช่างทั่วไป';
+  };
+
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker', email: 'worker@example.com' });
+  const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
 
     useEffect(() => {
         const loadData = async () => {
             // 1. Priority: Session Storage (Source of Truth)
             const storedUserStr = sessionStorage.getItem('user');
             const storedUser = storedUserStr ? JSON.parse(storedUserStr) : null;
+            const storedUserId = sessionStorage.getItem('user_id');
             
             let currentUser = storedUser || (location.state?.user) || { ...mockUser, role: 'Worker', name: 'นายสมชาย ใจดี' };
+            if (!currentUser?.id && storedUserId) {
+              currentUser = { ...currentUser, id: storedUserId };
+            }
             
             // Set initial state
             setUser(prev => ({ ...prev, ...currentUser }));
@@ -24,7 +44,13 @@ const WorkerSettings = () => {
             // 2. Fetch latest profile from API if ID exists
             if (currentUser.id) {
                 try {
-                    const res = await fetch(`${apiBase}/api/worker/profile?userId=${encodeURIComponent(currentUser.id)}`);
+                const numericWorkerId = currentUser.id && !Number.isNaN(Number(currentUser.id))
+                  ? Number(currentUser.id)
+                  : null;
+                const query = numericWorkerId
+                  ? `workerId=${encodeURIComponent(numericWorkerId)}`
+                  : `userId=${encodeURIComponent(currentUser.id)}`;
+                const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data) {
@@ -102,13 +128,13 @@ const WorkerSettings = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
              <div style={{ 
                 width: '36px', height: '36px', 
-                background: '#fef3c7', borderRadius: '8px', 
+               background: '#fef3c700', borderRadius: '8px', 
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#d97706', fontSize: '20px'
+               color: '#5ea6e0', fontSize: '20px'
              }}>
-                <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="m21,15c0-.61-.06-1.22-.18-1.81-.12-.58-.3-1.15-.53-1.69-.22-.53-.5-1.05-.83-1.53-.32-.47-.69-.92-1.1-1.33-.41-.41-.86-.78-1.33-1.1-.33-.22-.68-.41-1.03-.59v7.05h-1V5c0-.55-.45-1-1-1h-4c-.55,0-1,.45-1,1v9h-1v-7.05c-.35.18-.7.37-1.03.59-.48.32-.92.69-1.33,1.1-.41.41-.77.85-1.1,1.33-.33.48-.6,1-.83,1.53-.23.54-.41,1.11-.53,1.69-.12.59-.18,1.2-.18,1.81v3h-1v2h20v-2h-1v-3Z"/></svg>
+                <img src="/logo123.png" alt="Logo" style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
              </div>
-             <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{user.technician_type || 'ช่างทั่วไป'}</h2>
+             <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{tradeLabel(resolvedTrade)}</h2>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

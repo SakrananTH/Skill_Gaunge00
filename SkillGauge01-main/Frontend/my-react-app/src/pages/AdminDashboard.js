@@ -5,6 +5,7 @@ import AdminOverview from './admin/AdminOverview';
 import AdminUsersTable from './admin/AdminUsersTable';
 import AdminQuizBank from './admin/AdminQuizBank';
 import AdminAuditLog from './admin/AdminAuditLog';
+import AdminAssessmentResults from './admin/AdminAssessmentResults';
 import AdminSettings from './admin/AdminSettings';
 import { performLogout } from '../utils/logout';
 
@@ -53,6 +54,9 @@ const AdminDashboard = () => {
               <button type="button" className={`menu-item ${tab === 'audit' ? 'active' : ''}`} onClick={() => setTab('audit')}>
                 <span className="icon"><svg  xmlns="http://www.w3.org/2000/svg" width={24} height={24} fill={"currentColor"} viewBox="0 0 24 24">{/* Boxicons v3.0.6 https://boxicons.com | License  https://docs.boxicons.com/free */}<path d="m12,2C6.58,2,2,6.58,2,12s4.58,10,10,10,10-4.58,10-10S17.42,2,12,2Zm0,18c-4.34,0-8-3.66-8-8S7.66,4,12,4s8,3.66,8,8-3.66,8-8,8Z"></path><path d="M13 7 11 7 11 13 17 13 17 11 13 11 13 7z"></path></svg></span> ประวัติการใช้งาน
               </button>
+              <button type="button" className={`menu-item ${tab === 'assessments' ? 'active' : ''}`} onClick={() => setTab('assessments')}>
+                <span className="icon"><svg xmlns="http://www.w3.org/2000/svg" width={24} height={24} fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h16v2H4z"></path><path d="M4 8h16v2H4z"></path><path d="M4 12h16v2H4z"></path><path d="M4 16h10v2H4z"></path></svg></span> ผลการประเมิน
+              </button>
               <button type="button" className={`menu-item ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
                 <span className="icon"><svg  xmlns="http://www.w3.org/2000/svg" width={24} height={24} fill={"currentColor"} viewBox="0 0 24 24">{/* Boxicons v3.0.6 https://boxicons.com | License  https://docs.boxicons.com/free */}<path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg></span> ตั้งค่า
               </button>
@@ -64,6 +68,7 @@ const AdminDashboard = () => {
             {tab === 'users' && <AdminUsersTable />}
             {tab === 'quiz' && <AdminQuizBank />}
             {tab === 'audit' && <AdminAuditLog />}
+            {tab === 'assessments' && <AdminAssessmentResults />}
             {tab === 'settings' && <AdminSettings avatar={avatar} onAvatarChange={setAvatar} />}
           </div>
         </div>

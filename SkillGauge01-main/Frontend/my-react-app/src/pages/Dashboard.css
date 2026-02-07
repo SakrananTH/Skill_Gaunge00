@@ -11,6 +11,9 @@
   background: #eaf1fb;
   padding: 1rem 0.75rem;
   border-right: 1px solid #e2e6ec;
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .dash-sidebar .brand {

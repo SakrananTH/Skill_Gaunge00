@@ -1,0 +1,151 @@
+.admin-assessment-results {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px -20px rgba(15, 23, 42, 0.35);
+}
+
+.admin-assessment-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-assessment-header h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #0f172a;
+}
+
+.admin-assessment-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.admin-assessment-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-assessment-filters input,
+.admin-assessment-filters select {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.admin-assessment-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.admin-assessment-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.admin-assessment-table thead th {
+  text-align: left;
+  padding: 12px 14px;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 600;
+}
+
+.admin-assessment-table tbody td {
+  padding: 12px 14px;
+  border-top: 1px solid #e2e8f0;
+  color: #1f2937;
+}
+
+.admin-assessment-empty {
+  text-align: center;
+  padding: 24px 0;
+  color: #94a3b8;
+}
+
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.status-pill.passed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-pill.failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.admin-assessment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  color: #475569;
+  font-size: 14px;
+}
+
+.admin-assessment-pagination button {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 6px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.admin-assessment-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-assessment-message {
+  padding: 18px;
+  text-align: center;
+  color: #64748b;
+}
+
+.admin-assessment-message.error {
+  color: #dc2626;
+}
+
+@media (max-width: 960px) {
+  .admin-assessment-filters {
+    grid-template-columns: 1fr;
+  }
+  .admin-assessment-pagination {
+    justify-content: center;
+  }
+}

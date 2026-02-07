@@ -4,12 +4,28 @@ import { useNavigate } from 'react-router-dom';
 
 const SkillAssessmentTest = () => {
   const navigate = useNavigate();
+
+  const tradeLabel = (value) => {
+    const key = String(value || '').toLowerCase();
+    const map = {
+      structure: 'ช่างโครงสร้าง',
+      plumbing: 'ช่างประปา',
+      roofing: 'ช่างหลังคา',
+      masonry: 'ช่างก่ออิฐฉาบปูน',
+      aluminum: 'ช่างประตูหน้าต่างอลูมิเนียม',
+      ceiling: 'ช่างฝ้าเพดาน',
+      electric: 'ช่างไฟฟ้า',
+      tiling: 'ช่างกระเบื้อง'
+    };
+    return map[key] || value || 'ช่างทั่วไป';
+  };
   
   // State หลัก
   const [step, setStep] = useState('intro'); 
   const [questions, setQuestions] = useState([]); 
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
   const [isScrolled, setIsScrolled] = useState(false);
+  const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -25,6 +41,30 @@ const SkillAssessmentTest = () => {
     if (storedUser) {
       setUser(prev => ({ ...prev, ...storedUser }));
     }
+    const storedUserId = sessionStorage.getItem('user_id');
+    const resolvedUserId = storedUser?.id ?? storedUserId;
+    const numericWorkerId = resolvedUserId && !Number.isNaN(Number(resolvedUserId))
+      ? Number(resolvedUserId)
+      : null;
+    if (!resolvedUserId && !numericWorkerId) return;
+    const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+    const loadProfile = async ({ userId, workerId }) => {
+      if (!userId && !workerId) return;
+      try {
+        const query = workerId
+          ? `workerId=${encodeURIComponent(workerId)}`
+          : `userId=${encodeURIComponent(userId)}`;
+        const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          setUser(prev => ({ ...prev, ...data }));
+        }
+      } catch (err) {
+        console.error('Error fetching worker profile:', err);
+      }
+    };
+    loadProfile({ userId: resolvedUserId, workerId: numericWorkerId });
   }, []);
 
   
@@ -38,28 +78,122 @@ const SkillAssessmentTest = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [answers, setAnswers] = useState({});
+  const [activeQuestionId, setActiveQuestionId] = useState(null);
+  const [selectedQuestionNumber, setSelectedQuestionNumber] = useState(null);
+  const [testResult, setTestResult] = useState(null);
+  const [hasCompleted, setHasCompleted] = useState(false);
+  
+  // Load answers from sessionStorage on mount
+  const [answers, setAnswers] = useState(() => {
+    const saved = sessionStorage.getItem('assessment_answers');
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const [timeLeft, setTimeLeft] = useState(0); 
+  const [pendingScrollId, setPendingScrollId] = useState(null);
   
   // State สำหรับ Modal (ป็อปอัพ)
   const [warningModal, setWarningModal] = useState({ show: false, message: '' }); // แจ้งเตือน (ปุ่ม OK)
   const [showConfirmModal, setShowConfirmModal] = useState(false); // ยืนยันส่ง (ปุ่ม ยืนยัน/ยกเลิก)
 
   const timerRef = useRef(null); 
-  const questionsPerPage = 15; 
+  const questionListRef = useRef(null);
+  const questionsScrollRef = useRef(null);
+  const suppressObserverUntilRef = useRef(0);
+  const pinnedQuestionIdRef = useRef(null);
+  const pinnedClearTimerRef = useRef(null);
+  const questionsPerPage = 10;
+
+  const getWorkerIdentity = () => {
+    const storedUserStr = sessionStorage.getItem('user');
+    const storedUser = storedUserStr ? JSON.parse(storedUserStr) : null;
+    const storedUserId = sessionStorage.getItem('user_id');
+    const resolvedUserId = storedUser?.id ?? storedUserId;
+    const numericWorkerId = resolvedUserId && !Number.isNaN(Number(resolvedUserId))
+      ? Number(resolvedUserId)
+      : null;
+    return { resolvedUserId, numericWorkerId };
+  };
+
+  const buildFallbackBreakdown = (scoreValue, totalValue) => {
+    const totalScore = Number(scoreValue) || 0;
+    const totalQuestions = Number(totalValue) || 0;
+    const overallPct = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
+    const categories = [
+      { label: 'งานเหล็กเสริม', weight: examConfig.cat_rebar_percent },
+      { label: 'งานคอนกรีต', weight: examConfig.cat_concrete_percent },
+      { label: 'งานไม้แบบ', weight: examConfig.cat_formwork_percent },
+      { label: 'องค์อาคาร', weight: examConfig.cat_element_percent },
+      { label: 'ทฤษฎีโครงสร้าง', weight: examConfig.cat_theory_percent }
+    ];
+    return categories.map((item) => ({
+      label: item.label,
+      percentage: Math.round(overallPct * (Number(item.weight) || 0) / 100)
+    }));
+  };
+
+  useEffect(() => {
+    const fetchSummary = async () => {
+      const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+      const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
+      const workerId = numericWorkerId ?? (resolvedUserId ? Number(resolvedUserId) : null);
+      if (!workerId) return;
+      try {
+        const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${workerId}`);
+        if (res.status === 404) return;
+        if (!res.ok) throw new Error('summary fetch failed');
+        const data = await res.json();
+        if (data?.result) {
+          setTestResult(data.result);
+          setHasCompleted(true);
+          navigate('/skill-assessment/summary');
+        }
+      } catch (err) {
+        console.error('Summary fetch failed:', err);
+      }
+    };
+    fetchSummary();
+  }, []);
+
+  // Sync answers to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('assessment_answers', JSON.stringify(answers));
+  }, [answers]);
 
   // --- Logic การดึงข้อมูล ---
   useEffect(() => {
     const fetchExamData = async () => {
         setLoading(true);
         const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+        const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
+        const sessionId = sessionStorage.getItem('assessment_session_id') || '';
         try {
           // Explicitly fetch LV1 (set_no=1)
-          const res = await fetch(`${apiBase}/api/questions/structural?set_no=1`);
+          const params = new URLSearchParams({ set_no: '1' });
+          if (sessionId) params.set('sessionId', sessionId);
+          if (numericWorkerId) params.set('workerId', String(numericWorkerId));
+          if (!numericWorkerId && resolvedUserId) params.set('userId', String(resolvedUserId));
+          const res = await fetch(`${apiBase}/api/questions/structural?${params.toString()}`);
           if (!res.ok) throw new Error('Failed to fetch exam data');
           const data = await res.json();
           // Backend returns { questions: [...] } wrapped in object with pagination
           const qList = data.questions || data; 
+
+          if (data?.round) {
+            const round = data.round;
+            const quotas = round.subcategoryQuotas || {};
+            const pct = (key) => Number(quotas?.[key]?.pct) || 0;
+            setExamConfig(prev => ({
+              ...prev,
+              duration_minutes: Number(round.durationMinutes) || prev.duration_minutes,
+              total_questions: Number(round.questionCount) || prev.total_questions,
+              cat_rebar_percent: pct('rebar') || prev.cat_rebar_percent,
+              cat_concrete_percent: pct('concrete') || prev.cat_concrete_percent,
+              cat_formwork_percent: pct('formwork') || prev.cat_formwork_percent,
+              cat_element_percent: pct('tools') || prev.cat_element_percent,
+              cat_theory_percent: pct('theory') || prev.cat_theory_percent
+            }));
+          }
           
           if (Array.isArray(qList)) {
             const transformedQuestions = qList.map(q => ({
@@ -70,8 +204,21 @@ const SkillAssessmentTest = () => {
             setQuestions(transformedQuestions);
             
             // Set simple mock config based on question count
-            setExamConfig(prev => ({ ...prev, total_questions: transformedQuestions.length }));
-            setTimeLeft(60 * 60); // 60 minutes
+            const totalQuestions = Number(data?.total) || transformedQuestions.length;
+            setExamConfig(prev => ({ ...prev, total_questions: totalQuestions }));
+
+            // Timer Persistence Logic
+            const duration = (Number(data?.round?.durationMinutes) || 60) * 60;
+            const startTime = sessionStorage.getItem('assessment_start_time');
+            if (startTime) {
+              const elapsed = Math.floor((Date.now() - Number(startTime)) / 1000);
+              setTimeLeft(Math.max(0, duration - elapsed));
+            } else {
+              setTimeLeft(duration);
+            }
+          }
+          if (data?.sessionId) {
+            sessionStorage.setItem('assessment_session_id', data.sessionId);
           }
         } catch (err) {
           console.error("Error fetching data:", err);
@@ -85,7 +232,11 @@ const SkillAssessmentTest = () => {
 
   // --- Timer Logic (เหมือนเดิม) ---
   useEffect(() => {
-    if (step === 'test' && timeLeft > 0) {
+    if (step === 'test') {
+        if (!sessionStorage.getItem('assessment_start_time')) {
+          sessionStorage.setItem('assessment_start_time', Date.now().toString());
+        }
+
         timerRef.current = setInterval(() => {
             setTimeLeft((prev) => {
                 if (prev <= 1) {
@@ -100,6 +251,62 @@ const SkillAssessmentTest = () => {
     return () => clearInterval(timerRef.current);
   }, [step]); 
 
+  useEffect(() => {
+    if (!questions.length) return;
+    const startIndex = (currentPage - 1) * questionsPerPage;
+    const initial = questions[startIndex];
+    if (initial) {
+      setActiveQuestionId(String(initial.id));
+    }
+    setSelectedQuestionNumber(null);
+  }, [currentPage, questions]);
+
+  useEffect(() => {
+    if (!questions.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (Date.now() < suppressObserverUntilRef.current) return;
+        const visible = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible.length > 0) {
+          const nextId = visible[0].target.getAttribute('data-qid');
+          const pinnedId = pinnedQuestionIdRef.current;
+          if (pinnedId && nextId !== pinnedId) return;
+          if (pinnedId && nextId === pinnedId) {
+            pinnedQuestionIdRef.current = null;
+          }
+          if (nextId) setActiveQuestionId(String(nextId));
+        }
+      },
+      {
+        root: questionsScrollRef.current || null,
+        rootMargin: '-40% 0px -45% 0px',
+        threshold: [0.1, 0.25, 0.5, 0.75]
+      }
+    );
+
+    const startIndex = (currentPage - 1) * questionsPerPage;
+    const endIndex = startIndex + questionsPerPage;
+    questions.slice(startIndex, endIndex).forEach(q => {
+      const el = document.getElementById(`q-${q.id}`);
+      if (el) {
+        el.setAttribute('data-qid', String(q.id));
+        observer.observe(el);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [questions, currentPage]);
+
+  useEffect(() => {
+    if (!activeQuestionId || !questionListRef.current) return;
+    const activeBtn = questionListRef.current.querySelector(`button[data-qid="${activeQuestionId}"]`);
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeQuestionId]);
+
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -107,7 +314,14 @@ const SkillAssessmentTest = () => {
   };
 
   const handleAnswer = (qId, choiceIndex) => {
-    setAnswers(prev => ({ ...prev, [qId]: choiceIndex }));
+    setAnswers(prev => {
+      if (prev[qId] === choiceIndex) {
+        const next = { ...prev };
+        delete next[qId];
+        return next;
+      }
+      return { ...prev, [qId]: choiceIndex };
+    });
   };
 
   // --- Helper เปิด Modal แจ้งเตือน ---
@@ -116,55 +330,58 @@ const SkillAssessmentTest = () => {
   };
 
   // --- Navigation & Validation ---
-  const jumpToQuestion = (qId) => {
-    const qIndex = questions.findIndex(q => q.id === qId);
-    const targetPage = Math.ceil((qIndex + 1) / questionsPerPage);
-
-    if (targetPage <= currentPage) {
-        setCurrentPage(targetPage);
-        scrollToQuestion(qId);
-        return;
+  const jumpToQuestion = (qId, qNumber) => {
+    const qIndex = questions.findIndex(q => String(q.id) === String(qId));
+    if (qIndex >= 0) {
+      setCurrentPage(Math.floor(qIndex / questionsPerPage) + 1);
     }
-
-    const indexOfLastQ = currentPage * questionsPerPage;
-    const indexOfFirstQ = indexOfLastQ - questionsPerPage;
-    const currentQIds = questions.slice(indexOfFirstQ, indexOfLastQ).map(q => q.id);
-    const unanswered = currentQIds.filter(id => answers[id] === undefined);
-
-    if (unanswered.length > 0) {
-        showWarning(`กรุณาทำข้อสอบในหน้านี้ให้ครบทุกข้อก่อน (${unanswered.length} ข้อที่เหลือ)`);
-        return;
+    setActiveQuestionId(String(qId));
+    if (typeof qNumber === 'number') {
+      setSelectedQuestionNumber(qNumber);
     }
-    if (targetPage > currentPage + 1) {
-        showWarning(`กรุณาทำข้อสอบเรียงตามลำดับหน้า`);
-        return;
+    suppressObserverUntilRef.current = Date.now() + 800;
+    pinnedQuestionIdRef.current = String(qId);
+    if (pinnedClearTimerRef.current) {
+      clearTimeout(pinnedClearTimerRef.current);
     }
-    setCurrentPage(targetPage);
-    scrollToQuestion(qId);
+    pinnedClearTimerRef.current = setTimeout(() => {
+      if (pinnedQuestionIdRef.current === String(qId)) {
+        pinnedQuestionIdRef.current = null;
+      }
+    }, 2000);
+    setPendingScrollId(String(qId));
   };
 
   const scrollToQuestion = (qId) => {
-    setTimeout(() => {
-        const element = document.getElementById(`q-${qId}`);
-        if(element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
-  }
-
-  const handleNextPage = () => {
-    const indexOfLastQ = currentPage * questionsPerPage;
-    const indexOfFirstQ = indexOfLastQ - questionsPerPage;
-    const currentQIds = questions.slice(indexOfFirstQ, indexOfLastQ).map(q => q.id);
-    const unanswered = currentQIds.filter(id => answers[id] === undefined);
-
-    if (unanswered.length > 0) {
-        showWarning(`กรุณาทำข้อสอบในหน้านี้ให้ครบทุกข้อก่อน (${unanswered.length} ข้อที่เหลือ)`);
+    const attemptScroll = () => {
+      const element = document.getElementById(`q-${qId}`);
+      if (!element) return;
+      const container = questionsScrollRef.current;
+      if (!container) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
-    }
-    setCurrentPage(prev => prev + 1);
-    window.scrollTo(0, 0);
+      }
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const targetTop = elementRect.top - containerRect.top + container.scrollTop - 16;
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(attemptScroll));
   };
 
+  useEffect(() => {
+    if (!pendingScrollId) return;
+    scrollToQuestion(pendingScrollId);
+    setPendingScrollId(null);
+  }, [pendingScrollId, currentPage, questions]);
+
+
   const handlePreSubmit = () => {
+    if (hasCompleted) {
+      showWarning('คุณได้ทำแบบประเมินแล้ว ระบบจะแสดงผลสรุปทักษะ');
+      navigate('/skill-assessment/summary');
+      return;
+    }
     const unansweredCount = questions.length - Object.keys(answers).length;
     if (unansweredCount > 0) {
         showWarning(`คุณยังทำข้อสอบไม่ครบ ${unansweredCount} ข้อ`);
@@ -182,32 +399,79 @@ const SkillAssessmentTest = () => {
   const submitToBackend = async () => {
     setShowConfirmModal(false); 
     try {
-        const userStr = sessionStorage.getItem('user'); // Use session
-        const user = userStr ? JSON.parse(userStr) : { id: 1 };
-        
-        let score = 0;
-        // Simple client-side scoring for the demo since API is mock
-         // In real world, server calculates score.
-         // But here we just send what we have.
-        
-        const res = await fetch(`http://localhost:4000/api/worker/score`, {
+        if (hasCompleted) {
+          showWarning('คุณได้ทำแบบประเมินแล้ว ระบบจะไม่รับคำตอบซ้ำ');
+          navigate('/skill-assessment/summary');
+          return;
+        }
+        const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+        const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
+        const sessionId = sessionStorage.getItem('assessment_session_id') || '';
+        if (!sessionId) {
+          showWarning('ไม่พบข้อมูลรอบการสอบ');
+          return;
+        }
+        const res = await fetch(`${apiBase}/api/worker/score`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              userId: user.id || 1,
-              score: 0, // Mock, normally server checks
+              userId: numericWorkerId ?? resolvedUserId,
+              sessionId,
               answers: answers
             })
         });
+        let resultData = null;
+        let rawErrorText = '';
+        const cloneForText = res.clone();
+        try {
+          resultData = await res.json();
+        } catch (parseErr) {
+          resultData = null;
+        }
+        if (!res.ok && !resultData) {
+          try {
+            rawErrorText = (await cloneForText.text()) || '';
+          } catch (textErr) {
+            rawErrorText = '';
+          }
+        }
+
+        if (!res.ok) {
+          if (resultData?.message === 'already_completed' && resultData?.result) {
+            setTestResult(resultData.result);
+            setHasCompleted(true);
+            navigate('/skill-assessment/summary');
+            return;
+          }
+          const serverMessage = resultData?.message ? ` (${resultData.message})` : '';
+          const statusInfo = res.status ? ` [${res.status}]` : '';
+          const rawInfo = rawErrorText ? ` ${rawErrorText}` : '';
+          showWarning(`ส่งคำตอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง${statusInfo}${serverMessage}${rawInfo}`);
+          return;
+        }
+
+        const resultPayload = resultData?.result
+          ? resultData.result
+          : {
+              ...resultData,
+              totalQuestions: resultData?.totalQuestions ?? questions.length,
+              finishedAt: new Date().toISOString()
+            };
+        setTestResult(resultPayload);
+        setHasCompleted(true);
         
-        if (!res.ok) throw new Error('submit failed');
-        setStep('review'); 
+        // Clear session data after successful submission
+        sessionStorage.removeItem('assessment_answers');
+        sessionStorage.removeItem('assessment_start_time');
+        sessionStorage.removeItem('assessment_session_id');
+
+        navigate('/skill-assessment/summary');
         window.scrollTo(0, 0);
     } catch (err) {
         console.error("Error submitting:", err);
-        setStep('review'); // Just go to review on error for UX
+        setStep('review'); // Keep legacy review as fallback
     }
   };
 
@@ -236,6 +500,14 @@ const SkillAssessmentTest = () => {
 
   // --- Step 1: Intro ---
   if (step === 'intro') {
+    const startAssessment = () => {
+      if (hasCompleted) {
+        showWarning('คุณได้ทำแบบประเมินแล้ว ระบบจะแสดงผลสรุปทักษะ');
+        navigate('/skill-assessment/summary');
+        return;
+      }
+      setStep('test');
+    };
     return (
       <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
         
@@ -254,15 +526,15 @@ const SkillAssessmentTest = () => {
             zIndex: 50
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-               <div style={{ 
-                  width: '36px', height: '36px', 
-                  background: '#fef3c7', borderRadius: '8px', 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#d97706', fontSize: '20px'
-               }}>
-                  
+              <div style={{ 
+                width: '36px', height: '36px', 
+                background: '#fef3c700', borderRadius: '8px', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#5ea6e0', fontSize: '20px'
+              }}>
+                  <img src="/logo123.png" alt="Logo" style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
                </div>
-               <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{user.technician_type || 'ช่างทั่วไป'}</h2>
+               <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{tradeLabel(resolvedTrade)}</h2>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -335,7 +607,7 @@ const SkillAssessmentTest = () => {
 
               <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
                 <button onClick={() => navigate('/worker')} style={{ padding: '12px 30px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', cursor: 'pointer', color: '#64748b', fontWeight: '600', fontSize: '16px', transition: 'background 0.2s' }}>ยกเลิก</button>
-                <button onClick={() => setStep('test')} style={{ padding: '12px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)', transition: 'transform 0.2s' }}>เริ่มทำข้อสอบ</button>
+                <button onClick={startAssessment} style={{ padding: '12px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)', transition: 'transform 0.2s' }}>เริ่มทำข้อสอบ</button>
               </div>
             </div>
           </div>
@@ -346,6 +618,11 @@ const SkillAssessmentTest = () => {
 
   // --- Step 3: Review ---
   if (step === 'review') {
+    const scoreValue = testResult?.score ?? testResult?.totalScore ?? 0;
+    const totalValue = testResult?.totalQuestions ?? questions.length;
+    const breakdownItems = Array.isArray(testResult?.breakdown) && testResult.breakdown.length
+      ? testResult.breakdown
+      : buildFallbackBreakdown(scoreValue, totalValue);
     return (
        <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
           
@@ -362,15 +639,15 @@ const SkillAssessmentTest = () => {
               zIndex: 50
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                 <div style={{ 
+                  <div style={{ 
                     width: '36px', height: '36px', 
-                    background: '#fef3c7', borderRadius: '8px', 
+                    background: '#fef3c700', borderRadius: '8px', 
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#d97706', fontSize: '20px'
-                 }}>
-                    <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="m21,15c0-.61-.06-1.22-.18-1.81-.12-.58-.3-1.15-.53-1.69-.22-.53-.5-1.05-.83-1.53-.32-.47-.69-.92-1.1-1.33-.41-.41-.86-.78-1.33-1.1-.33-.22-.68-.41-1.03-.59v7.05h-1V5c0-.55-.45-1-1-1h-4c-.55,0-1,.45-1,1v9h-1v-7.05c-.35.18-.7.37-1.03.59-.48.32-.92.69-1.33,1.1-.41.41-.77.85-1.1,1.33-.33.48-.6,1-.83,1.53-.23.54-.41,1.11-.53,1.69-.12.59-.18,1.2-.18,1.81v3h-1v2h20v-2h-1v-3Z"/></svg>
+                    color: '#5ea6e0', fontSize: '20px'
+                  }}>
+                      <img src="/logo123.png" alt="Logo" style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
                  </div>
-                 <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{user.technician_type || 'ช่างทั่วไป'}</h2>
+                 <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#1e293b' }}>{tradeLabel(resolvedTrade)}</h2>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -389,11 +666,46 @@ const SkillAssessmentTest = () => {
           </nav>
 
           <main style={{ flex: 1, padding: '60px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ background: 'white', maxWidth: '500px', width: '100%', padding: '50px 40px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-             <div style={{ width: '80px', height: '80px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', color: '#166534', fontSize: '40px', border: '4px solid #f0fdf4' }}>✓</div>
-             <h2 style={{ color: '#1e293b', margin: '0 0 10px 0', fontSize: '24px' }}>ส่งคำตอบเรียบร้อยแล้ว</h2>
-             <p style={{ fontSize: '16px', color: '#64748b', margin: '0 0 30px 0', lineHeight: '1.6' }}>ระบบได้บันทึกคำตอบของคุณแล้ว<br/>โปรดรอผลการประเมินจากหัวหน้างาน (Foreman)</p>
-             <div style={{ marginTop: '40px' }}>
+            <div style={{ background: 'white', maxWidth: '600px', width: '100%', padding: '40px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+             <div style={{ width: '70px', height: '70px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#166534', fontSize: '32px' }}>✓</div>
+             <h2 style={{ color: '#1e293b', margin: '0 0 5px 0', fontSize: '24px' }}>การประเมินเสร็จสิ้น</h2>
+             
+             {testResult ? (
+               <div style={{ marginTop: '25px' }}>
+                 <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', marginBottom: '25px' }}>
+                    <div style={{ fontSize: '14px', color: '#64748b' }}>คะแนนรวมของคุณ</div>
+                    <div style={{ fontSize: '42px', fontWeight: '800', color: '#2563eb' }}>{testResult.score} / {questions.length}</div>
+                 </div>
+
+                 <h3 style={{ fontSize: '16px', textAlign: 'left', marginBottom: '15px', color: '#1e293b' }}>📊 วิเคราะห์ความถนัดแยกตามหมวดหมู่</h3>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {breakdownItems.map((item, idx) => (
+                      <div key={idx}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '5px' }}>
+                          <span style={{ color: '#475569', fontWeight: '600' }}>{item.label}</span>
+                          <span style={{ color: '#2563eb' }}>{item.percentage}%</span>
+                        </div>
+                        <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ 
+                            width: `${item.percentage}%`, 
+                            height: '100%', 
+                            background: item.percentage >= 70 ? '#10b981' : (item.percentage >= 50 ? '#f59e0b' : '#ef4444'),
+                            transition: 'width 1s ease-in-out'
+                          }} />
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+                 
+                 <p style={{ fontSize: '14px', color: '#64748b', marginTop: '25px', lineHeight: '1.5' }}>
+                    *คะแนนนี้เป็นผลเบื้องต้น หัวหน้างานจะพิจารณาผลการทดสอบร่วมกับประวัติการทำงานของคุณอีกครั้ง
+                 </p>
+               </div>
+             ) : (
+               <p style={{ fontSize: '16px', color: '#64748b', margin: '20px 0 30px 0' }}>ระบบได้บันทึกคำตอบของคุณแล้ว โปรดรอผลการประเมินอย่างเป็นทางการ</p>
+             )}
+
+             <div style={{ marginTop: '30px' }}>
                 <button onClick={() => navigate('/worker')} style={{ padding: '12px 30px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '16px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)' }}>กลับหน้าหลัก</button>
              </div>
             </div>
@@ -409,7 +721,10 @@ const SkillAssessmentTest = () => {
   const indexOfLastQ = currentPage * questionsPerPage;
   const indexOfFirstQ = indexOfLastQ - questionsPerPage;
   const currentQuestions = questions.slice(indexOfFirstQ, indexOfLastQ);
-  const totalPages = Math.ceil(questions.length / questionsPerPage);
+  const totalPages = Math.max(1, Math.ceil(questions.length / questionsPerPage));
+  const activeIndex = activeQuestionId
+    ? Math.max(1, questions.findIndex(q => String(q.id) === String(activeQuestionId)) + 1)
+    : 1;
   const timerColor = timeLeft < 300 ? '#ef4444' : '#10b981';
 
   return (
@@ -456,19 +771,19 @@ const SkillAssessmentTest = () => {
        )}
 
        <header style={{ background: '#fff', height: '70px', padding: '0 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 100 }}>
-            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '700' }}>📝 แบบทดสอบวัดทักษะ</h3>
+            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '700' }}><svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="m19.94 7.68-.03-.09a.8.8 0 0 0-.2-.29l-5-5c-.09-.09-.19-.15-.29-.2l-.09-.03a.8.8 0 0 0-.26-.05c-.02 0-.04-.01-.06-.01H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-12s-.01-.04-.01-.06c0-.09-.02-.17-.05-.26ZM6 20V4h7v4c0 .55.45 1 1 1h4v11z"></path><path d="M8 11h8v2H8zm0 4h8v2H8zm0-8h3v2H8z"></path></svg> แบบทดสอบวัดทักษะ</h3>
             <div style={{ fontSize: '20px', fontWeight: '800', color: timerColor, background: timeLeft < 300 ? '#fef2f2' : '#f0fdf4', padding: '8px 20px', borderRadius: '30px', border: `1px solid ${timeLeft < 300 ? '#fecaca' : '#bbf7d0'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>⏱</span> {formatTime(timeLeft)}
             </div>
             <span style={{ fontSize: '14px', background: '#f1f5f9', color: '#475569', padding: '6px 16px', borderRadius: '20px', fontWeight: '600' }}>
-                หน้า {currentPage} / {totalPages}
+              หน้า {currentPage} / {totalPages}
             </span>
        </header>
 
-       <div style={{ maxWidth: '1100px', margin: '30px auto', width: '100%', padding: '0 20px', display: 'flex', gap: '25px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
+        <div style={{ maxWidth: '1100px', margin: '30px auto', width: '100%', padding: '0 20px', display: 'flex', gap: '25px', alignItems: 'stretch', height: 'calc(100vh - 110px)', minHeight: 0 }}>
+          <div ref={questionsScrollRef} style={{ flex: 1, overflowY: 'auto', paddingRight: '6px' }}>
                 {currentQuestions.map((q, index) => {
-                    const displayNum = indexOfFirstQ + index + 1;
+                  const displayNum = indexOfFirstQ + index + 1;
                     return (
                         <div key={q.id} id={`q-${q.id}`} style={{ background: 'white', padding: '30px', borderRadius: '16px', marginBottom: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
                             <div style={{ fontWeight: '700', marginBottom: '20px', color: '#1e293b', fontSize: '18px', lineHeight: '1.6' }}>
@@ -486,24 +801,26 @@ const SkillAssessmentTest = () => {
                     );
                 })}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '30px', marginBottom: '60px' }}>
-                  <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo(0,0); }} style={{ padding: '12px 25px', background: currentPage === 1 ? '#f1f5f9' : 'white', color: currentPage === 1 ? '#94a3b8' : '#475569', border: '1px solid #e2e8f0', borderRadius: '10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '600' }}>&lt; ย้อนกลับ</button>
+                  <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); questionsScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ padding: '12px 25px', background: currentPage === 1 ? '#f1f5f9' : 'white', color: currentPage === 1 ? '#94a3b8' : '#475569', border: '1px solid #e2e8f0', borderRadius: '10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '600' }}>&lt; ย้อนกลับ</button>
                   {currentPage < totalPages ? (
-                    <button onClick={handleNextPage} style={{ padding: '12px 35px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)' }}>ถัดไป &gt;</button>
+                    <button onClick={() => { setCurrentPage(p => p + 1); questionsScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ padding: '12px 35px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)' }}>ถัดไป &gt;</button>
                   ) : (
                     <button onClick={handlePreSubmit} style={{ padding: '12px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.4)', fontSize: '16px' }}>ส่งคำตอบ</button>
                   )}
                 </div>
               </div>
 
-              <div style={{ width: '320px', background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', position: 'sticky', top: '90px' }}>
+              <div style={{ width: '320px', background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', alignSelf: 'flex-start' }}>
                 <h4 style={{ margin: '0 0 20px 0', color: '#1e293b', fontSize: '16px', fontWeight: '700' }}>รายการคำถาม</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
+                <div ref={questionListRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
                   {questions.map((q, index) => {
                     const isAnswered = answers[q.id] !== undefined;
-                    const pageOfQ = Math.ceil((index + 1) / questionsPerPage);
-                    const isCurrentPage = pageOfQ === currentPage;
+                    const isActive = String(q.id) === String(activeQuestionId);
+                    const isSelected = selectedQuestionNumber
+                      ? index + 1 === selectedQuestionNumber
+                      : index + 1 === activeIndex;
                     return (
-                      <button key={q.id} onClick={() => jumpToQuestion(q.id)} style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', border: isCurrentPage ? '2px solid #2563eb' : (isAnswered ? '1px solid #2563eb' : '1px solid #e2e8f0'), borderRadius: '8px', background: isAnswered ? '#2563eb' : 'white', color: isAnswered ? 'white' : '#64748b', fontSize: '14px', fontWeight: isCurrentPage || isAnswered ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.1s' }}>{index + 1}</button>
+                      <button key={q.id} data-qid={String(q.id)} onClick={() => jumpToQuestion(q.id, index + 1)} style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', border: isSelected ? '2px solid #94a3b8' : (isAnswered ? '1px solid #2563eb' : '1px solid #e2e8f0'), borderRadius: '8px', background: isSelected ? '#e2e8f0' : (isAnswered ? '#2563eb' : 'white'), color: isAnswered ? 'white' : (isSelected ? '#334155' : '#64748b'), fontSize: '14px', fontWeight: isSelected || isAnswered ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.1s' }}>{index + 1}</button>
                     );
                   })}
                 </div>

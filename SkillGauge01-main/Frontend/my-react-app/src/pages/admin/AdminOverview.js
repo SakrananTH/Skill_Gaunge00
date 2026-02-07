@@ -111,7 +111,11 @@ const AdminOverview = () => {
         const totalWorkers = filteredItems.length;
         const probationWorkers = filteredItems.filter(worker => worker.status === 'probation' || worker.status === 'active');
         const pendingWorkers = probationWorkers.length;
-        const probationWithScore = probationWorkers.filter(worker => worker.score !== undefined && worker.score !== null).length;
+        const probationWithScore = probationWorkers.filter(worker =>
+          worker.assessmentPassed !== undefined && worker.assessmentPassed !== null
+            ? true
+            : (worker.score !== undefined && worker.score !== null)
+        ).length;
         
         setStatusStats({
           probation: pendingWorkers,
@@ -123,9 +127,17 @@ const AdminOverview = () => {
         // 1. ยังไม่ผ่านเกณฑ์: คนที่มีคะแนน < 60 (และมีคะแนนแล้ว)
         // 2. ยังไม่ได้ทดสอบ: คนที่ไม่มีคะแนน (score === undefined/null)
         // 3. ผ่านเกณฑ์แล้ว: คนที่มีคะแนน >= 60
-        const failed = filteredItems.filter(w => w.score !== undefined && w.score !== null && w.score < 60).length;
-        const none = filteredItems.filter(w => w.score === undefined || w.score === null).length;
-        const passed = filteredItems.filter(w => w.score !== undefined && w.score !== null && w.score >= 60).length;
+        const failed = filteredItems.filter(w =>
+          w.assessmentPassed === false ||
+          (w.assessmentPassed === null || w.assessmentPassed === undefined) && w.score !== undefined && w.score !== null && Number(w.score) < 60
+        ).length;
+        const none = filteredItems.filter(w =>
+          (w.assessmentPassed === null || w.assessmentPassed === undefined) && (w.score === undefined || w.score === null)
+        ).length;
+        const passed = filteredItems.filter(w =>
+          w.assessmentPassed === true ||
+          (w.assessmentPassed === null || w.assessmentPassed === undefined) && w.score !== undefined && w.score !== null && Number(w.score) >= 60
+        ).length;
 
         setStats([
           {
