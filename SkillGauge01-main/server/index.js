@@ -622,16 +622,46 @@ function buildWorkerProfileFromRow(row, fallbackProfile) {
   return profile;
 }
 
+function inferAssessmentLevelFromTitle(title) {
+  if (!title) return null;
+  const normalized = String(title).toLowerCase();
+  const match = normalized.match(/\b(?:lv|level)\s*([1-3])\b/i) || normalized.match(/ระดับ\s*([1-3])/i);
+  if (!match) return null;
+  const level = Number(match[1]);
+  return Number.isFinite(level) ? level : null;
+}
+
 function normalizeAssessmentSummary(row) {
-  if (!row) return { score: null, passed: null, totalScore: null, totalQuestions: null };
+  if (!row) return { score: null, passed: null, totalScore: null, totalQuestions: null, roundTitle: null, roundLevel: null };
   const totalScore = row.total_score ?? row.totalScore ?? null;
   const totalQuestions = row.total_questions ?? row.totalQuestions ?? null;
   const scorePercent = totalScore !== null && totalQuestions
     ? Math.round((Number(totalScore) / Number(totalQuestions)) * 100)
     : (row.score === null || row.score === undefined ? null : Number(row.score));
-  const passedValue = row.passed;
-  const passed = passedValue === null || passedValue === undefined ? null : Boolean(Number(passedValue));
-  return { score: scorePercent, passed, totalScore, totalQuestions };
+  const passingScorePctRaw = row.round_passing_score ?? row.passing_score ?? null;
+  const passingScorePct = passingScorePctRaw === null || passingScorePctRaw === undefined
+    ? 70
+    : Number(passingScorePctRaw);
+  const requiredCorrect = totalQuestions !== null && totalQuestions !== undefined
+    ? Math.ceil(Number(totalQuestions) * (passingScorePct / 100))
+    : null;
+  const derivedPassed = (totalScore !== null && totalQuestions !== null && requiredCorrect !== null)
+    ? Number(totalScore) >= requiredCorrect
+    : null;
+  const roundTitle = row.round_title ?? row.roundTitle ?? null;
+  const roundLevel = inferAssessmentLevelFromTitle(roundTitle);
+  return { score: scorePercent, passed: derivedPassed, totalScore, totalQuestions, roundTitle, roundLevel };
+}
+
+function normalizeForemanAssessmentSummary(row) {
+  if (!row) return null;
+  return {
+    totalScore: row.total_score ?? row.totalScore ?? null,
+    maxScore: row.max_score ?? row.maxScore ?? null,
+    percent: row.percent ?? row.percentScore ?? null,
+    grade: row.grade ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? null
+  };
 }
 
 async function fetchLatestAssessmentSummaries(userIds, connection) {
@@ -642,10 +672,12 @@ async function fetchLatestAssessmentSummaries(userIds, connection) {
     await ensureAssessmentResultSchemaReady(connection);
     const placeholders = ids.map(() => '?').join(',');
     const rows = await query(
-      `SELECT worker_id, total_score, total_questions, passed, finished_at
-       FROM worker_assessment_results
-       WHERE worker_id IN (${placeholders})
-       ORDER BY finished_at DESC`,
+      `SELECT r.worker_id, r.total_score, r.total_questions, r.passed, r.finished_at,
+              ar.passing_score AS round_passing_score, ar.title AS round_title
+       FROM worker_assessment_results r
+       LEFT JOIN assessment_rounds ar ON ar.id = r.round_id
+       WHERE r.worker_id IN (${placeholders})
+       ORDER BY r.finished_at DESC`,
       ids,
       connection
     );
@@ -670,7 +702,42 @@ async function fetchLatestAssessmentSummary(userId, connection) {
   return summaries.get(String(userId)) || null;
 }
 
-function mapWorkerRowToResponse(row, profilePayload, assessmentSummary) {
+async function fetchLatestForemanAssessments(workerIds, connection) {
+  const ids = Array.isArray(workerIds) ? workerIds.map(id => String(id)).filter(Boolean) : [];
+  if (!ids.length) return new Map();
+  try {
+    await ensureForemanAssessmentSchema(connection);
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await query(
+      `SELECT worker_id, total_score, max_score, percent, grade, created_at
+       FROM foreman_assessments
+       WHERE worker_id IN (${placeholders})
+       ORDER BY created_at DESC`,
+      ids,
+      connection
+    );
+
+    const summaryByWorker = new Map();
+    for (const row of rows) {
+      const key = String(row.worker_id);
+      if (!summaryByWorker.has(key)) {
+        summaryByWorker.set(key, normalizeForemanAssessmentSummary(row));
+      }
+    }
+    return summaryByWorker;
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') return new Map();
+    console.warn('Unable to read foreman assessments', error?.code || error?.message || error);
+    return new Map();
+  }
+}
+
+async function fetchLatestForemanAssessment(workerId, connection) {
+  const summaries = await fetchLatestForemanAssessments([workerId], connection);
+  return summaries.get(String(workerId)) || null;
+}
+
+function mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary) {
   const profile = buildWorkerProfileFromRow(row, profilePayload);
   const tradeLabel = getTradeLabel(profile.employment.tradeType);
   const roleLabel = getRoleLabel(profile.employment.role);
@@ -696,6 +763,15 @@ function mapWorkerRowToResponse(row, profilePayload, assessmentSummary) {
     assessmentEnabled: Boolean(profile.employment?.assessmentEnabled),
     score: assessmentSummary?.score ?? null,
     assessmentPassed: assessmentSummary?.passed ?? null,
+    assessmentTotalScore: assessmentSummary?.totalScore ?? null,
+    assessmentTotalQuestions: assessmentSummary?.totalQuestions ?? null,
+    assessmentRoundLevel: assessmentSummary?.roundLevel ?? null,
+    foremanAssessed: Boolean(foremanAssessmentSummary),
+    foremanAssessmentPercent: foremanAssessmentSummary?.percent ?? null,
+    foremanAssessmentTotalScore: foremanAssessmentSummary?.totalScore ?? null,
+    foremanAssessmentMaxScore: foremanAssessmentSummary?.maxScore ?? null,
+    foremanAssessmentGrade: foremanAssessmentSummary?.grade ?? null,
+    foremanAssessmentCreatedAt: foremanAssessmentSummary?.createdAt ?? null,
     fullData: profile
   };
 }
@@ -714,7 +790,8 @@ async function getWorkerResponseById(workerId, connection) {
   if (!row) return null;
   const profilePayload = await fetchWorkerProfile(connection, workerId);
   const assessmentSummary = await fetchLatestAssessmentSummary(workerId, connection);
-  return mapWorkerRowToResponse(row, profilePayload, assessmentSummary);
+  const foremanAssessmentSummary = await fetchLatestForemanAssessment(workerId, connection);
+  return mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary);
 }
 
 async function getAllWorkerResponses(connection) {
@@ -732,12 +809,14 @@ async function getAllWorkerResponses(connection) {
     .map(row => getColumn(row, 'id'))
     .filter(id => id !== undefined && id !== null);
   const assessmentSummaries = await fetchLatestAssessmentSummaries(workerIds, connection);
+  const foremanAssessments = await fetchLatestForemanAssessments(workerIds, connection);
 
   for (const row of rows) {
     const workerId = getColumn(row, 'id');
     const profilePayload = await fetchWorkerProfile(undefined, workerId);
     const assessmentSummary = assessmentSummaries.get(String(workerId)) || null;
-    responses.push(mapWorkerRowToResponse(row, profilePayload, assessmentSummary));
+    const foremanAssessmentSummary = foremanAssessments.get(String(workerId)) || null;
+    responses.push(mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary));
   }
   return responses;
 }
@@ -862,6 +941,29 @@ async function ensureForemanAssessmentSchema(connection) {
   );
 }
 
+async function ensureTaskWorkerAssignmentSchema(connection) {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS task_worker_assignments (
+      id CHAR(36) NOT NULL,
+      task_id CHAR(36) NOT NULL,
+      worker_id INT UNSIGNED NOT NULL,
+      assignment_type VARCHAR(50) NOT NULL DEFAULT 'general',
+      status VARCHAR(30) NOT NULL DEFAULT 'assigned',
+      assigned_by_user_id CHAR(36) NULL,
+      assigned_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      started_at DATETIME(6) NULL,
+      completed_at DATETIME(6) NULL,
+      PRIMARY KEY (id),
+      KEY idx_task_worker_assignments_task (task_id),
+      KEY idx_task_worker_assignments_worker (worker_id),
+      KEY idx_task_worker_assignments_status (status),
+      KEY idx_task_worker_assignments_type (assignment_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    [],
+    connection
+  );
+}
+
 function canAccessUser(req, userId) {
   if (!userId) return false;
   if (req.user?.id === userId) return true;
@@ -881,6 +983,14 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+app.get('/api/debug/db-info', requireAuth, authorizeRoles('admin', 'project_manager'), (_req, res) => {
+  res.json({
+    host: MYSQL_HOST,
+    port: MYSQL_PORT,
+    database: MYSQL_DATABASE
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
@@ -891,61 +1001,95 @@ const signupSchema = z.object({
   password: z.string().min(8)
 });
 
-app.post('/api/auth/signup', async (req, res) => {
-  try {
-    const payload = signupSchema.parse(req.body ?? {});
-    const normalizedPhone = normalizePhoneTH(payload.phone);
-    const normalizedEmail = payload.email ? payload.email.toLowerCase() : null;
+async function createSignupUser(rawPayload, req) {
+  const payload = signupSchema.parse(rawPayload ?? {});
+  const normalizedPhone = normalizePhoneTH(payload.phone);
+  const normalizedEmail = payload.email ? payload.email.toLowerCase() : null;
 
-    const created = await withTransaction(async connection => {
-      const duplicate = normalizedEmail
-        ? await queryOne(
-            'SELECT id FROM users WHERE phone = ? OR LOWER(email) = ? LIMIT 1',
-            [normalizedPhone, normalizedEmail],
-            connection
-          )
-        : await queryOne('SELECT id FROM users WHERE phone = ? LIMIT 1', [normalizedPhone], connection);
-
-      if (duplicate) {
-        return { error: { status: 409, message: 'Phone or email already exists' } };
-      }
-
-      const userId = randomUUID();
-      const passwordHash = await bcrypt.hash(payload.password, 10);
-
-      await execute(
-        'INSERT INTO users (id, full_name, phone, email, password_hash, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, payload.full_name, normalizedPhone, normalizedEmail, passwordHash, 'active'],
-        connection
-      );
-
-      const workerRole = await queryOne('SELECT id FROM roles WHERE `key` = ? LIMIT 1', ['worker'], connection);
-      if (workerRole) {
-        await execute(
-          'INSERT IGNORE INTO user_roles(user_id, role_id) VALUES (?, ?)',
-          [userId, workerRole.id],
+  const created = await withTransaction(async connection => {
+    const duplicate = normalizedEmail
+      ? await queryOne(
+          'SELECT id FROM users WHERE phone = ? OR LOWER(email) = ? LIMIT 1',
+          [normalizedPhone, normalizedEmail],
           connection
-        );
-      }
+        )
+      : await queryOne('SELECT id FROM users WHERE phone = ? LIMIT 1', [normalizedPhone], connection);
 
-      const user = await queryOne(
-        'SELECT id, full_name, phone, email, status, created_at FROM users WHERE id = ?',
-        [userId],
-        connection
-      );
-
-      return { user };
-    });
-
-    if (created.error) {
-      return res.status(created.error.status).json({ message: created.error.message });
+    if (duplicate) {
+      return { error: { status: 409, message: 'Phone or email already exists' } };
     }
 
-    res.status(201).json({ ...created.user, role: 'worker' });
+    const userId = randomUUID();
+    const passwordHash = await bcrypt.hash(payload.password, 10);
+
+    await execute(
+      'INSERT INTO users (id, full_name, phone, email, password_hash, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [userId, payload.full_name, normalizedPhone, normalizedEmail, passwordHash, 'active'],
+      connection
+    );
+
+    const workerRole = await queryOne('SELECT id FROM roles WHERE `key` = ? LIMIT 1', ['worker'], connection);
+    if (workerRole) {
+      await execute(
+        'INSERT IGNORE INTO user_roles(user_id, role_id) VALUES (?, ?)',
+        [userId, workerRole.id],
+        connection
+      );
+    }
+
+    const user = await queryOne(
+      'SELECT id, full_name, phone, email, status, created_at FROM users WHERE id = ?',
+      [userId],
+      connection
+    );
+
+    return { user };
+  });
+
+  if (created.error) {
+    throw { status: created.error.status, body: { message: created.error.message } };
+  }
+
+  await writeAuditLog({
+    req,
+    username: payload.email || payload.phone,
+    role: 'worker',
+    action: 'signup',
+    details: { phone: payload.phone, email: payload.email || null },
+    status: 'success'
+  });
+
+  return { status: 201, body: { ...created.user, role: 'worker' } };
+}
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const result = await createSignupUser(req.body, req);
+    return res.status(result.status).json(result.body);
   } catch (error) {
+    if (error?.status && error?.body) return res.status(error.status).json(error.body);
     if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/register', async (req, res) => {
+  try {
+    const fullName = [req.body?.first_name, req.body?.last_name].filter(Boolean).join(' ').trim();
+    const payload = {
+      full_name: fullName || req.body?.full_name,
+      phone: req.body?.phone_number || req.body?.phone,
+      email: req.body?.email || '',
+      password: req.body?.password
+    };
+    const result = await createSignupUser(payload, req);
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    if (error?.status && error?.body) return res.status(error.status).json(error.body);
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -1518,6 +1662,29 @@ app.get('/api/admin/audit-logs', async (req, res) => {
   }
 });
 
+app.post('/api/admin/audit-logs', async (req, res) => {
+  try {
+    await ensureAuditLogSchemaReady();
+    const { action, details, status } = req.body ?? {};
+    const trimmedAction = typeof action === 'string' ? action.trim() : '';
+    if (!trimmedAction) {
+      return res.status(400).json({ success: false, message: 'action_required' });
+    }
+    await writeAuditLog({
+      req,
+      username: String(req.user?.id || 'system'),
+      role: Array.isArray(req.user?.roles) ? req.user.roles.join(',') : 'admin',
+      action: trimmedAction,
+      details: details ?? null,
+      status: status || 'success'
+    });
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('POST /api/admin/audit-logs error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Public lookup
 // ---------------------------------------------------------------------------
@@ -1543,6 +1710,7 @@ app.get('/api/users/by-phone', async (req, res) => {
 // ---------------------------------------------------------------------------
 const taskStatusEnum = z.enum(['todo', 'in-progress', 'done']);
 const taskPriorityEnum = z.enum(['low', 'medium', 'high']);
+const assignmentTypeEnum = z.enum(['general', 'practical_assessment']);
 
 const taskListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -1588,7 +1756,11 @@ app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), a
          t.site_id,
          s.name AS site_name,
          t.assignee_user_id,
-         u.full_name AS assignee_name
+         u.full_name AS assignee_name,
+         t.description,
+         t.category,
+         t.required_level,
+         t.required_workers
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN sites s ON s.id = t.site_id
@@ -1606,6 +1778,33 @@ app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), a
   }
 });
 
+async function ensureTasksSchemaExtended() {
+  try {
+    const [cols] = await pool.query(`SHOW COLUMNS FROM tasks`);
+    const colNames = new Set(cols.map(c => c.Field));
+
+    if (!colNames.has('description')) {
+      await pool.query(`ALTER TABLE tasks ADD COLUMN description TEXT NULL`);
+      console.info('[tasks] Added column description');
+    }
+    if (!colNames.has('category')) {
+      await pool.query(`ALTER TABLE tasks ADD COLUMN category VARCHAR(100) NULL`);
+      console.info('[tasks] Added column category');
+    }
+    if (!colNames.has('required_level')) {
+      await pool.query(`ALTER TABLE tasks ADD COLUMN required_level INT NULL DEFAULT 1`);
+      console.info('[tasks] Added column required_level');
+    }
+    if (!colNames.has('required_workers')) {
+      await pool.query(`ALTER TABLE tasks ADD COLUMN required_workers INT NULL DEFAULT 1`);
+      console.info('[tasks] Added column required_workers');
+    }
+  } catch (err) {
+    console.warn('[tasks] Failed to ensure schema extensions', err.message);
+  }
+}
+ensureTasksSchemaExtended().catch(e => console.error(e));
+
 const createTaskSchema = z.object({
   title: z.string().min(1).max(200),
   project_id: uuidSchema,
@@ -1613,7 +1812,13 @@ const createTaskSchema = z.object({
   priority: taskPriorityEnum.default('medium'),
   status: taskStatusEnum.default('todo'),
   assignee_user_id: uuidSchema.optional(),
-  due_date: z.coerce.date().optional()
+  due_date: z.coerce.date().optional(),
+  worker_ids: z.array(z.coerce.number().int().positive()).optional(),
+  assignment_type: assignmentTypeEnum.optional(),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  required_level: z.coerce.number().int().optional(),
+  required_workers: z.coerce.number().int().optional()
 });
 
 app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
@@ -1621,8 +1826,8 @@ app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), 
     const payload = createTaskSchema.parse(req.body ?? {});
     const taskId = randomUUID();
     await execute(
-      `INSERT INTO tasks(id, project_id, site_id, title, priority, status, assignee_user_id, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks(id, project_id, site_id, title, priority, status, assignee_user_id, due_date, description, category, required_level, required_workers)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         taskId,
         payload.project_id,
@@ -1634,6 +1839,23 @@ app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), 
         payload.due_date ? payload.due_date.toISOString().slice(0, 10) : null
       ]
     );
+
+    const workerIds = Array.isArray(payload.worker_ids)
+      ? Array.from(new Set(payload.worker_ids.map(id => Number(id)).filter(Number.isFinite)))
+      : [];
+
+    if (workerIds.length > 0) {
+      await ensureTaskWorkerAssignmentSchema();
+      const assignmentType = payload.assignment_type || 'general';
+      for (const workerId of workerIds) {
+        await execute(
+          `INSERT INTO task_worker_assignments
+           (id, task_id, worker_id, assignment_type, status, assigned_by_user_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [randomUUID(), taskId, workerId, assignmentType, 'assigned', req.user?.id || null]
+        );
+      }
+    }
 
     const task = await queryOne(
       `SELECT t.id, t.title, t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
@@ -2412,9 +2634,22 @@ async function ensureAssessmentSchema(connection) {
       category VARCHAR(120) NULL,
       description TEXT NULL,
       question_count INT UNSIGNED NOT NULL DEFAULT 60,
+      passing_score DECIMAL(5,2) NULL DEFAULT 70.00,
+      duration_minutes INT UNSIGNED NULL DEFAULT 60,
+      show_score TINYINT(1) NOT NULL DEFAULT 1,
+      show_answers TINYINT(1) NOT NULL DEFAULT 0,
+      show_breakdown TINYINT(1) NOT NULL DEFAULT 1,
+      subcategory_quotas JSON NULL,
+      difficulty_weights JSON NULL,
+      criteria JSON NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'draft',
+      active TINYINT(1) NOT NULL DEFAULT 1,
+      history JSON NULL,
       start_at DATETIME(6) NULL,
       end_at DATETIME(6) NULL,
       frequency_months INT UNSIGNED NULL,
+      created_by VARCHAR(255) NULL,
+      updated_by VARCHAR(255) NULL,
       created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
       updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
       PRIMARY KEY (id),
@@ -2423,6 +2658,39 @@ async function ensureAssessmentSchema(connection) {
       KEY idx_assessment_rounds_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  // Auto-migration: ensure all necessary columns exist in assessment_rounds
+  try {
+    const columns = await query('SHOW COLUMNS FROM assessment_rounds', [], executor);
+    if (Array.isArray(columns)) {
+      const existingColumns = new Set(columns.map(c => c.Field));
+      
+      const migrations = [
+        { name: 'passing_score', sql: 'ALTER TABLE assessment_rounds ADD COLUMN passing_score DECIMAL(5,2) NULL DEFAULT 70.00 AFTER question_count' },
+        { name: 'duration_minutes', sql: 'ALTER TABLE assessment_rounds ADD COLUMN duration_minutes INT UNSIGNED NULL DEFAULT 60 AFTER passing_score' },
+        { name: 'show_score', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_score TINYINT(1) NOT NULL DEFAULT 1 AFTER duration_minutes' },
+        { name: 'show_answers', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_answers TINYINT(1) NOT NULL DEFAULT 0 AFTER show_score' },
+        { name: 'show_breakdown', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_breakdown TINYINT(1) NOT NULL DEFAULT 1 AFTER show_answers' },
+        { name: 'subcategory_quotas', sql: 'ALTER TABLE assessment_rounds ADD COLUMN subcategory_quotas JSON NULL AFTER show_breakdown' },
+        { name: 'difficulty_weights', sql: 'ALTER TABLE assessment_rounds ADD COLUMN difficulty_weights JSON NULL AFTER subcategory_quotas' },
+        { name: 'criteria', sql: 'ALTER TABLE assessment_rounds ADD COLUMN criteria JSON NULL AFTER difficulty_weights' },
+        { name: 'status', sql: "ALTER TABLE assessment_rounds ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'draft' AFTER criteria" },
+        { name: 'active', sql: 'ALTER TABLE assessment_rounds ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1 AFTER status' },
+        { name: 'history', sql: 'ALTER TABLE assessment_rounds ADD COLUMN history JSON NULL AFTER active' },
+        { name: 'created_by', sql: 'ALTER TABLE assessment_rounds ADD COLUMN created_by VARCHAR(255) NULL AFTER history' },
+        { name: 'updated_by', sql: 'ALTER TABLE assessment_rounds ADD COLUMN updated_by VARCHAR(255) NULL AFTER created_by' }
+      ];
+
+      for (const m of migrations) {
+        if (!existingColumns.has(m.name)) {
+          // Use a plain query call for ALTER TABLE
+          await executor.query(m.sql);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[schema] Migration for assessment_rounds failed:', err.message);
+  }
 }
 
 let assessmentSessionSchemaPromise = null;
@@ -3140,7 +3408,7 @@ app.get('/api/question-structural/all', requireAuth, authorizeRoles('admin'), as
 // Worker structural questions (session-based)
 // ---------------------------------------------------------------------------
 
-app.get('/api/questions/structural', async (req, res) => {
+async function handleStructuralQuestions(req, res, { forcedRoundId = null } = {}) {
   try {
     await ensureAssessmentSchemaReady();
     await ensureAssessmentSessionSchemaReady();
@@ -3153,7 +3421,8 @@ app.get('/api/questions/structural', async (req, res) => {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
     const workerId = parseWorkerId(req.query.workerId);
     const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : null;
-    const requestedRoundId = typeof req.query.roundId === 'string' ? req.query.roundId.trim() : null;
+    const forcedRound = forcedRoundId ? String(forcedRoundId).trim() : null;
+    const requestedRoundId = forcedRound || (typeof req.query.roundId === 'string' ? req.query.roundId.trim() : null);
 
     let session = null;
     let roundMeta = null;
@@ -3177,6 +3446,9 @@ app.get('/api/questions/structural', async (req, res) => {
       }
 
       roundMeta = await fetchAssessmentRoundById(roundId);
+      if (!roundMeta && forcedRound) {
+        return res.status(404).json({ error: 'Round not found' });
+      }
 
       const difficultyParamRaw = req.query.difficulty_level ?? req.query.level ?? req.query.difficulty;
       const parsedDifficulty = Number.isFinite(Number(difficultyParamRaw))
@@ -3351,6 +3623,14 @@ app.get('/api/questions/structural', async (req, res) => {
     console.error('GET /api/questions/structural error:', error);
     res.status(500).json({ error: 'Server error' });
   }
+}
+
+app.get('/api/questions/structural', async (req, res) => {
+  return handleStructuralQuestions(req, res);
+});
+
+app.get('/api/worker/assessments/rounds/:id/questions', async (req, res) => {
+  return handleStructuralQuestions(req, res, { forcedRoundId: req.params.id });
 });
 
 // ---------------------------------------------------------------------------
@@ -3375,16 +3655,19 @@ const toAnswerKey = (value) => {
 async function fetchWorkerAssessmentSummary(workerId, category = null) {
   await ensureAssessmentResultSchemaReady();
   const params = [workerId];
-  let whereClause = 'WHERE worker_id = ?';
+  let whereClause = 'WHERE r.worker_id = ?';
   if (category) {
-    whereClause += ' AND category = ?';
+    whereClause += ' AND r.category = ?';
     params.push(category);
   }
   const row = await queryOne(
-    `SELECT id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at
-       FROM worker_assessment_results
+    `SELECT r.id, r.worker_id, r.round_id, r.session_id, r.category,
+            r.total_score, r.total_questions, r.passed, r.breakdown, r.finished_at,
+            ar.passing_score AS round_passing_score, ar.question_count AS round_question_count
+       FROM worker_assessment_results r
+       LEFT JOIN assessment_rounds ar ON ar.id = r.round_id
       ${whereClause}
-      ORDER BY finished_at DESC
+      ORDER BY r.finished_at DESC
       LIMIT 1`,
     params
   );
@@ -3397,6 +3680,17 @@ async function fetchWorkerAssessmentSummary(workerId, category = null) {
       breakdown = null;
     }
   }
+  const totalQuestions = Number(row.total_questions) || 0;
+  const passingScorePctRaw = row.round_passing_score;
+  const passingScorePct = passingScorePctRaw === null || passingScorePctRaw === undefined
+    ? 70
+    : Number(passingScorePctRaw);
+  const requiredCorrect = totalQuestions > 0
+    ? Math.ceil(totalQuestions * (passingScorePct / 100))
+    : 0;
+
+  const derivedPassed = totalQuestions > 0 ? (Number(row.total_score) || 0) >= requiredCorrect : false;
+
   return {
     id: row.id,
     workerId: row.worker_id,
@@ -3404,8 +3698,10 @@ async function fetchWorkerAssessmentSummary(workerId, category = null) {
     sessionId: row.session_id,
     category: row.category,
     score: Number(row.total_score) || 0,
-    totalQuestions: Number(row.total_questions) || 0,
-    passed: Boolean(Number(row.passed)),
+    totalQuestions,
+    passed: derivedPassed,
+    passingScorePct,
+    requiredCorrect,
     breakdown: Array.isArray(breakdown) ? breakdown : [],
     finishedAt: row.finished_at
   };
@@ -3428,120 +3724,172 @@ app.get('/api/worker/assessment/summary', async (req, res) => {
   }
 });
 
-app.post('/api/worker/score', async (req, res) => {
+app.get('/api/worker/assessments/rounds', async (req, res) => {
   try {
-    await ensureAssessmentSchemaReady();
-    await ensureAssessmentSessionSchemaReady();
-    await ensureAssessmentResultSchemaReady();
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+    const rounds = await fetchAssessmentRounds();
+    const filtered = rounds.filter(round => {
+      if (category && round.category !== category) return false;
+      if (round.status && String(round.status).toLowerCase() !== 'active') return false;
+      if (round.active !== undefined && round.active !== null) {
+        return Boolean(round.active);
+      }
+      return true;
+    });
+    return res.json(filtered);
+  } catch (error) {
+    console.error('GET /api/worker/assessments/rounds error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
 
-    const { userId, answers, sessionId } = req.body || {};
-    const workerId = parseWorkerId(userId);
-    if (!sessionId) {
-      return res.status(400).json({ success: false, message: 'missing_session' });
-    }
+async function submitWorkerAssessment({ req, userId, sessionId, answers, expectedRoundId = null }) {
+  await ensureAssessmentSchemaReady();
+  await ensureAssessmentSessionSchemaReady();
+  await ensureAssessmentResultSchemaReady();
 
-    const sessionRows = await query(
-      'SELECT id, worker_id, round_id, status, question_count FROM assessment_sessions WHERE id = ? LIMIT 1',
-      [sessionId]
+  const workerId = parseWorkerId(userId);
+  if (!sessionId) {
+    throw { status: 400, body: { success: false, message: 'missing_session' } };
+  }
+
+  const sessionRows = await query(
+    'SELECT id, worker_id, round_id, status, question_count FROM assessment_sessions WHERE id = ? LIMIT 1',
+    [sessionId]
+  );
+  const session = sessionRows?.[0];
+  if (!session) {
+    throw { status: 404, body: { success: false, message: 'session_not_found' } };
+  }
+  if (expectedRoundId && String(session.round_id) !== String(expectedRoundId)) {
+    throw { status: 409, body: { success: false, message: 'round_mismatch' } };
+  }
+  if (workerId && session.worker_id && Number(session.worker_id) !== workerId) {
+    console.warn(
+      `Session mismatch on submit: session.worker_id=${session.worker_id} providedWorkerId=${workerId} sessionId=${sessionId} ip=${getRequestIp(req)}`
     );
-    const session = sessionRows?.[0];
-    if (!session) {
-      return res.status(404).json({ success: false, message: 'session_not_found' });
-    }
-    if (workerId && session.worker_id && Number(session.worker_id) !== workerId) {
-      return res.status(403).json({ success: false, message: 'session_mismatch' });
-    }
-    const resolvedWorkerId = workerId || Number(session.worker_id) || null;
-    if (!resolvedWorkerId) {
-      return res.status(400).json({ success: false, message: 'missing_worker' });
-    }
+    throw {
+      status: 403,
+      body: {
+        success: false,
+        message: 'session_mismatch',
+        expectedWorkerId: Number(session.worker_id),
+        providedWorkerId: workerId
+      }
+    };
+  }
+  const resolvedWorkerId = workerId || Number(session.worker_id) || null;
+  if (!resolvedWorkerId) {
+    throw { status: 400, body: { success: false, message: 'missing_worker' } };
+  }
 
-    const roundRows = await query(
-      'SELECT id, category, passing_score FROM assessment_rounds WHERE id = ? LIMIT 1',
-      [session.round_id]
+  const roundRows = await query(
+    'SELECT id, category, passing_score FROM assessment_rounds WHERE id = ? LIMIT 1',
+    [session.round_id]
+  );
+  const round = roundRows?.[0] || null;
+  const category = round?.category || 'structure';
+
+  const existing = await fetchWorkerAssessmentSummary(resolvedWorkerId, category);
+  if (existing) {
+    await writeAuditLog({
+      req,
+      username: String(resolvedWorkerId),
+      role: 'worker',
+      action: 'assessment_submit_duplicate',
+      details: { workerId: resolvedWorkerId, sessionId, category },
+      status: 'warning'
+    });
+    throw { status: 409, body: { success: false, message: 'already_completed', result: existing } };
+  }
+
+  const questionRows = await query(
+    'SELECT question_id FROM assessment_session_questions WHERE session_id = ? ORDER BY display_order ASC',
+    [sessionId]
+  );
+  const questionIds = questionRows.map(row => Number(row.question_id)).filter(id => Number.isFinite(id));
+  if (!questionIds.length) {
+    throw { status: 404, body: { success: false, message: 'no_questions' } };
+  }
+
+  const placeholders = questionIds.map(() => '?').join(',');
+  let answerRows = [];
+  try {
+    answerRows = await query(
+      `SELECT id, answer, category
+         FROM question_Structural
+        WHERE id IN (${placeholders})`,
+      questionIds
     );
-    const round = roundRows?.[0] || null;
-    const category = round?.category || 'structure';
-
-    const existing = await fetchWorkerAssessmentSummary(resolvedWorkerId, category);
-    if (existing) {
-      await writeAuditLog({
-        req,
-        username: String(resolvedWorkerId),
-        role: 'worker',
-        action: 'assessment_submit_duplicate',
-        details: { workerId: resolvedWorkerId, sessionId, category },
-        status: 'warning'
-      });
-      return res.status(409).json({ success: false, message: 'already_completed', result: existing });
-    }
-
-    const questionRows = await query(
-      'SELECT question_id FROM assessment_session_questions WHERE session_id = ? ORDER BY display_order ASC',
-      [sessionId]
-    );
-    const questionIds = questionRows.map(row => Number(row.question_id)).filter(id => Number.isFinite(id));
-    if (!questionIds.length) {
-      return res.status(404).json({ success: false, message: 'no_questions' });
-    }
-
-    const placeholders = questionIds.map(() => '?').join(',');
-    let answerRows = [];
-    try {
+  } catch (error) {
+    if (error?.code === 'ER_BAD_FIELD_ERROR') {
       answerRows = await query(
-        `SELECT id, answer, category
+        `SELECT id, answer
            FROM question_Structural
           WHERE id IN (${placeholders})`,
         questionIds
       );
-    } catch (error) {
-      if (error?.code === 'ER_BAD_FIELD_ERROR') {
-        answerRows = await query(
-          `SELECT id, answer
-             FROM question_Structural
-            WHERE id IN (${placeholders})`,
-          questionIds
-        );
-      } else {
-        throw error;
-      }
+    } else {
+      throw error;
     }
+  }
 
-    const answerMap = new Map();
-    answerRows.forEach(row => {
-      answerMap.set(String(row.id), {
-        answer: String(row.answer || '').toLowerCase(),
-        category: row.category || 'structure'
-      });
+  const normalizedAnswers = Array.isArray(answers)
+    ? answers.reduce((acc, item) => {
+        const questionId = item?.questionId ?? item?.question_id;
+        if (questionId === undefined || questionId === null) return acc;
+        acc[String(questionId)] = item?.answer ?? item?.choice ?? item?.selected ?? null;
+        return acc;
+      }, {})
+    : (answers || {});
+
+  const answerMap = new Map();
+  answerRows.forEach(row => {
+    answerMap.set(String(row.id), {
+      answer: String(row.answer || '').toLowerCase(),
+      category: row.category || 'structure'
     });
+  });
 
-    const breakdownByCategory = new Map();
-    let totalScore = 0;
-    questionIds.forEach(qid => {
-      const key = String(qid);
-      const meta = answerMap.get(key);
-      if (!meta) return;
-      const selected = answers ? toAnswerKey(answers[key]) : null;
-      const isCorrect = selected && selected === meta.answer;
-      if (isCorrect) totalScore += 1;
-      const bucket = breakdownByCategory.get(meta.category) || { correct: 0, total: 0 };
-      bucket.total += 1;
-      if (isCorrect) bucket.correct += 1;
-      breakdownByCategory.set(meta.category, bucket);
-    });
+  const breakdownByCategory = new Map();
+  let totalScore = 0;
+  questionIds.forEach(qid => {
+    const key = String(qid);
+    const meta = answerMap.get(key);
+    if (!meta) return;
+    const selected = normalizedAnswers ? toAnswerKey(normalizedAnswers[key]) : null;
+    const isCorrect = selected && selected === meta.answer;
+    if (isCorrect) totalScore += 1;
+    const bucket = breakdownByCategory.get(meta.category) || { correct: 0, total: 0 };
+    bucket.total += 1;
+    if (isCorrect) bucket.correct += 1;
+    breakdownByCategory.set(meta.category, bucket);
+  });
 
-    const totalQuestions = Number(session.question_count) || questionIds.length;
-    const breakdown = Array.from(breakdownByCategory.entries()).map(([label, stats]) => ({
-      label,
-      correct: stats.correct,
-      total: stats.total,
-      percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
-    }));
+  const totalQuestions = Number(session.question_count) || questionIds.length;
+  const breakdown = Array.from(breakdownByCategory.entries()).map(([label, stats]) => ({
+    label: String(label || 'General'),
+    correct: Number(stats.correct || 0),
+    total: Number(stats.total || 0),
+    percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
+  }));
 
-    const passingScore = round?.passing_score ? Number(round.passing_score) : null;
-    const passed = passingScore ? totalScore >= passingScore : totalScore >= Math.ceil(totalQuestions * 0.7);
+  const passingScorePctRaw = round?.passing_score;
+  const passingScorePct = (passingScorePctRaw === null || passingScorePctRaw === undefined)
+    ? 70
+    : Number(passingScorePctRaw);
+  
+  const requiredCorrect = totalQuestions > 0
+    ? Math.ceil(totalQuestions * (passingScorePct / 100))
+    : 0;
+  
+  const finalScore = Number.isFinite(totalScore) ? totalScore : 0;
+  const passed = finalScore >= requiredCorrect;
 
-    const resultId = randomUUID();
+  const resultId = randomUUID();
+  const breakdownJson = JSON.stringify(breakdown);
+
+  try {
     await execute(
       `INSERT INTO worker_assessment_results
         (id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at)
@@ -3552,52 +3900,114 @@ app.post('/api/worker/score', async (req, res) => {
         session.round_id,
         sessionId,
         category,
-        totalScore,
+        finalScore,
         totalQuestions,
         passed ? 1 : 0,
-        JSON.stringify(breakdown)
+        breakdownJson
       ]
     );
+  } catch (insertError) {
+    if (insertError.code === 'ER_DUP_ENTRY') {
+      const existingRefetch = await fetchWorkerAssessmentSummary(resolvedWorkerId, category);
+      if (existingRefetch) {
+        throw { status: 409, body: { success: false, message: 'already_completed', result: existingRefetch } };
+      }
+    }
+    console.error('[submit] Database insert failed:', insertError);
+    throw new Error(`Failed to save assessment results: ${insertError.message}`);
+  }
 
+  try {
     await execute(
       'UPDATE assessment_sessions SET status = ?, finished_at = NOW(6) WHERE id = ? LIMIT 1',
       ['completed', sessionId]
     );
+  } catch (updateError) {
+    console.warn('[submit] Session update failed (non-critical):', updateError);
+  }
 
-    await writeAuditLog({
+  await writeAuditLog({
+    req,
+    username: String(resolvedWorkerId),
+    role: 'worker',
+    action: 'assessment_submit',
+    details: { workerId: resolvedWorkerId, sessionId, category, score: finalScore, totalQuestions },
+    status: 'success'
+  });
+
+  return {
+    id: resultId,
+    workerId: resolvedWorkerId,
+    roundId: session.round_id,
+    sessionId,
+    category,
+    score: finalScore,
+    totalQuestions,
+    passed,
+    passingScorePct,
+    requiredCorrect,
+    breakdown,
+    finishedAt: new Date().toISOString()
+  };
+}
+
+app.post('/api/worker/score', async (req, res) => {
+  try {
+    const result = await submitWorkerAssessment({
       req,
-      username: String(resolvedWorkerId),
-      role: 'worker',
-      action: 'assessment_submit',
-      details: { workerId: resolvedWorkerId, sessionId, category, score: totalScore, totalQuestions },
-      status: 'success'
+      userId: req.body?.userId,
+      sessionId: req.body?.sessionId,
+      answers: req.body?.answers
     });
-
-    return res.json({
-      success: true,
-      result: {
-        id: resultId,
-        workerId: resolvedWorkerId,
-        roundId: session.round_id,
-        sessionId,
-        category,
-        score: totalScore,
-        totalQuestions,
-        passed,
-        breakdown,
-        finishedAt: new Date().toISOString()
-      }
-    });
+    return res.json({ success: true, result });
   } catch (error) {
     console.error('POST /api/worker/score error:', error);
-    await writeAuditLog({
-      req,
-      username: String(req.body?.userId || ''),
-      role: 'worker',
-      action: 'assessment_submit_failed',
-      details: { message: error?.message || 'Server error' },
-      status: 'error'
+    
+    // Attempt detailed audit log even on failure
+    try {
+      await writeAuditLog({
+        req,
+        username: String(req.body?.userId || 'unknown'),
+        role: 'worker',
+        action: 'assessment_submit_failed',
+        details: { 
+          message: error?.message || (typeof error === 'string' ? error : 'Internal server error'),
+          sessionId: req.body?.sessionId,
+          stack: error?.stack 
+        },
+        status: 'error'
+      });
+    } catch (logErr) {
+      console.error('Failed to write failure audit log:', logErr);
+    }
+
+    if (error?.status && error?.body) {
+      return res.status(error.status).json(error.body);
+    }
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      debug: error?.message || 'Unexpected error',
+      stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
     });
+  }
+});
+
+app.post('/api/worker/assessments/rounds/:id/submit', async (req, res) => {
+  try {
+    const result = await submitWorkerAssessment({
+      req,
+      userId: req.body?.workerId ?? req.body?.userId,
+      sessionId: req.body?.sessionId,
+      answers: req.body?.answers,
+      expectedRoundId: req.params.id
+    });
+    return res.json({ success: true, result });
+  } catch (error) {
+    if (error?.status && error?.body) {
+      return res.status(error.status).json(error.body);
+    }
+    console.error('POST /api/worker/assessments/rounds/:id/submit error:', error);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -4285,9 +4695,12 @@ app.get('/api/admin/assessment-results', async (req, res) => {
       params.push(category);
     }
 
-    if (passed && passed !== 'all') {
-      whereClause += ' AND r.passed = ?';
-      params.push(passed === '1' ? 1 : 0);
+    const passedFilter = passed && passed !== 'all' ? (passed === '1' ? 1 : 0) : null;
+    if (passedFilter !== null) {
+      const passExpr = `r.total_questions > 0 AND r.total_score >= CEIL(r.total_questions * (COALESCE(ar.passing_score, 70) / 100))`;
+      whereClause += passedFilter === 1
+        ? ` AND (${passExpr})`
+        : ` AND NOT (${passExpr})`;
     }
 
     let total = 0;
@@ -4296,6 +4709,7 @@ app.get('/api/admin/assessment-results', async (req, res) => {
       const countRows = await query(
         `SELECT COUNT(*) AS total
            FROM worker_assessment_results r
+           LEFT JOIN assessment_rounds ar ON ar.id = r.round_id
            LEFT JOIN workers w ON w.id = r.worker_id
            LEFT JOIN worker_accounts a ON a.worker_id = w.id
           ${whereClause}`,
@@ -4305,8 +4719,16 @@ app.get('/api/admin/assessment-results', async (req, res) => {
 
       rows = await query(
         `SELECT r.id, r.worker_id, r.round_id, r.session_id, r.category, r.total_score, r.total_questions,
-                r.passed, r.finished_at, w.full_name AS worker_name, a.email AS worker_email
+                r.passed, r.finished_at, w.full_name AS worker_name, a.email AS worker_email,
+                COALESCE(ar.passing_score, 70) AS passing_score_pct,
+                CEIL(r.total_questions * (COALESCE(ar.passing_score, 70) / 100)) AS required_correct,
+                CASE
+                  WHEN r.total_questions > 0
+                    AND r.total_score >= CEIL(r.total_questions * (COALESCE(ar.passing_score, 70) / 100))
+                  THEN 1 ELSE 0
+                END AS derived_pass
            FROM worker_assessment_results r
+           LEFT JOIN assessment_rounds ar ON ar.id = r.round_id
            LEFT JOIN workers w ON w.id = r.worker_id
            LEFT JOIN worker_accounts a ON a.worker_id = w.id
           ${whereClause}
@@ -4321,7 +4743,14 @@ app.get('/api/admin/assessment-results', async (req, res) => {
       throw error;
     }
 
-    res.json({ items: rows || [], total });
+    const items = (rows || []).map(row => ({
+      ...row,
+      passed: Boolean(Number(row.derived_pass)),
+      passingScorePct: Number(row.passing_score_pct),
+      requiredCorrect: Number(row.required_correct)
+    }));
+
+    res.json({ items, total });
   } catch (error) {
     if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_TABLE_ERROR') {
       return res.json({ items: [], total: 0 });
@@ -4358,6 +4787,47 @@ app.get('/api/admin/assessments/:id', requireAuth, authorizeRoles('admin'), asyn
 });
 
 // ---------------------------------------------------------------------------
+// Project Management
+// ---------------------------------------------------------------------------
+
+const createProjectSchema = z.object({
+  name: z.string().min(1).max(255),
+  status: z.enum(['active', 'completed', 'archived']).optional(),
+  owner_user_id: uuidSchema.optional(),
+  description: z.string().optional()
+});
+
+app.post('/api/projects', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const payload = createProjectSchema.parse(req.body ?? {});
+    const projectId = randomUUID();
+    
+    await execute(
+      'INSERT INTO projects (id, name, owner_user_id, status) VALUES (?, ?, ?, ?)',
+      [projectId, payload.name, req.user?.id || null, payload.status || 'active']
+    );
+
+    res.status(201).json({ id: projectId, message: 'Project created' });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.delete('/api/projects/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await execute('DELETE FROM projects WHERE id = ?', [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: 'not_found' });
+    res.json({ message: 'deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Dashboard metrics
 // ---------------------------------------------------------------------------
 app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('project_manager'), async (_req, res) => {
@@ -4366,6 +4836,9 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
       `SELECT
          p.id AS project_id,
          p.name AS project_name,
+         p.site_address,
+         p.start_date,
+         p.end_date,
          COUNT(t.id) AS tasks_total,
          SUM(t.status = 'todo') AS tasks_todo,
          SUM(t.status = 'in-progress') AS tasks_in_progress,
@@ -4378,11 +4851,31 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
     res.json(rows.map(row => ({
       project_id: row.project_id,
       project_name: row.project_name,
+      site_address: row.site_address || null,
+      start_date: row.start_date || null,
+      end_date: row.end_date || null,
       tasks_total: Number(row.tasks_total ?? 0),
       tasks_todo: Number(row.tasks_todo ?? 0),
       tasks_in_progress: Number(row.tasks_in_progress ?? 0),
       tasks_done: Number(row.tasks_done ?? 0)
     })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/dashboard/practical-testing-count', requireAuth, authorizeRoles('project_manager'), async (_req, res) => {
+  try {
+    await ensureTaskWorkerAssignmentSchema();
+    const rows = await query(
+      `SELECT DISTINCT worker_id
+       FROM task_worker_assignments
+       WHERE assignment_type = 'practical_assessment'
+         AND status IN ('assigned', 'in_progress')`
+    );
+    const workerIds = rows.map(row => Number(row.worker_id)).filter(Number.isFinite);
+    res.json({ count: workerIds.length, worker_ids: workerIds });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

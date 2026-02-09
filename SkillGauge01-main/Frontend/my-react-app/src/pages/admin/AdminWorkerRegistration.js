@@ -369,7 +369,10 @@ const AdminWorkerRegistration = () => {
         stepIndex: STEP_INDEX_BY_KEY.personal,
         items: [
           { label: 'ตำแหน่ง', value: selectedRoleLabel },
-          { label: 'ประเภทช่าง', value: selectedTradeLabel },
+          ...(form.employment.role === 'worker'
+            ? [{ label: 'ประเภทช่าง', value: selectedTradeLabel }]
+            : []
+          ),
           { label: 'ประสบการณ์', value: formatExperience() }
         ]
       },

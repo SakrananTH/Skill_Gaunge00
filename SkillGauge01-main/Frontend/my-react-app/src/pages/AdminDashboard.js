@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 import AdminOverview from './admin/AdminOverview';
+import LogoutModal from '../components/LogoutModal';
 import AdminUsersTable from './admin/AdminUsersTable';
 import AdminQuizBank from './admin/AdminQuizBank';
 import AdminAuditLog from './admin/AdminAuditLog';
 import AdminAssessmentResults from './admin/AdminAssessmentResults';
 import AdminSettings from './admin/AdminSettings';
-import { performLogout } from '../utils/logout';
 
 const AdminDashboard = () => {
   const location = useLocation();
@@ -15,6 +15,15 @@ const AdminDashboard = () => {
 
   const [tab, setTab] = useState(location.state?.initialTab || 'overview');
   const [avatar, setAvatar] = useState(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogout = () => setShowLogoutModal(true);
+  
+  const confirmLogout = () => {
+    sessionStorage.clear();
+    sessionStorage.setItem('login_message', 'ออกจากระบบสำเร็จแล้ว พบกันใหม่ครับ!');
+    navigate('/login');
+  };
 
   useEffect(() => {
     const storedAvatar = localStorage.getItem('admin_avatar');
@@ -23,14 +32,23 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  // ✅ เพิ่ม Effect เพื่ออัปเดต Tab เมื่อมีการ Navigate มาจากหน้า Overview
+  useEffect(() => {
+    if (location.state?.initialTab) {
+      setTab(location.state.initialTab);
+    }
+  }, [location.state]);
+
   return (
     <div className="admin-layout">
+      <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
+
       <main className="dash-main">
         <div className="dash-main-content-wrapper">
           <div className="dash-topbar">
             <div className="role-pill">Admin</div>
             <div className="top-actions">
-              <button type="button" className="logout-btn" onClick={() => performLogout(navigate)}>
+              <button type="button" className="logout-btn" onClick={handleLogout}>
                 ออกจากระบบ
               </button>
             </div>

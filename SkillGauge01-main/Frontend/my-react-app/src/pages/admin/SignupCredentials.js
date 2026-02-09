@@ -38,12 +38,22 @@ const AdminSignupCredentials = () => {
       pm: 'ผู้จัดการโครงการ (PM)',
       fm: 'ผู้จัดการภาคสนาม (FM)'
     };
+    const roleKey = String(profileDraft.role || '').trim().toLowerCase();
+    const isWorkerRole = (() => {
+      if (!roleKey && profileDraft.category) return true;
+      if (roleKey.includes('หัวหน้า') || roleKey.includes('foreman') || roleKey === 'fm' || roleKey.includes('(fm)')) return false;
+      if (roleKey.includes('ผู้จัดการ') || roleKey.includes('project_manager') || roleKey === 'pm' || roleKey.includes('(pm)')) return false;
+      if (roleKey.includes('worker') || roleKey === 'wk' || roleKey.includes('(wk)')) return true;
+      if (roleKey.includes('ช่าง')) return true;
+      return false;
+    })();
     return {
       role: roleMap[profileDraft.role] || profileDraft.role || 'ไม่ระบุ',
       fullName: fullName || 'ไม่ระบุ',
       phone: profileDraft.phoneNumber || 'ไม่ระบุ',
       province: profileDraft.province || 'ไม่ระบุ',
       category: categoryLabel,
+      isWorkerRole
     };
   }, [profileDraft, categoryLabel]);
 
@@ -162,8 +172,12 @@ const AdminSignupCredentials = () => {
                 <span className="admin-cred-summary__value">{summary.phone}</span>
               </div>
               <div>
-                <span className="admin-cred-summary__label">หมวดหมู่ช่าง</span>
-                <span className="admin-cred-summary__value">{summary.category}</span>
+                {summary.isWorkerRole && (
+                  <>
+                    <span className="admin-cred-summary__label">หมวดหมู่ช่าง</span>
+                    <span className="admin-cred-summary__value">{summary.category}</span>
+                  </>
+                )}
               </div>
               <div>
                 <span className="admin-cred-summary__label">จังหวัดหลักที่ทำงาน</span>

@@ -178,6 +178,12 @@
   gap: 0.5rem;
 }
 
+.section-subtext {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
 .view-all-btn {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -267,6 +273,77 @@
   display: block;
   margin-bottom: 1rem;
   opacity: 0.5;
+}
+
+/* Skill chart */
+.skill-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.skill-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 70px;
+  align-items: center;
+  gap: 1rem;
+}
+
+.skill-name {
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.skill-bar {
+  height: 12px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+}
+
+.skill-segment {
+  height: 100%;
+  transition: width 0.8s ease;
+}
+
+.skill-total {
+  text-align: right;
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 0.9rem;
+}
+
+.skill-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+  align-items: center;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.skill-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.skill-legend-total {
+  margin-left: auto;
+  font-weight: 700;
+  color: #1e293b;
 }
 
 /* Quick Actions Grid */

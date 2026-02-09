@@ -26,6 +26,18 @@ const STATUS_BADGE_CLASSES = {
   active: 'status-badge status-badge--probation'
 };
 
+const normalizeRole = (role) => String(role || '').trim().toLowerCase();
+
+const isWorkerRole = (role, category) => {
+  const key = normalizeRole(role);
+  if (!key && category) return true;
+  if (key.includes('หัวหน้า') || key.includes('foreman') || key === 'fm' || key.includes('(fm)')) return false;
+  if (key.includes('ผู้จัดการ') || key.includes('project_manager') || key === 'pm' || key.includes('(pm)')) return false;
+  if (key.includes('worker') || key === 'wk' || key.includes('(wk)')) return true;
+  if (key.includes('ช่าง')) return true;
+  return false;
+};
+
 const AdminUsersTable = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,16 +88,25 @@ const AdminUsersTable = () => {
 
   const filteredWorkers = useMemo(() => {
     return workers.filter(worker => {
+      const workerRoleIsWorker = isWorkerRole(worker.role, worker.category);
       const matchesSearch = (worker.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (worker.phone || '').includes(searchTerm);
-      const matchesCategory = filterCategory === 'all' || worker.category === filterCategory;
-      const matchesStatus = filterStatus === 'all' || 
-                (filterStatus === 'probation' && (worker.status === 'probation' || worker.status === 'active')) ||
-                (filterStatus === 'permanent' && worker.status === 'permanent');
-      const matchesSkill = filterSkill === 'all' ||
-                (filterSkill === 'none' && (worker.score === undefined || worker.score === null)) ||
-                (filterSkill === 'passed' && worker.score !== undefined && worker.score !== null && worker.score >= 60) ||
-                (filterSkill === 'failed' && worker.score !== undefined && worker.score !== null && worker.score < 60);
+      const matchesCategory = filterCategory === 'all'
+        ? true
+        : workerRoleIsWorker && worker.category === filterCategory;
+      const matchesStatus = filterStatus === 'all'
+        ? true
+        : workerRoleIsWorker && (
+          (filterStatus === 'probation' && (worker.status === 'probation' || worker.status === 'active')) ||
+          (filterStatus === 'permanent' && worker.status === 'permanent')
+        );
+      const matchesSkill = filterSkill === 'all'
+        ? true
+        : workerRoleIsWorker && (
+          (filterSkill === 'none' && (worker.score === undefined || worker.score === null)) ||
+          (filterSkill === 'passed' && worker.score !== undefined && worker.score !== null && worker.score >= 60) ||
+          (filterSkill === 'failed' && worker.score !== undefined && worker.score !== null && worker.score < 60)
+        );
 
       return matchesSearch && matchesCategory && matchesStatus && matchesSkill;
     });
@@ -274,6 +295,7 @@ const AdminUsersTable = () => {
               </div>
             ) : (
               filteredWorkers.map(worker => {
+                const workerRoleIsWorker = isWorkerRole(worker.role, worker.category);
                 const isProbation = worker.status === 'probation' || worker.status === 'active';
                 const hasPassedAssessment = worker.assessmentPassed === true ||
                   (typeof worker.score === 'number' && worker.score >= 60);
@@ -295,9 +317,13 @@ const AdminUsersTable = () => {
                   <div className="col col-phone" data-label="เบอร์โทร">{worker.phone || '—'}</div>
                   <div className="col col-role" data-label="Role">{worker.role || '—'}</div>
                   <div className="col col-status" data-label="สถานะ">
-                    <span className={STATUS_BADGE_CLASSES[worker.status] || 'status-badge'}>
-                      {STATUS_LABELS[worker.status] || '—'}
-                    </span>
+                    {workerRoleIsWorker ? (
+                      <span className={STATUS_BADGE_CLASSES[worker.status] || 'status-badge'}>
+                        {STATUS_LABELS[worker.status] || '—'}
+                      </span>
+                    ) : (
+                      <span className="status-badge">—</span>
+                    )}
                   </div>
                   <div className="col col-actions" data-label="จัดการ">
                     <button

@@ -1,342 +1,375 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
-import ThaiDatePicker from '../../components/ThaiDatePicker';
+import { mockUser } from '../../mock/mockData';
 import '../pm/WKDashboard.css';
+import './PMTheme.css';
+import PMTopNav from './PMTopNav';
+
+// Internal StatCard Component (Consistent with PMProjectManager)
+const StatCard = ({ icon, label, value, color, bg, onClick, isActive }) => {
+  return (
+      <div 
+          onClick={onClick}
+          style={{ 
+              background: 'white', 
+              borderRadius: '16px', 
+              padding: '24px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '24px', 
+              border: isActive ? `2px solid ${color}` : '1px solid #f1f5f9', 
+              boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', 
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              transform: isActive ? 'translateY(-2px)' : 'none'
+          }}
+      >
+          <div style={{ width: '64px', height: '64px', background: bg, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
+              {icon}
+          </div>
+          <div>
+              <h4 style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: '500' }}>{label}</h4>
+              <h3 style={{ margin: '4px 0 0', fontSize: '24px', color: color, fontWeight: '800' }}>
+                  {value}
+              </h3>
+          </div>
+      </div>
+  );
+};
 
 const PMProjects = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const userStr = sessionStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  const user = location.state?.user || { ...mockUser, role: 'Project Manager' };
+  const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+  const currentDate = new Date();
 
-  // --- State ข้อมูล ---
-  const [projects, setProjects] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // --- State สำหรับ Modals ---
-  // ใช้ object เดียวคุมทุก modal (edit, delete, logout, alert)
-  const [modal, setModal] = useState({
-    type: null, // 'edit' | 'delete' | 'logout' | 'alert'
-    show: false,
-    data: null, // เก็บ ID หรือ ข้อมูลที่ต้องใช้
-    message: '' // สำหรับ alert
-  });
-
-  // --- State สำหรับฟอร์มแก้ไข ---
-  const [editForm, setEditForm] = useState({
-    project_name: '',
-    project_type: 'บ้านพักอาศัย',
-    site_location: '',
-    description: '',
-    start_date: '',
-    end_date: ''
-  });
-
-  const API = 'http://localhost:4000'; 
-
-  // 1. ดึงข้อมูล
-  const fetchProjects = async () => {
-    if (!user) return;
-    try {
-        const res = await axios.get(`${API}/api/manageproject/all?user_id=${user.id}`);
-        setProjects(res.data);
-    } catch (err) {
-        console.error("Error fetching projects:", err);
+  const handleLogout = () => {
+    if (window.confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
+      sessionStorage.clear();
+      navigate('/login');
     }
   };
+
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'done'
+  const [toast, setToast] = useState('');
 
   useEffect(() => {
-    fetchProjects();
+    const msg = sessionStorage.getItem('pm_notification');
+    if (msg) {
+      setToast(msg);
+      sessionStorage.removeItem('pm_notification');
+      setTimeout(() => setToast(''), 4000);
+    }
+    loadProjects();
   }, []);
 
-  // --- Helper Functions ---
-  const closeModal = () => {
-    setModal({ type: null, show: false, data: null, message: '' });
-  };
-
-  const showCustomAlert = (msg) => {
-    setModal({ type: 'alert', show: true, message: msg });
-  };
-
-  // --- Logic 1: Logout ---
-  const handleLogoutClick = () => {
-    setModal({ type: 'logout', show: true });
-  };
-  const confirmLogout = () => {
-    sessionStorage.clear();
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
-
-  // --- Logic 2: Delete ---
-  const handleDeleteClick = (pj_id) => {
-    setModal({ type: 'delete', show: true, data: pj_id });
-  };
-  const confirmDelete = async () => {
+  const loadProjects = async () => {
+    setLoading(true);
     try {
-        await axios.delete(`${API}/api/manageproject/delete/${modal.data}`);
-        closeModal();
-        fetchProjects(); 
-    } catch (err) {
-        closeModal();
-        showCustomAlert("ลบไม่สำเร็จ");
+      const token = sessionStorage.getItem('auth_token');
+      const res = await fetch(`${API}/api/dashboard/project-task-counts`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      } else {
+        setProjects([]);
+      }
+    } catch (e) {
+      console.error(e);
+      setProjects([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // --- Logic 3: Edit (เปิดป็อปอัพ + ดึงข้อมูลเดิม) ---
-  const handleEditClick = (project) => {
-    // เตรียมข้อมูลลงฟอร์ม (ตัดเวลา T00:00:00.000Z ออกถ้ามี)
-    setEditForm({
-        project_name: project.project_name,
-        project_type: project.project_type,
-        site_location: project.site_location || '',
-        description: project.description || '',
-        start_date: project.start_date ? project.start_date.split('T')[0] : '',
-        end_date: project.end_date ? project.end_date.split('T')[0] : ''
-    });
-    // เปิด Modal Edit
-    setModal({ type: 'edit', show: true, data: project.pj_id });
-  };
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`ยืนยันลบโครงการ "${name}"? ข้อมูลที่เกี่ยวข้องทั้งหมดจะหายไป`)) return;
 
-  const handleEditFormChange = (e) => {
-    setEditForm({ ...editForm, [e.target.name]: e.target.value });
-  };
-
-  const handleEditDateChange = (name, dateValue) => {
-    let formattedDate = dateValue;
-    if (dateValue instanceof Date) {
-        const year = dateValue.getFullYear();
-        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
-        const day = String(dateValue.getDate()).padStart(2, '0');
-        formattedDate = `${year}-${month}-${day}`;
-    }
-    setEditForm(prev => ({ ...prev, [name]: formattedDate }));
-  };
-
-  const saveEditProject = async (e) => {
-    e.preventDefault();
     try {
-        await axios.put(`${API}/api/manageproject/update/${modal.data}`, editForm);
-        closeModal();
-        showCustomAlert("บันทึกการแก้ไขเรียบร้อยแล้ว");
-        fetchProjects();
-    } catch (err) {
-        console.error(err);
-        showCustomAlert("เกิดข้อผิดพลาดในการบันทึก");
+      const token = sessionStorage.getItem('auth_token');
+      const res = await fetch(`${API}/api/projects/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+
+      if (res.ok) {
+        setProjects(prev => prev.filter(p => p.project_id !== id));
+        setToast(`ลบโครงการ "${name}" เรียบร้อยแล้ว`);
+        setTimeout(() => setToast(''), 3000);
+      } else {
+        alert('ลบรายการไม่สำเร็จ');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
     }
   };
 
-  const formatDateThai = (dateString) => {
-      if(!dateString) return "-";
-      const d = new Date(dateString);
-      return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543}`;
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = (p.project_name || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const isDone = p.tasks_total > 0 && p.tasks_done === p.tasks_total;
+    
+    if (statusFilter === 'active') return matchesSearch && !isDone;
+    if (statusFilter === 'done') return matchesSearch && isDone;
+    return matchesSearch;
+  });
+
+  const totalProjects = projects.length;
+  const activeProjects = projects.filter(p => !(p.tasks_total > 0 && p.tasks_total === p.tasks_done)).length;
+  const completedProjects = projects.filter(p => p.tasks_total > 0 && p.tasks_total === p.tasks_done).length;
+
+  const formatDateShort = (dateStr) => {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    if(isNaN(d.getTime())) return '-';
+    const year = d.getFullYear() + 543;
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${String(year).slice(-2)}`;
   };
-
-  const filteredProjects = projects.filter(p => p.project_name.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  // --- Styles ---
-  const modalOverlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' };
-  const modalContentStyle = { background: 'white', padding: '25px', borderRadius: '12px', width: '350px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' };
-  const editModalStyle = { ...modalContentStyle, width: '600px', maxWidth: '90%', textAlign: 'left' }; // Modal แก้ไขจะกว้างกว่า
-  const btnStyle = { padding: '8px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', margin: '0 5px' };
-  const labelStyle = { fontWeight: 'bold', marginBottom: '5px', display: 'block', color: '#34495e', fontSize: '14px' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px', marginBottom: '15px' };
 
   return (
-    <div className="dash-layout">
-       
-       {/* === ZONE MODAL POPUPS === */}
-       {modal.show && (
-         <div style={modalOverlayStyle}>
-            
-            {/* 1. Modal Alert */}
-            {modal.type === 'alert' && (
-                <div style={modalContentStyle}>
-                    <h3 style={{color: '#2c3e50', margin:'0 0 15px'}}>แจ้งเตือน</h3>
-                    <p style={{marginBottom:'20px', color:'#555'}}>{modal.message}</p>
-                    <button onClick={closeModal} style={{...btnStyle, background:'#3498db', color:'white'}}>ตกลง</button>
-                </div>
-            )}
-
-            {/* 2. Modal Logout */}
-            {modal.type === 'logout' && (
-                <div style={modalContentStyle}>
-                    <h3 style={{color: '#e74c3c', margin:'0 0 15px'}}>ยืนยันออกจากระบบ?</h3>
-                    <div style={{display:'flex', justifyContent:'center'}}>
-                        <button onClick={closeModal} style={{...btnStyle, background:'#ccc'}}>ยกเลิก</button>
-                        <button onClick={confirmLogout} style={{...btnStyle, background:'#e74c3c', color:'white'}}>ยืนยัน</button>
-                    </div>
-                </div>
-            )}
-
-            {/* 3. Modal Delete */}
-            {modal.type === 'delete' && (
-                <div style={modalContentStyle}>
-                    <h3 style={{color: '#c0392b', margin:'0 0 15px'}}>ยืนยันการลบ?</h3>
-                    <p style={{marginBottom:'20px', color:'#555'}}>ข้อมูลโครงการจะหายไปถาวร</p>
-                    <div style={{display:'flex', justifyContent:'center'}}>
-                        <button onClick={closeModal} style={{...btnStyle, background:'#ccc'}}>ยกเลิก</button>
-                        <button onClick={confirmDelete} style={{...btnStyle, background:'#e74c3c', color:'white'}}>ลบเลย</button>
-                    </div>
-                </div>
-            )}
-
-            {/* 4. Modal Edit (ฟอร์มแก้ไข) */}
-            {modal.type === 'edit' && (
-                <div style={editModalStyle}>
-                    <h2 style={{color: '#2c3e50', borderBottom:'2px solid #eee', paddingBottom:'10px', marginTop:0}}>แก้ไขโครงการ</h2>
-                    <form onSubmit={saveEditProject}>
-                        
-                        <div>
-                            <label style={labelStyle}>ชื่อโครงการ *</label>
-                            <input className="input" type="text" name="project_name" value={editForm.project_name} onChange={handleEditFormChange} required style={inputStyle} />
-                        </div>
-
-                        <div>
-                            <label style={labelStyle}>ประเภทโครงการ *</label>
-                            <select className="input" name="project_type" value={editForm.project_type} onChange={handleEditFormChange} style={inputStyle}>
-                                <option value="บ้านพักอาศัย">บ้านพักอาศัย</option>
-                                <option value="อาคารพาณิชย์">อาคารพาณิชย์</option>
-                                <option value="คอนโดมิเนียม">คอนโดมิเนียม</option>
-                                <option value="โรงงาน/คลังสินค้า">โรงงาน/คลังสินค้า</option>
-                                <option value="อื่นๆ">อื่นๆ</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label style={labelStyle}>สถานที่ตั้งโครงการ</label>
-                            <textarea className="input" name="site_location" value={editForm.site_location} onChange={handleEditFormChange} rows="2" style={inputStyle} />
-                        </div>
-
-                        <div>
-                            <label style={labelStyle}>รายละเอียดเพิ่มเติม</label>
-                            <textarea className="input" name="description" value={editForm.description} onChange={handleEditFormChange} rows="2" style={inputStyle} />
-                        </div>
-
-                        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px', marginBottom:'20px'}}>
-                            <div>
-                                <label style={labelStyle}>วันที่เริ่มโครงการ</label>
-                                <ThaiDatePicker 
-                                    value={editForm.start_date}
-                                    onChange={(val) => handleEditDateChange('start_date', val)}
-                                    placeholder="เลือกวันเริ่ม"
-                                />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>วันที่สิ้นสุด (โดยประมาณ)</label>
-                                <ThaiDatePicker 
-                                    value={editForm.end_date}
-                                    onChange={(val) => handleEditDateChange('end_date', val)}
-                                    placeholder="เลือกวันสิ้นสุด"
-                                />
-                            </div>
-                        </div>
-
-                        <div style={{display:'flex', justifyContent:'flex-end', marginTop:'20px'}}>
-                            <button type="button" onClick={closeModal} style={{...btnStyle, background:'#95a5a6', color:'white'}}>ยกเลิก</button>
-                            <button type="submit" style={{...btnStyle, background:'#27ae60', color:'white'}}>บันทึกโครงการ</button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-         </div>
-       )}
-
-      <aside className="dash-sidebar">
-        <div className="sidebar-title" style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
-          PM Portal
+    <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
+      {/* Toast Notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '30px', left: '50%', transform: 'translateX(-50%)',
+          backgroundColor: '#10b981', color: 'white', padding: '12px 24px', borderRadius: '16px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', gap: '12px', fontWeight: '600',
+          animation: 'toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+        }}>
+          <style>{`@keyframes toastIn { from { transform: translate(-50%, -40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }`}</style>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg>
+          {toast}
         </div>
-        <nav className="menu">
-          <button type="button" className={`menu-item ${location.pathname === '/pm' ? 'active' : ''}`} onClick={() => navigate('/pm', { state: { user } })}>หน้าหลัก</button>
-          <button type="button" className={`menu-item ${location.pathname === '/project-tasks' ? 'active' : ''}`} onClick={() => navigate('/project-tasks', { state: { user } })}>มอบหมายงาน</button>
-          <button type="button" className={`menu-item active`} onClick={() => navigate('/projects', { state: { user } })}>โครงการทั้งหมด</button>
-          <button type="button" className={`menu-item ${location.pathname === '/pm-settings' ? 'active' : ''}`} onClick={() => navigate('/pm-settings', { state: { user } })}>ตั้งค่า</button>
-          <button type="button" className="menu-item logout-btn" style={{ marginTop: '20px', color: '#ef4444', background: '#fef2f2', borderColor: '#fee2e2' }} onClick={handleLogoutClick}>ออกจากระบบ</button>
-        </nav>
-      </aside>
+      )}
+      
+      <PMTopNav active="projects" user={user} onLogout={handleLogout} />
 
-      <main className="dash-main">
-        <div style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-            <div>
-                <h1 style={{ margin: 0, color: '#2c3e50' }}>โครงการทั้งหมด</h1>
-                <p style={{ color: '#7f8c8d' }}>จัดการโครงการที่คุณดูแล ({filteredProjects.length})</p>
+      <main className="worker-main" style={{ flex: 1, padding: '40px 20px', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+        
+        {/* Hero Banner - consistent with PMProjectManager */}
+        <div style={{ 
+          background: 'linear-gradient(135deg, #e0f2fe 0%, #0ea5e9 100%)', // Blue Sky Tone
+          borderRadius: '24px', 
+          padding: '24px 40px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: '30px',
+          boxShadow: '0 10px 20px -5px rgba(14, 165, 233, 0.3)', 
+          border: '1px solid rgba(255,255,255,0.6)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+            {/* Background Decoration */}
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.8), transparent 70%)', pointerEvents: 'none' }}></div>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#0f172a', marginBottom: '8px', letterSpacing: '-0.5px', fontFamily: "'Kanit', sans-serif" }}>
+                  ศูนย์บริหารจัดการโครงการ
+                </h1>
+                <p style={{ fontSize: '16px', color: '#475569', margin: '0 0 16px 0', fontWeight: '500' }}>
+                  ติดตามความคืบหน้า ควบคุมระยะเวลา และบริหารทรัพยากร
+                </p>
+                <button 
+                  onClick={() => navigate('/create-project')}
+                  style={{ 
+                    background: 'white', color: '#0284c7', border: 'none', padding: '12px 24px', 
+                    borderRadius: '12px', cursor: 'pointer', fontWeight: '700', fontSize: '15px',
+                    display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    transition: 'transform 0.2s'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  <i className='bx bx-plus-circle' style={{ fontSize: '20px' }}></i> สร้างโครงการใหม่
+                </button>
             </div>
-            <button onClick={() => navigate('/create-project')} style={{ background: '#27ae60', color: 'white', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
-              + สร้างโครงการใหม่
-            </button>
-          </div>
-
-          <input 
-            type="text" 
-            placeholder="🔍 ค้นหาชื่อโครงการ..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px' }}
-          />
-
-          <div style={{ overflowX: 'auto', background: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-              <thead>
-                <tr style={{ background: '#f8f9fa', color: '#7f8c8d', textAlign: 'left' }}>
-                  <th style={{ padding: '15px' }}>ชื่อโครงการ</th>
-                  <th style={{ padding: '15px' }}>ประเภท</th>
-                  <th style={{ padding: '15px' }}>สถานที่</th>
-                  <th style={{ padding: '15px' }}>ระยะเวลา</th>
-                  <th style={{ padding: '15px', textAlign: 'center' }}>จัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProjects.length > 0 ? (
-                  filteredProjects.map((p) => (
-                    <tr key={p.pj_id} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ padding: '15px', fontWeight: 'bold', color: '#2c3e50' }}>{p.project_name}</td>
-                      <td style={{ padding: '15px' }}>
-                        <span style={{ background: '#eaf2f8', color: '#3498db', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>{p.project_type}</span>
-                      </td>
-                      <td style={{ padding: '15px', color: '#555' }}>{p.site_location || '-'}</td>
-                      <td style={{ padding: '15px', fontSize: '13px' }}>
-                        {formatDateThai(p.start_date)} - {formatDateThai(p.end_date)}
-                      </td>
-                      <td style={{ padding: '15px', textAlign: 'center' }}>
-                         <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                            <button 
-                                onClick={() => navigate('/project-detail', { state: { pj_id: p.pj_id } })}
-                                style={{ ...actionBtnStyle, background: '#3498db' }} title="ดูรายละเอียด / เพิ่มงาน"
-                            >
-                                📋 เพิ่มงาน
-                            </button>
-                            <button 
-                                onClick={() => handleEditClick(p)} // เรียกใช้ป็อปอัพแก้ไข
-                                style={{ ...actionBtnStyle, background: '#f1c40f' }} title="แก้ไข"
-                            >
-                                ✏️
-                            </button>
-                            <button 
-                                onClick={() => handleDeleteClick(p.pj_id)}
-                                style={{ ...actionBtnStyle, background: '#e74c3c' }} title="ลบ"
-                            >
-                                🗑️
-                            </button>
-                         </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#aaa' }}>ไม่พบข้อมูลโครงการ</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+            
+             <div style={{ position: 'relative', width: '200px', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: '90px', filter: 'drop-shadow(0 20px 30px rgba(2, 132, 199, 0.3))', animation: 'float 6s ease-in-out infinite' }}>
+                  🏗️
+                </div>
+            </div>
         </div>
+
+        {/* Search & Filter Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+             <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ position: 'relative', width: '300px' }}>
+                    <i className='bx bx-search' style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '20px' }}></i>
+                    <input 
+                    type="text" 
+                    placeholder="ค้นหาชื่อโครงการ..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{ 
+                        width: '100%', padding: '12px 12px 12px 40px', borderRadius: '12px', 
+                        border: '1px solid #e2e8f0', outline: 'none', background: 'white',
+                        fontSize: '14px', color: '#1e293b', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' 
+                    }}
+                    />
+                </div>
+             </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="worker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          <StatCard 
+            icon={<i className='bx bx-folder'></i>} 
+            label="โครงการทั้งหมด" 
+            value={totalProjects} 
+            color="#3b82f6" bg="#eff6ff" 
+            onClick={() => setStatusFilter('all')}
+            isActive={statusFilter === 'all'}
+          />
+          <StatCard 
+            icon={<i className='bx bx-loader-alt'></i>}
+            label="กำลังดำเนินการ" 
+            value={activeProjects} 
+            color="#f59e0b" bg="#fffbeb" 
+            onClick={() => setStatusFilter('active')}
+            isActive={statusFilter === 'active'}
+          />
+          <StatCard 
+            icon={<i className='bx bx-check-circle'></i>} 
+            label="เสร็จสิ้นแล้ว" 
+            value={completedProjects} 
+            color="#10b981" bg="#f0fdf4" 
+            onClick={() => setStatusFilter('done')}
+            isActive={statusFilter === 'done'}
+          />
+        </div>
+
+        {/* Projects Table */}
+        <section style={{ background: 'white', borderRadius: '16px', padding: '0px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', overflow: 'hidden' }}>
+            <div className="table" style={{ border: 'none', margin: 0 }}>
+              <div className="thead" style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1.8fr 1.5fr 1.2fr 0.8fr 0.8fr 1fr', 
+                  background: '#f8fafc', 
+                  padding: '16px 24px', 
+                  borderBottom: '1px solid #e2e8f0' 
+              }}>
+                <div style={{ fontWeight: '600', color: '#475569' }}>ชื่อโครงการ / สถานที่</div>
+                <div style={{ fontWeight: '600', color: '#475569' }}>ความคืบหน้า</div>
+                <div style={{ fontWeight: '600', color: '#475569' }}>ระยะเวลา</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>จำนวนงาน</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>สถานะ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>จัดการ</div>
+              </div>
+              
+              <div className="tbody">
+                {loading ? (
+                  <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8' }}>กำลังโหลดข้อมูล...</div>
+                ) : filteredProjects.length > 0 ? filteredProjects.map((p) => {
+                  const percent = p.tasks_total > 0 ? Math.round((p.tasks_done / p.tasks_total) * 100) : 0;
+                  const isDone = p.tasks_total > 0 && p.tasks_done === p.tasks_total;
+                  
+                  return (
+                    <div className="tr" key={p.project_id} style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1.8fr 1.5fr 1.2fr 0.8fr 0.8fr 1fr', 
+                        borderBottom: '1px solid #f1f5f9', 
+                        padding: '20px 24px', 
+                        alignItems: 'center',
+                        transition: 'background 0.2s'
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '15px', marginBottom: '4px' }}>{p.project_name}</div>
+                        <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <i className='bx bx-map' style={{ color: '#94a3b8' }}></i> {p.site_address || 'ไม่ระบุสถานที่'}
+                        </div>
+                      </div>
+                      
+                      <div style={{ paddingRight: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px' }}>
+                            <span style={{ color: '#64748b' }}>เสร็จแล้ว {p.tasks_done}/{p.tasks_total} งาน</span>
+                            <span style={{ fontWeight: '700', color: isDone ? '#10b981' : '#3b82f6' }}>{percent}%</span>
+                        </div>
+                        <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: `${percent}%`, height: '100%', background: isDone ? '#10b981' : 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: '4px' }}></div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: '13px', color: '#475569' }}>
+                        <div style={{ marginBottom: '2px' }}><i className='bx bx-calendar' style={{ color: '#cbd5e1' }}></i> {formatDateShort(p.start_date)}</div>
+                        <div style={{ color: '#94a3b8', fontSize: '12px' }}>ถึง {formatDateShort(p.end_date)}</div>
+                      </div>
+
+                      <div style={{ textAlign: 'center', color: '#334155', fontWeight: '600' }}>
+                        {p.tasks_total}
+                      </div>
+
+                      <div style={{ textAlign: 'center' }}>
+                        {isDone ? (
+                           <span style={{ background: '#ecfdf5', color: '#059669', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700' }}>เสร็จสิ้น</span>
+                        ) : p.tasks_total === 0 ? (
+                           <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>ว่าง</span>
+                        ) : (
+                           <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700' }}>กำลังทำ</span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                           <button 
+                            onClick={() => navigate('/project-tasks', { state: { project: p } })}
+                            title="ดูงานย่อย"
+                            style={{ width: '32px', height: '32px', background: 'white', border: '1px solid #dbeafe', borderRadius: '8px', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onMouseOver={(e) => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#dbeafe'; }}
+                           >
+                            <i className='bx bx-list-ul'></i>
+                           </button>
+                           <button 
+                            onClick={() => navigate('/project-detail', { state: { pj_id: p.project_id, project: p, user } })}
+                            title="ตั้งค่า/รายละเอียด"
+                            style={{ width: '32px', height: '32px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onMouseOver={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#1e293b'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = '#475569'; }}
+                           >
+                            <i className='bx bx-cog'></i>
+                           </button>
+                           <button 
+                            onClick={() => handleDelete(p.project_id, p.project_name)}
+                            title="ลบโครงการ"
+                            style={{ width: '32px', height: '32px', background: 'white', border: '1px solid #fee2e2', borderRadius: '8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onMouseOver={(e) => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#fee2e2'; }}
+                           >
+                            <i className='bx bx-trash'></i>
+                           </button>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                    <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8' }}>
+                        <i className='bx bx-folder-open' style={{ fontSize: '48px', marginBottom: '10px', display: 'block', opacity: 0.5 }}></i>
+                        ไม่พบข้อมูลโครงการ
+                    </div>
+                )}
+              </div>
+            </div>
+          </section>
       </main>
     </div>
   );
 };
-
-// Styles
-const actionBtnStyle = { border: 'none', color: 'white', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' };
 
 export default PMProjects;

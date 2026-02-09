@@ -568,13 +568,43 @@ function buildWorkerProfileFromRow(row, fallbackProfile) {
   return profile;
 }
 
+function inferAssessmentLevelFromTitle(title) {
+  if (!title) return null;
+  const normalized = String(title).toLowerCase();
+  const match = normalized.match(/\b(?:lv|level)\s*([1-3])\b/i) || normalized.match(/ระดับ\s*([1-3])/i);
+  if (!match) return null;
+  const level = Number(match[1]);
+  return Number.isFinite(level) ? level : null;
+}
+
 function normalizeAssessmentSummary(row) {
-  if (!row) return { score: null, passed: null };
+  if (!row) return { score: null, passed: null, totalScore: null, totalQuestions: null, roundTitle: null, roundLevel: null };
   const scoreValue = row.score;
   const score = scoreValue === null || scoreValue === undefined ? null : Number(scoreValue);
   const passedValue = row.passed;
   const passed = passedValue === null || passedValue === undefined ? null : Boolean(Number(passedValue));
-  return { score, passed };
+  const totalScoreValue = row.total_score ?? row.totalScore ?? score;
+  const totalScore = totalScoreValue === null || totalScoreValue === undefined
+    ? null
+    : Number(totalScoreValue);
+  const totalQuestionsValue = row.total_questions ?? row.totalQuestions;
+  const totalQuestions = totalQuestionsValue === null || totalQuestionsValue === undefined
+    ? null
+    : Number(totalQuestionsValue);
+  const roundTitle = row.round_title ?? row.roundTitle ?? null;
+  const roundLevel = inferAssessmentLevelFromTitle(roundTitle);
+  return { score, passed, totalScore, totalQuestions, roundTitle, roundLevel };
+}
+
+function normalizeForemanAssessmentSummary(row) {
+  if (!row) return null;
+  return {
+    totalScore: row.total_score ?? row.totalScore ?? null,
+    maxScore: row.max_score ?? row.maxScore ?? null,
+    percent: row.percent ?? row.percentScore ?? null,
+    grade: row.grade ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? null
+  };
 }
 
 async function fetchLatestAssessmentSummaries(userIds, connection) {
@@ -582,10 +612,12 @@ async function fetchLatestAssessmentSummaries(userIds, connection) {
   if (!ids.length) return new Map();
   try {
     const rows = await query(
-      `SELECT user_id, score, passed, finished_at
-       FROM assessments
-       WHERE user_id IN (?)
-       ORDER BY finished_at DESC`,
+      `SELECT r.worker_id AS user_id, r.total_score AS score, r.total_questions, r.passed, r.finished_at,
+              ar.title AS round_title
+       FROM worker_assessment_results r
+       LEFT JOIN assessment_rounds ar ON ar.id = r.round_id
+       WHERE r.worker_id IN (?)
+       ORDER BY r.finished_at DESC`,
       [ids],
       connection
     );
@@ -599,7 +631,31 @@ async function fetchLatestAssessmentSummaries(userIds, connection) {
     }
     return summaryByUser;
   } catch (error) {
-    if (error?.code === 'ER_NO_SUCH_TABLE') return new Map();
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      try {
+        const rows = await query(
+          `SELECT user_id, score, passed, finished_at
+           FROM assessments
+           WHERE user_id IN (?)
+           ORDER BY finished_at DESC`,
+          [ids],
+          connection
+        );
+
+        const summaryByUser = new Map();
+        for (const row of rows) {
+          const key = String(row.user_id);
+          if (!summaryByUser.has(key)) {
+            summaryByUser.set(key, normalizeAssessmentSummary(row));
+          }
+        }
+        return summaryByUser;
+      } catch (fallbackError) {
+        if (fallbackError?.code === 'ER_NO_SUCH_TABLE') return new Map();
+        console.warn('Unable to read assessment summaries (fallback)', fallbackError?.code || fallbackError?.message || fallbackError);
+        return new Map();
+      }
+    }
     console.warn('Unable to read assessment summaries', error?.code || error?.message || error);
     return new Map();
   }
@@ -610,7 +666,41 @@ async function fetchLatestAssessmentSummary(userId, connection) {
   return summaries.get(String(userId)) || null;
 }
 
-function mapWorkerRowToResponse(row, profilePayload, assessmentSummary) {
+async function fetchLatestForemanAssessments(workerIds, connection) {
+  const ids = Array.isArray(workerIds) ? workerIds.map(id => String(id)).filter(Boolean) : [];
+  if (!ids.length) return new Map();
+  try {
+    await ensureForemanAssessmentSchema(connection);
+    const rows = await query(
+      `SELECT worker_id, total_score, max_score, percent, grade, created_at
+       FROM foreman_assessments
+       WHERE worker_id IN (?)
+       ORDER BY created_at DESC`,
+      [ids],
+      connection
+    );
+
+    const summaryByWorker = new Map();
+    for (const row of rows) {
+      const key = String(row.worker_id);
+      if (!summaryByWorker.has(key)) {
+        summaryByWorker.set(key, normalizeForemanAssessmentSummary(row));
+      }
+    }
+    return summaryByWorker;
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') return new Map();
+    console.warn('Unable to read foreman assessments', error?.code || error?.message || error);
+    return new Map();
+  }
+}
+
+async function fetchLatestForemanAssessment(workerId, connection) {
+  const summaries = await fetchLatestForemanAssessments([workerId], connection);
+  return summaries.get(String(workerId)) || null;
+}
+
+function mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary) {
   const profile = buildWorkerProfileFromRow(row, profilePayload);
   const tradeLabel = getTradeLabel(profile.employment.tradeType);
   const roleLabel = getRoleLabel(profile.employment.role);
@@ -636,6 +726,15 @@ function mapWorkerRowToResponse(row, profilePayload, assessmentSummary) {
     assessmentEnabled: Boolean(profile.employment?.assessmentEnabled),
     score: assessmentSummary?.score ?? null,
     assessmentPassed: assessmentSummary?.passed ?? null,
+    assessmentTotalScore: assessmentSummary?.totalScore ?? null,
+    assessmentTotalQuestions: assessmentSummary?.totalQuestions ?? null,
+    assessmentRoundLevel: assessmentSummary?.roundLevel ?? null,
+    foremanAssessed: Boolean(foremanAssessmentSummary),
+    foremanAssessmentPercent: foremanAssessmentSummary?.percent ?? null,
+    foremanAssessmentTotalScore: foremanAssessmentSummary?.totalScore ?? null,
+    foremanAssessmentMaxScore: foremanAssessmentSummary?.maxScore ?? null,
+    foremanAssessmentGrade: foremanAssessmentSummary?.grade ?? null,
+    foremanAssessmentCreatedAt: foremanAssessmentSummary?.createdAt ?? null,
     fullData: profile
   };
 }
@@ -654,7 +753,8 @@ async function getWorkerResponseById(workerId, connection) {
   if (!row) return null;
   const profilePayload = await fetchWorkerProfile(connection, workerId);
   const assessmentSummary = await fetchLatestAssessmentSummary(workerId, connection);
-  return mapWorkerRowToResponse(row, profilePayload, assessmentSummary);
+  const foremanAssessmentSummary = await fetchLatestForemanAssessment(workerId, connection);
+  return mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary);
 }
 
 async function getAllWorkerResponses(connection) {
@@ -672,12 +772,14 @@ async function getAllWorkerResponses(connection) {
     .map(row => getColumn(row, 'id'))
     .filter(id => id !== undefined && id !== null);
   const assessmentSummaries = await fetchLatestAssessmentSummaries(workerIds, connection);
+  const foremanAssessments = await fetchLatestForemanAssessments(workerIds, connection);
 
   for (const row of rows) {
     const workerId = getColumn(row, 'id');
     const profilePayload = await fetchWorkerProfile(undefined, workerId);
     const assessmentSummary = assessmentSummaries.get(String(workerId)) || null;
-    responses.push(mapWorkerRowToResponse(row, profilePayload, assessmentSummary));
+    const foremanAssessmentSummary = foremanAssessments.get(String(workerId)) || null;
+    responses.push(mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanAssessmentSummary));
   }
   return responses;
 }
@@ -819,6 +921,14 @@ app.get('/api/health', async (_req, res) => {
     console.error(error);
     res.status(500).json({ ok: false, error: 'db_unreachable' });
   }
+});
+
+app.get('/api/debug/db-info', requireAuth, authorizeRoles('admin', 'project_manager'), (_req, res) => {
+  res.json({
+    host: MYSQL_HOST,
+    port: MYSQL_PORT,
+    database: MYSQL_DATABASE
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1031,6 +1141,61 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (error) {
     if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(400).json({ message: 'invalid_user' });
+
+    let user = await queryOne(
+      'SELECT id, full_name, phone, email, status FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+
+    if (!user) {
+      const workerAccount = await queryOne(
+        `SELECT 
+           a.worker_id,
+           a.email,
+           a.status,
+           w.full_name,
+           w.phone,
+           w.role_code
+         FROM worker_accounts a
+         INNER JOIN workers w ON w.id = a.worker_id
+         WHERE a.worker_id = ?
+         LIMIT 1`,
+        [userId]
+      );
+
+      if (workerAccount) {
+        user = {
+          id: workerAccount.worker_id,
+          full_name: workerAccount.full_name || '',
+          phone: workerAccount.phone || '',
+          email: workerAccount.email,
+          status: workerAccount.status || 'active'
+        };
+      }
+    }
+
+    if (!user) return res.status(404).json({ message: 'not_found' });
+
+    res.json({
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        phone: user.phone,
+        email: user.email,
+        status: user.status
+      },
+      roles: Array.isArray(req.user?.roles) ? req.user.roles : []
+    });
+  } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -2331,9 +2496,22 @@ async function ensureAssessmentSchema(connection) {
       category VARCHAR(120) NULL,
       description TEXT NULL,
       question_count INT UNSIGNED NOT NULL DEFAULT 60,
+      passing_score DECIMAL(5,2) NULL DEFAULT 70.00,
+      duration_minutes INT UNSIGNED NULL DEFAULT 60,
+      show_score TINYINT(1) NOT NULL DEFAULT 1,
+      show_answers TINYINT(1) NOT NULL DEFAULT 0,
+      show_breakdown TINYINT(1) NOT NULL DEFAULT 1,
+      subcategory_quotas JSON NULL,
+      difficulty_weights JSON NULL,
+      criteria JSON NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'draft',
+      active TINYINT(1) NOT NULL DEFAULT 1,
+      history JSON NULL,
       start_at DATETIME(6) NULL,
       end_at DATETIME(6) NULL,
       frequency_months INT UNSIGNED NULL,
+      created_by VARCHAR(255) NULL,
+      updated_by VARCHAR(255) NULL,
       created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
       updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
       PRIMARY KEY (id),
@@ -2342,6 +2520,36 @@ async function ensureAssessmentSchema(connection) {
       KEY idx_assessment_rounds_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  // Auto-migration: ensure all necessary columns exist in assessment_rounds
+  try {
+    const columns = await executor.query('SHOW COLUMNS FROM assessment_rounds');
+    const existingColumns = new Set(columns[0].map(c => c.Field));
+    
+    const migrations = [
+      { name: 'passing_score', sql: 'ALTER TABLE assessment_rounds ADD COLUMN passing_score DECIMAL(5,2) NULL DEFAULT 70.00 AFTER question_count' },
+      { name: 'duration_minutes', sql: 'ALTER TABLE assessment_rounds ADD COLUMN duration_minutes INT UNSIGNED NULL DEFAULT 60 AFTER passing_score' },
+      { name: 'show_score', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_score TINYINT(1) NOT NULL DEFAULT 1 AFTER duration_minutes' },
+      { name: 'show_answers', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_answers TINYINT(1) NOT NULL DEFAULT 0 AFTER show_score' },
+      { name: 'show_breakdown', sql: 'ALTER TABLE assessment_rounds ADD COLUMN show_breakdown TINYINT(1) NOT NULL DEFAULT 1 AFTER show_answers' },
+      { name: 'subcategory_quotas', sql: 'ALTER TABLE assessment_rounds ADD COLUMN subcategory_quotas JSON NULL AFTER show_breakdown' },
+      { name: 'difficulty_weights', sql: 'ALTER TABLE assessment_rounds ADD COLUMN difficulty_weights JSON NULL AFTER subcategory_quotas' },
+      { name: 'criteria', sql: 'ALTER TABLE assessment_rounds ADD COLUMN criteria JSON NULL AFTER difficulty_weights' },
+      { name: 'status', sql: "ALTER TABLE assessment_rounds ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'draft' AFTER criteria" },
+      { name: 'active', sql: 'ALTER TABLE assessment_rounds ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1 AFTER status' },
+      { name: 'history', sql: 'ALTER TABLE assessment_rounds ADD COLUMN history JSON NULL AFTER active' },
+      { name: 'created_by', sql: 'ALTER TABLE assessment_rounds ADD COLUMN created_by VARCHAR(255) NULL AFTER history' },
+      { name: 'updated_by', sql: 'ALTER TABLE assessment_rounds ADD COLUMN updated_by VARCHAR(255) NULL AFTER created_by' }
+    ];
+
+    for (const m of migrations) {
+      if (!existingColumns.has(m.name)) {
+        await executor.execute(m.sql);
+      }
+    }
+  } catch (err) {
+    console.warn('[schema] Migration for assessment_rounds failed:', err.message);
+  }
 }
 
 function ensureAssessmentSchemaReady(connection) {
@@ -3722,6 +3930,47 @@ app.delete('/api/assessments/:id', requireAuth, authorizeRoles('admin'), async (
 });
 
 // ---------------------------------------------------------------------------
+// Project Management
+// ---------------------------------------------------------------------------
+
+const createProjectSchema = z.object({
+  name: z.string().min(1).max(255),
+  status: z.enum(['active', 'completed', 'archived']).optional(),
+  owner_user_id: uuidSchema.optional(),
+  description: z.string().optional()
+});
+
+app.post('/api/projects', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const payload = createProjectSchema.parse(req.body ?? {});
+    const projectId = randomUUID();
+    
+    await execute(
+      'INSERT INTO projects (id, name, owner_user_id, status) VALUES (?, ?, ?, ?)',
+      [projectId, payload.name, req.user?.id || null, payload.status || 'active']
+    );
+
+    res.status(201).json({ id: projectId, message: 'Project created' });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.delete('/api/projects/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await execute('DELETE FROM projects WHERE id = ?', [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: 'not_found' });
+    res.json({ message: 'deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Dashboard metrics
 // ---------------------------------------------------------------------------
 app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('project_manager'), async (_req, res) => {
@@ -3811,10 +4060,27 @@ app.get('/api/worker/assessment/questions', (req, res) => {
 });
 
 app.post('/api/worker/score', async (req, res) => {
-    // In real app, save to DB
-    const { score, total } = req.body;
-    console.log(`Worker Score: ${score}/${total}`);
-    res.json({ success: true, message: 'Score saved' });
+    try {
+        const { userId, sessionId, answers } = req.body;
+        console.log(`Worker ${userId} Score for session ${sessionId}`);
+        
+        // Mock calculation or just return success
+        const result = {
+            id: randomUUID(),
+            workerId: userId,
+            sessionId: sessionId,
+            score: 0,
+            totalQuestions: Object.keys(answers || {}).length,
+            passed: true,
+            finishedAt: new Date().toISOString(),
+            breakdown: []
+        };
+        
+        res.json({ success: true, result, message: 'Score saved (Mock)' });
+    } catch (error) {
+        console.error('Mock score error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
 });
 
 

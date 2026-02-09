@@ -54,7 +54,7 @@ const SkillAssessmentTest = () => {
         const query = workerId
           ? `workerId=${encodeURIComponent(workerId)}`
           : `userId=${encodeURIComponent(userId)}`;
-        const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
+        const res = await fetch(`${apiBase}/api/worker/profile?${query}`, { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json();
         if (data && typeof data === 'object') {
@@ -72,8 +72,10 @@ const SkillAssessmentTest = () => {
   const [examConfig, setExamConfig] = useState({ 
       duration_minutes: 60, 
       total_questions: 60,
+      passing_score: null,
       cat_rebar_percent: 25, cat_concrete_percent: 25, cat_formwork_percent: 20, cat_element_percent: 20, cat_theory_percent: 10
   }); 
+    const [roundMeta, setRoundMeta] = useState({ levelLabel: 'LV.1', passingScorePct: null });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -115,6 +117,18 @@ const SkillAssessmentTest = () => {
     return { resolvedUserId, numericWorkerId };
   };
 
+  const resolveLevelLabel = (round) => {
+    const setNo = round?.set_no ?? round?.setNo ?? null;
+    if (setNo !== null && setNo !== undefined) {
+      const numeric = Number(setNo);
+      if (Number.isFinite(numeric)) return `LV.${numeric}`;
+    }
+    const title = String(round?.title || '').toUpperCase();
+    const titleMatch = title.match(/LV\.?\s*(\d+)/);
+    if (titleMatch && titleMatch[1]) return `LV.${titleMatch[1]}`;
+    return 'LV.1';
+  };
+
   const buildFallbackBreakdown = (scoreValue, totalValue) => {
     const totalScore = Number(scoreValue) || 0;
     const totalQuestions = Number(totalValue) || 0;
@@ -139,7 +153,7 @@ const SkillAssessmentTest = () => {
       const workerId = numericWorkerId ?? (resolvedUserId ? Number(resolvedUserId) : null);
       if (!workerId) return;
       try {
-        const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${workerId}`);
+        const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${workerId}`, { credentials: 'include' });
         if (res.status === 404) return;
         if (!res.ok) throw new Error('summary fetch failed');
         const data = await res.json();
@@ -155,6 +169,51 @@ const SkillAssessmentTest = () => {
     fetchSummary();
   }, []);
 
+  useEffect(() => {
+    const fetchRoundMeta = async () => {
+      const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+      const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
+      const workerId = numericWorkerId ?? (resolvedUserId ? Number(resolvedUserId) : null);
+      try {
+        const res = await fetch(`${apiBase}/api/assessments/rounds/active`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const round = data?.round || null;
+          if (round) {
+            const passingScorePct = round.passing_score ?? round.passingScore ?? null;
+            setRoundMeta({
+              levelLabel: resolveLevelLabel(round),
+              passingScorePct: passingScorePct === null || passingScorePct === undefined ? null : Number(passingScorePct)
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Active round fetch failed:', err);
+      }
+
+      try {
+        const params = new URLSearchParams();
+        if (workerId) params.set('workerId', String(workerId));
+        const res = await fetch(`${apiBase}/api/worker/assessments/rounds?${params.toString()}`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const rounds = Array.isArray(data) ? data : [];
+        const round = rounds.find(item => String(item?.category || '').toLowerCase() === 'structure') || rounds[0] || null;
+        if (!round) return;
+        const passingScorePct = round.passing_score ?? round.passingScore ?? null;
+        setRoundMeta({
+          levelLabel: resolveLevelLabel(round),
+          passingScorePct: passingScorePct === null || passingScorePct === undefined ? null : Number(passingScorePct)
+        });
+      } catch (err) {
+        console.warn('Worker rounds fetch failed:', err);
+      }
+    };
+
+    fetchRoundMeta();
+  }, []);
+
   // Sync answers to sessionStorage
   useEffect(() => {
     sessionStorage.setItem('assessment_answers', JSON.stringify(answers));
@@ -166,14 +225,30 @@ const SkillAssessmentTest = () => {
         setLoading(true);
         const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
         const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
-        const sessionId = sessionStorage.getItem('assessment_session_id') || '';
+        const currentWorkerId = numericWorkerId ?? (Number.isFinite(Number(resolvedUserId)) ? Number(resolvedUserId) : null);
+        const currentIdentityKey = resolvedUserId ? String(resolvedUserId) : '';
+        const storedSessionWorkerId = sessionStorage.getItem('assessment_worker_id');
+        const storedIdentityKey = sessionStorage.getItem('assessment_identity_key');
+        let sessionId = sessionStorage.getItem('assessment_session_id') || '';
+        const shouldClearStaleSession = Boolean(sessionId) && (
+          (!storedIdentityKey || storedIdentityKey !== currentIdentityKey) ||
+          (storedSessionWorkerId && currentWorkerId && Number(storedSessionWorkerId) !== Number(currentWorkerId))
+        );
+        if (shouldClearStaleSession) {
+          sessionStorage.removeItem('assessment_session_id');
+          sessionStorage.removeItem('assessment_start_time');
+          sessionStorage.removeItem('assessment_answers');
+          sessionStorage.removeItem('assessment_worker_id');
+          sessionStorage.removeItem('assessment_identity_key');
+          sessionId = '';
+        }
         try {
           // Explicitly fetch LV1 (set_no=1)
           const params = new URLSearchParams({ set_no: '1' });
           if (sessionId) params.set('sessionId', sessionId);
           if (numericWorkerId) params.set('workerId', String(numericWorkerId));
           if (!numericWorkerId && resolvedUserId) params.set('userId', String(resolvedUserId));
-          const res = await fetch(`${apiBase}/api/questions/structural?${params.toString()}`);
+          const res = await fetch(`${apiBase}/api/questions/structural?${params.toString()}`, { credentials: 'include' });
           if (!res.ok) throw new Error('Failed to fetch exam data');
           const data = await res.json();
           // Backend returns { questions: [...] } wrapped in object with pagination
@@ -187,12 +262,18 @@ const SkillAssessmentTest = () => {
               ...prev,
               duration_minutes: Number(round.durationMinutes) || prev.duration_minutes,
               total_questions: Number(round.questionCount) || prev.total_questions,
+              passing_score: round.passing_score ?? round.passingScore ?? prev.passing_score,
               cat_rebar_percent: pct('rebar') || prev.cat_rebar_percent,
               cat_concrete_percent: pct('concrete') || prev.cat_concrete_percent,
               cat_formwork_percent: pct('formwork') || prev.cat_formwork_percent,
               cat_element_percent: pct('tools') || prev.cat_element_percent,
               cat_theory_percent: pct('theory') || prev.cat_theory_percent
             }));
+            const passingScorePct = round.passing_score ?? round.passingScore ?? null;
+            setRoundMeta({
+              levelLabel: resolveLevelLabel(round),
+              passingScorePct: passingScorePct === null || passingScorePct === undefined ? null : Number(passingScorePct)
+            });
           }
           
           if (Array.isArray(qList)) {
@@ -219,6 +300,12 @@ const SkillAssessmentTest = () => {
           }
           if (data?.sessionId) {
             sessionStorage.setItem('assessment_session_id', data.sessionId);
+            if (currentWorkerId) {
+              sessionStorage.setItem('assessment_worker_id', String(currentWorkerId));
+            }
+            if (currentIdentityKey) {
+              sessionStorage.setItem('assessment_identity_key', currentIdentityKey);
+            }
           }
         } catch (err) {
           console.error("Error fetching data:", err);
@@ -406,6 +493,10 @@ const SkillAssessmentTest = () => {
         }
         const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
         const { resolvedUserId, numericWorkerId } = getWorkerIdentity();
+        if (!numericWorkerId) {
+          showWarning('ไม่พบรหัสช่างสำหรับส่งคำตอบ กรุณาออกและเข้าสู่ระบบใหม่');
+          return;
+        }
         const sessionId = sessionStorage.getItem('assessment_session_id') || '';
         if (!sessionId) {
           showWarning('ไม่พบข้อมูลรอบการสอบ');
@@ -413,11 +504,12 @@ const SkillAssessmentTest = () => {
         }
         const res = await fetch(`${apiBase}/api/worker/score`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              userId: numericWorkerId ?? resolvedUserId,
+              userId: numericWorkerId,
               sessionId,
               answers: answers
             })
@@ -466,6 +558,8 @@ const SkillAssessmentTest = () => {
         sessionStorage.removeItem('assessment_answers');
         sessionStorage.removeItem('assessment_start_time');
         sessionStorage.removeItem('assessment_session_id');
+        sessionStorage.removeItem('assessment_worker_id');
+        sessionStorage.removeItem('assessment_identity_key');
 
         navigate('/skill-assessment/summary');
         window.scrollTo(0, 0);
@@ -568,6 +662,8 @@ const SkillAssessmentTest = () => {
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#334155', lineHeight: '1.8' }}>
                     <li>เวลาในการทำข้อสอบ: <strong>{examConfig.duration_minutes} นาที</strong></li>
                     <li>จำนวนข้อสอบ: <strong>{examConfig.total_questions} ข้อ</strong> (ทำทีละหน้า)</li>
+                    <li>ระดับข้อสอบ: <strong>{roundMeta.levelLabel}</strong></li>
+                    <li>เกณฑ์ผ่าน: <strong>{Number.isFinite(roundMeta.passingScorePct) ? `${roundMeta.passingScorePct}%` : (Number.isFinite(examConfig.passing_score) ? `${examConfig.passing_score}%` : '70%')}</strong></li>
                     <li>ต้องทำครบทุกข้อในหน้าปัจจุบันจึงจะเปลี่ยนหน้าได้</li>
                     <li>เมื่อหมดเวลา ระบบจะส่งคำตอบอัตโนมัติ (ข้อที่ทำไม่ทันจะได้ 0 คะแนน)</li>
                   </ul>
@@ -579,10 +675,9 @@ const SkillAssessmentTest = () => {
                     <h3 style={{ fontSize: '16px', color: '#1e293b', marginBottom: '15px', fontWeight: '700' }}>โครงสร้างเนื้อหา</h3>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                         <thead>
-                            <tr style={{ background: '#f8fafc', color: '#64748b' }}>
-                                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '600' }}>หัวข้อการประเมิน</th>
-                                <th style={{ padding: '12px 15px', textAlign: 'center', fontWeight: '600' }}>น้ำหนัก</th>
-                            </tr>
+                          <tr style={{ background: '#f8fafc', color: '#64748b' }}>
+                            <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '600' }}>หัวข้อการประเมิน</th>
+                          </tr>
                         </thead>
                         <tbody>
                             {[
@@ -592,13 +687,12 @@ const SkillAssessmentTest = () => {
                               { icon: '🏛️', text: '4. องค์อาคาร (คาน/เสา/ฐานราก)', val: examConfig.cat_element_percent },
                               { icon: '📐', text: '5. การออกแบบ/ทฤษฎี', val: examConfig.cat_theory_percent }
                             ].map((item, idx) => (
-                              <tr key={idx} style={{ borderTop: '1px solid #f1f5f9' }}>
+                                <tr key={idx} style={{ borderTop: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '10px 15px', color: '#334155' }}>
-                                      <span style={{ marginRight: '10px' }}>{item.icon}</span>
-                                      {item.text}
+                                    <span style={{ marginRight: '10px' }}>{item.icon}</span>
+                                    {item.text}
                                   </td>
-                                  <td style={{ padding: '10px 15px', textAlign: 'center', color: '#64748b' }}>{item.val}%</td>
-                              </tr>
+                                </tr>
                             ))}
                         </tbody>
                     </table>

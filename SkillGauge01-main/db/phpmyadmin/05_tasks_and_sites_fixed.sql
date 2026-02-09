@@ -46,6 +46,22 @@ CREATE TABLE IF NOT EXISTS tasks (
     FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS task_worker_assignments (
+  id CHAR(36) NOT NULL PRIMARY KEY DEFAULT (UUID()),
+  task_id CHAR(36) NOT NULL,
+  worker_id INT UNSIGNED NOT NULL,
+  assignment_type VARCHAR(50) NOT NULL DEFAULT 'general',
+  status ENUM('assigned', 'in-progress', 'completed') NOT NULL DEFAULT 'assigned',
+  assigned_by_user_id CHAR(36) NULL,
+  assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  started_at TIMESTAMP NULL,
+  completed_at TIMESTAMP NULL,
+  KEY idx_task_worker_assignments_task (task_id),
+  KEY idx_task_worker_assignments_worker (worker_id),
+  KEY idx_task_worker_assignments_status (status),
+  KEY idx_task_worker_assignments_type (assignment_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Seed Data: ตรวจสอบและสร้าง Project ตัวอย่างถ้ายังไม่มี
 INSERT INTO projects (id, name, status)
 SELECT UUID(), 'โครงการตัวอย่าง (Demo Project)', 'active'

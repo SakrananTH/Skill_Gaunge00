@@ -33,6 +33,14 @@ const Login = () => {
     } catch {}
   }, []);
 
+  // ✅ ระบบปิดการแจ้งเตือนอัตโนมัติ (Toast Auto-hide)
+  useEffect(() => {
+    if (info) {
+      const timer = setTimeout(() => setInfo(''), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [info]);
+
   const toggleRole = (target) => {
     setRole((prev) => (prev === target ? '' : target));
   };
@@ -84,22 +92,35 @@ const Login = () => {
 
       // Check if worker profile is completed
       const hasProfile = sessionStorage.getItem('worker_profile');
-      const navUser = { username: user?.phone || user?.email || username, role: chosenRole };
+      const navUser = {
+        id: user?.id ?? null,
+        name: user?.full_name || null,
+        username: user?.phone || user?.email || username,
+        phone: user?.phone || null,
+        email: user?.email || null,
+        role: chosenRole
+      };
       try {
         const sessionUser = {
           id: user?.id ?? null,
+          name: user?.full_name || null,
           username: user?.phone || user?.email || username,
           phone: user?.phone || null,
           email: user?.email || null,
           role: chosenRole
         };
         sessionStorage.setItem('user', JSON.stringify(sessionUser));
+        if (chosenRole === 'foreman' && sessionUser.id) {
+          sessionStorage.setItem('foreman_id', sessionUser.id);
+        }
       } catch {}
       
       if (chosenRole === 'admin') {
         navigate('/admin', { state: { user: navUser, source: 'login' } });
       } else if (chosenRole === 'project_manager') {
         navigate('/pm', { state: { user: navUser, source: 'login' } });
+      } else if (chosenRole === 'foreman') {
+        navigate('/foreman', { state: { user: navUser, source: 'login' } });
       } else if (chosenRole === 'worker') {
         navigate('/worker-settings', { state: { user: navUser, source: 'login' } });
       } else {
@@ -120,15 +141,11 @@ const Login = () => {
         }
       `}</style>
       <div className="login-page">
+
         <div>
           <h1 className="login-header"></h1>
 
           <div className="login-card">
-            {info && (
-              <div className="login-message-info">
-                {info}
-              </div>
-            )}
             {error && (
               <div className="login-message-error">
                 {error}

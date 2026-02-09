@@ -86,6 +86,23 @@ CREATE TABLE IF NOT EXISTS tasks (
   CONSTRAINT fk_tasks_assignee FOREIGN KEY (assignee_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS task_worker_assignments (
+  id CHAR(36) NOT NULL,
+  task_id CHAR(36) NOT NULL,
+  worker_id INT UNSIGNED NOT NULL,
+  assignment_type VARCHAR(50) NOT NULL DEFAULT 'general',
+  status VARCHAR(30) NOT NULL DEFAULT 'assigned',
+  assigned_by_user_id CHAR(36) NULL,
+  assigned_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  started_at DATETIME(6) NULL,
+  completed_at DATETIME(6) NULL,
+  PRIMARY KEY (id),
+  KEY idx_task_worker_assignments_task (task_id),
+  KEY idx_task_worker_assignments_worker (worker_id),
+  KEY idx_task_worker_assignments_status (status),
+  KEY idx_task_worker_assignments_type (assignment_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS questions (
   id CHAR(36) NOT NULL,
   text TEXT NOT NULL,

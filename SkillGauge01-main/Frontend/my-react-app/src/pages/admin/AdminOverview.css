@@ -10,9 +10,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
-  padding: 3rem 4rem; /* Increased padding for the "banner" look */
-  border-radius: 24px;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem 2.5rem; /* Reduced padding for a more compact look */
+  border-radius: 20px;
   background: linear-gradient(120deg, #bae6fd 0%, #e0f2fe 100%); /* Light Blue Gradient */
   box-shadow: 0 4px 20px rgba(14, 165, 233, 0.1);
   position: relative;
@@ -25,8 +25,8 @@
   position: absolute;
   top: -50px;
   right: -50px;
-  width: 200px;
-  height: 200px;
+  width: 150px;
+  height: 150px;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   pointer-events: none;
@@ -37,26 +37,26 @@
 }
 
 .welcome-text h2 {
-  font-size: 2.5rem; /* Bigger title */
+  font-size: 1.8rem; /* Scaled down */
   color: #0c4a6e; /* Sky 900 - Dark Blue */
   font-weight: 800;
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 0.25rem 0;
   letter-spacing: -0.02em;
 }
 
 .welcome-text p {
   color: #0369a1; /* Sky 700 */
-  font-size: 1.1rem;
+  font-size: 1rem;
   margin: 0;
   font-weight: 500;
 }
 
 .date-display {
   color: #ffffff;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 500;
   background: #0284c7; /* Sky 600 - Vivid Blue */
-  padding: 0.75rem 1.5rem;
+  padding: 0.5rem 1.25rem;
   border-radius: 99px;
   border: none;
   box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);

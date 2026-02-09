@@ -88,7 +88,7 @@ const SkillAssessmentSummary = () => {
         return;
       }
       try {
-        const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${workerId}`);
+        const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${workerId}`, { credentials: 'include' });
         if (res.status === 404) {
           setSummary(null);
           setError('ยังไม่มีผลการประเมิน');
@@ -112,6 +112,12 @@ const SkillAssessmentSummary = () => {
   const totalValue = summary?.totalQuestions ?? 0;
   const breakdownItems = Array.isArray(summary?.breakdown) ? summary.breakdown : [];
   const overallPct = totalValue > 0 ? Math.round((scoreValue / totalValue) * 100) : 0;
+  const passingScorePct = Number.isFinite(Number(summary?.passingScorePct))
+    ? Number(summary.passingScorePct)
+    : 70;
+  const requiredCorrect = Number.isFinite(Number(summary?.requiredCorrect))
+    ? Number(summary.requiredCorrect)
+    : (totalValue > 0 ? Math.ceil(totalValue * (passingScorePct / 100)) : 0);
   const strongestItem = breakdownItems.reduce((best, item) => {
     if (!best) return item;
     return (item.percentage ?? 0) > (best.percentage ?? 0) ? item : best;
@@ -179,7 +185,7 @@ const SkillAssessmentSummary = () => {
                   <div style={{ fontSize: '14px', color: '#94a3b8' }}>คิดเป็น {overallPct}%</div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '10px' }}>
                   <span style={{ padding: '6px 12px', borderRadius: '999px', background: summary.passed ? '#dcfce7' : '#fee2e2', color: summary.passed ? '#166534' : '#b91c1c', fontWeight: '600', fontSize: '14px' }}>
                     {summary.passed ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์'}
                   </span>
@@ -188,6 +194,10 @@ const SkillAssessmentSummary = () => {
                       หมวด {summary.category}
                     </span>
                   )}
+                </div>
+
+                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '18px' }}>
+                  เกณฑ์ผ่าน: {passingScorePct}% (ต้องได้อย่างน้อย {requiredCorrect} จาก {totalValue} ข้อ)
                 </div>
 
                 {strongestItem && (

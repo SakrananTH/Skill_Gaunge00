@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mockUser } from '../../mock/mockData';
 import '../pm/WKDashboard.css'; // ใช้ CSS มาตรฐานของระบบ
+import './PMTheme.css';
+import PMTopNav from './PMTopNav';
 
 const PMSettings = () => {
   const location = useLocation();
@@ -41,61 +43,18 @@ const PMSettings = () => {
   };
 
   return (
-    <div className="dash-layout">
-      {/* Sidebar - ปรับโครงสร้างให้เหมือนกับ Worker/Foreman และหน้าอื่นๆ ใน pm */}
-      <aside className="dash-sidebar">
-        <div className="sidebar-title" style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
-          PM Portal
-        </div>
-        <nav className="menu">
-          <button 
-            type="button" 
-            className="menu-item" 
-            onClick={() => navigate('/pm', { state: { user } })}
-          >
-            หน้าหลัก
-          </button>
-          <button 
-            type="button" 
-            className="menu-item" 
-            onClick={() => navigate('/project-tasks', { state: { user } })}
-          >
-            มอบหมายงาน
-          </button>
-          <button 
-            type="button" 
-            className="menu-item" 
-            onClick={() => navigate('/projects', { state: { user } })}
-          >
-            โครงการทั้งหมด
-          </button>
-          <button 
-            type="button" 
-            className="menu-item active"
-          >
-            ตั้งค่า
-          </button>
-          
-          {/* ปุ่มออกจากระบบสไตล์เดียวกับหน้าอื่นๆ */}
-          <button 
-            type="button" 
-            className="menu-item logout-btn" 
-            style={{ marginTop: '20px', color: '#ef4444', background: '#fef2f2', borderColor: '#fee2e2' }}
-            onClick={handleLogout}
-          >
-            ออกจากระบบ
-          </button>
-        </nav>
-      </aside>
+    <div className="pm-page">
+      <PMTopNav active="settings" user={user} onLogout={handleLogout} />
 
-      <main className="dash-main" style={{ padding: '40px' }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <header style={{ marginBottom: '30px' }}>
-            <h1 style={{ color: '#1e293b', fontSize: '28px', fontWeight: '800' }}>การตั้งค่าบัญชี</h1>
-            <p style={{ color: '#64748b' }}>จัดการข้อมูลส่วนตัวและรักษาความปลอดภัยของบัญชีคุณ</p>
+      <main className="pm-content">
+          <header className="pm-hero" style={{ marginBottom: '24px' }}>
+            <div>
+              <h1 className="pm-hero__title">การตั้งค่าบัญชี</h1>
+              <p className="pm-hero__subtitle">จัดการข้อมูลส่วนตัวและรักษาความปลอดภัยของบัญชีคุณ</p>
+            </div>
           </header>
 
-          <section style={{ background: 'white', padding: '30px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+          <section className="pm-section">
             
             {/* ส่วนข้อมูลส่วนตัว (แก้ไขไม่ได้ตามความต้องการ) */}
             <div style={{ marginBottom: '40px', paddingBottom: '20px', borderBottom: '1px solid #f1f5f9' }}>
@@ -175,7 +134,6 @@ const PMSettings = () => {
             </form>
 
           </section>
-        </div>
       </main>
     </div>
   );

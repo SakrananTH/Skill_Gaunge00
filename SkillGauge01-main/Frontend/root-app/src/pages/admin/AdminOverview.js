@@ -3,6 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import './AdminOverview.css';
 import { apiRequest } from '../../utils/api';
 
+const LEVEL_META = {
+  0: { label: 'ต่ำ', color: '#f87171' },
+  1: { label: 'พื้นฐาน', color: '#fbbf24' },
+  2: { label: 'กลาง', color: '#60a5fa' },
+  3: { label: 'สูง', color: '#34d399' }
+};
+
 const AdminOverview = ({ setTab }) => {
   const navigate = useNavigate();
 
@@ -16,6 +23,9 @@ const AdminOverview = ({ setTab }) => {
   const [recentActivities, setRecentActivities] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [activitiesError, setActivitiesError] = useState('');
+  const [skillStats, setSkillStats] = useState([]);
+  const [skillStatsTotal, setSkillStatsTotal] = useState(0);
+  const [skillStatsLoading, setSkillStatsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +49,49 @@ const AdminOverview = ({ setTab }) => {
         const totalWorkers = items.length;
         const pendingWorkers = items.filter(worker => worker.status === 'probation').length;
         const activeWorkers = items.filter(worker => worker.status === 'active').length;
+
+        const normalizedWorkers = items.map(worker => {
+          const totalScore = worker?.assessmentTotalScore ?? null;
+          const totalQuestions = worker?.assessmentTotalQuestions ?? null;
+          const scorePercent = totalScore !== null && totalQuestions
+            ? (Number(totalScore) / Number(totalQuestions)) * 100
+            : (typeof worker?.score === 'number' ? Number(worker.score) : null);
+          let levelNo = null;
+          if (worker?.assessmentPassed === true) {
+            levelNo = 1;
+            if (scorePercent !== null) {
+              if (scorePercent >= 90) levelNo = 3;
+              else if (scorePercent >= 80) levelNo = 2;
+            }
+          } else if (scorePercent !== null) {
+            levelNo = 0;
+          }
+          return {
+            skill: worker?.category || worker?.level || worker?.trade_type || 'ไม่ระบุ',
+            levelNo
+          };
+        });
+
+        const skillMap = new Map();
+        normalizedWorkers.forEach(worker => {
+          if (worker.levelNo === null || worker.levelNo === undefined) return;
+          const skill = worker.skill || 'ไม่ระบุ';
+          if (!skillMap.has(skill)) {
+            skillMap.set(skill, { skill, levels: { 0: 0, 1: 0, 2: 0, 3: 0 } });
+          }
+          const entry = skillMap.get(skill);
+          entry.levels[worker.levelNo] = (entry.levels[worker.levelNo] || 0) + 1;
+        });
+
+        const skillRows = Array.from(skillMap.values())
+          .map(entry => {
+            const total = Object.values(entry.levels).reduce((sum, value) => sum + value, 0);
+            return { ...entry, total };
+          })
+          .sort((a, b) => b.total - a.total);
+
+        setSkillStats(skillRows);
+        setSkillStatsTotal(skillRows.reduce((sum, row) => sum + row.total, 0));
 
         setStats([
           { label: 'พนักงานทั้งหมด', value: totalWorkers, unit: 'คน', change: '-', trend: 'neutral', color: 'blue' },
@@ -113,9 +166,12 @@ const AdminOverview = ({ setTab }) => {
         console.error('Failed to load overview data', error);
         setActivitiesError(error?.message || 'ไม่สามารถโหลดข้อมูลกิจกรรมได้');
         setRecentActivities([]);
+        setSkillStats([]);
+        setSkillStatsTotal(0);
       } finally {
         if (active) {
           setActivitiesLoading(false);
+          setSkillStatsLoading(false);
         }
       }
     };
@@ -161,6 +217,53 @@ const AdminOverview = ({ setTab }) => {
       </div>
 
       <div className="admin-content-grid">
+        <section className="overview-section">
+          <div className="section-header">
+            <h3>จำนวนพนักงานแยกตามทักษะ</h3>
+            <span className="section-subtext">แบ่งตามสายงานและระดับ</span>
+          </div>
+          {skillStatsLoading ? (
+            <div className="empty-state">กำลังโหลดข้อมูล...</div>
+          ) : skillStats.length === 0 ? (
+            <div className="empty-state">ยังไม่มีข้อมูลทักษะ</div>
+          ) : (
+            <div className="skill-chart">
+              {skillStats.map(row => (
+                <div key={row.skill} className="skill-row">
+                  <div className="skill-name">{row.skill}</div>
+                  <div className="skill-bar">
+                    {[0, 1, 2, 3].map(level => {
+                      const count = row.levels[level] || 0;
+                      const width = row.total > 0 ? (count / row.total) * 100 : 0;
+                      if (!count) return null;
+                      return (
+                        <div
+                          key={`${row.skill}-${level}`}
+                          className="skill-segment"
+                          style={{ width: `${width}%`, background: LEVEL_META[level].color }}
+                          title={`ระดับ ${level} (${LEVEL_META[level].label}): ${count} คน`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="skill-total">{row.total} คน</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="skill-legend">
+            {[0, 1, 2, 3].map(level => (
+              <div key={level} className="skill-legend-item">
+                <span className="legend-dot" style={{ background: LEVEL_META[level].color }} />
+                <span>ระดับ {level} ({LEVEL_META[level].label})</span>
+              </div>
+            ))}
+            {skillStatsTotal === 0 ? null : (
+              <div className="skill-legend-total">รวม {skillStatsTotal} คน</div>
+            )}
+          </div>
+        </section>
+
         <section className="overview-section activity-section">
           <div className="section-header">
             <h3>กิจกรรมล่าสุด (Recent Activities)</h3>
@@ -183,7 +286,7 @@ const AdminOverview = ({ setTab }) => {
                     {activity.type === 'register' && <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2M5 19V5h14v14z"></path><path d="M7 7h10v2H7zM7 11h10v2H7zM7 15h10v2H7z"></path></svg>}
                     {activity.type === 'quiz' && '✅'}
                     {activity.type === 'system' && <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2M5 19V5h14v14z"></path><path d="M8.5 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3m2.5.5h6v2h-6zM7 7h10v2H7zm0 8h10v2H7z"></path></svg>}
-                    {activity.type === 'login' && '🔑'}
+                    {activity.type === 'login' && <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 21c2.76 0 5-2.24 5-5 0-1.02-.31-1.96-.83-2.75l3.33-3.33 1.79 1.79 1.41-1.41-1.79-1.79L18 7.42l2.29 2.29L21.7 8.3l-2.29-2.29 1.29-1.29-1.41-1.41-8.54 8.54c-.79-.52-1.74-.83-2.75-.83-2.76 0-5 2.24-5 5s2.24 5 5 5Zm0-8c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3"></path></svg>}
                   </div>
                   <div className="activity-info">
                     <span className="activity-user">{activity.user}</span>

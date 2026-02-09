@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../pm/WKDashboard.css';
 import '../pm/WorkerResponsive.css';
+import LogoutModal from '../../components/LogoutModal';
 import bannerImage from './WK01.png';
 
 const WorkerDashboard = () => {
@@ -26,8 +27,11 @@ const WorkerDashboard = () => {
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
   const [assignedTask, setAssignedTask] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [workerLevel, setWorkerLevel] = useState(0);
+  const [workerLevelLabel, setWorkerLevelLabel] = useState('ต่ำ');
   const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
 
   useEffect(() => {
@@ -56,6 +60,7 @@ const WorkerDashboard = () => {
       ? Number(resolvedUserId)
       : null;
     loadProfile({ userId: resolvedUserId, workerId: numericWorkerId });
+    fetchAssessmentSummary(numericWorkerId);
     fetchAssignedTask(numericWorkerId ? null : resolvedUserId);
 
     // Mock Notifications (placeholder - replace when notification API is ready)
@@ -97,12 +102,50 @@ const WorkerDashboard = () => {
     }
   };
 
-  const handleLogout = () => {
-    if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
-      sessionStorage.clear();
-      navigate('/login');
+  const fetchAssessmentSummary = async (workerId) => {
+    if (!workerId) {
+      setWorkerLevel(0);
+      setWorkerLevelLabel('ต่ำ');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${encodeURIComponent(workerId)}`);
+      if (!res.ok) {
+        setWorkerLevel(0);
+        setWorkerLevelLabel('ต่ำ');
+        return;
+      }
+      const data = await res.json();
+      const summary = data?.result || null;
+      const totalScore = summary?.score ?? null;
+      const totalQuestions = summary?.totalQuestions ?? null;
+      const passed = summary?.passed === true;
+      const percent = totalQuestions ? (Number(totalScore) / Number(totalQuestions)) * 100 : null;
+
+      if (!passed || percent === null) {
+        setWorkerLevel(0);
+        setWorkerLevelLabel('ต่ำ');
+        return;
+      }
+
+      if (percent >= 90) {
+        setWorkerLevel(3);
+        setWorkerLevelLabel('สูง');
+      } else if (percent >= 80) {
+        setWorkerLevel(2);
+        setWorkerLevelLabel('กลาง');
+      } else {
+        setWorkerLevel(1);
+        setWorkerLevelLabel('พื้นฐาน');
+      }
+    } catch (err) {
+      console.error('Error fetching assessment summary:', err);
+      setWorkerLevel(0);
+      setWorkerLevelLabel('ต่ำ');
     }
   };
+
+  const handleLogout = () => setShowLogoutModal(true);
 
   return (
     <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
@@ -134,19 +177,26 @@ const WorkerDashboard = () => {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <SidebarItem active icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h1v7c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-7h1c.4 0 .77-.24.92-.62.15-.37.07-.8-.22-1.09l-8.99-9a.996.996 0 0 0-1.41 0l-9.01 9c-.29.29-.37.72-.22 1.09s.52.62.92.62Zm9-8.59 6 6V20H6v-9.59z"></path></svg>} label="หน้าหลัก" onClick={() => navigate('/worker')} />
-          <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h9v2H8z"></path><path d="M20 2H6C4.35 2 3 3.35 3 5v14c0 1.65 1.35 3 3 3h15v-2H6c-.55 0-1-.45-1-1s.45-1 1-1h14c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1m-6 14H6c-.35 0-.69.07-1 .18V5c0-.55.45-1 1-1h13v12z"></path></svg>} label="แบบทดสอบ" onClick={() => navigate('/skill-assessment')} />
-          <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2M9 4h6v2H9zM8 8h12v3.07l-.83.39a16.78 16.78 0 0 1-14.34 0L4 11.07V8zM4 20v-6.72c2.54 1.19 5.27 1.79 8 1.79s5.46-.6 8-1.79V20z"></path></svg>} label="ประวัติงาน" onClick={() => navigate('/worker/history')} />
-          <SidebarItem icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg>} label="ตั้งค่า" onClick={() => navigate('/worker-settings')} />
+          <SidebarItem active icon={<i className='bx bx-home'></i>} label="หน้าหลัก" onClick={() => navigate('/worker')} />
+          <SidebarItem icon={<i className='bx bx-book-content'></i>} label="แบบทดสอบ" onClick={() => navigate('/skill-assessment')} />
+          <SidebarItem icon={<i className='bx bx-history'></i>} label="ประวัติงาน" onClick={() => navigate('/worker/history')} />
+          <SidebarItem icon={<i className='bx bx-cog'></i>} label="ตั้งค่า" onClick={() => navigate('/worker-settings')} />
           
           <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 10px' }}></div>
 
-          <button onClick={handleLogout} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px', fontWeight: '600', borderRadius: '8px', transition: 'background 0.2s' }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="m20.2 4.02-10-2a.99.99 0 0 0-.83.21C9.14 2.42 9 2.7 9 3v1H4c-.55 0-1 .45-1 1v14c0 .55.45 1 1 1h5v1c0 .3.13.58.37.77.18.15.4.23.63.23.07 0 .13 0 .2-.02l10-2c.47-.09.8-.5.8-.98V5c0-.48-.34-.89-.8-.98M5 18V6h4v12zm14 .18-8 1.6V4.22l8 1.6z"></path><path d="M13 11a1 1 0 1 0 0 2 1 1 0 1 0 0-2"></path></svg>
+          <button 
+            onClick={handleLogout} 
+            style={{ border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: '700', borderRadius: '12px', transition: 'all 0.2s' }}
+            onMouseOver={(e) => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseOut={(e) => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+              <i className='bx bx-log-out' style={{ fontSize: '20px' }}></i>
               ออกจากระบบ
           </button>
         </div>
       </nav>
+
+      <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
 
       {/* Main Content */}
       <main className="worker-main" style={{ flex: 1, padding: '40px 20px', width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
@@ -158,7 +208,7 @@ const WorkerDashboard = () => {
               <span style={{ fontSize: '12px', color: '#64748b' }}>ช่าง (Worker)</span>
             </div>
             <div style={{ position: 'relative', cursor: 'pointer' }}>
-                <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" ><path d="M19 12.59V10c0-3.22-2.18-5.93-5.14-6.74C13.57 2.52 12.85 2 12 2s-1.56.52-1.86 1.26C7.18 4.08 5 6.79 5 10v2.59L3.29 14.3a1 1 0 0 0-.29.71v2c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-2c0-.27-.11-.52-.29-.71zM19 16H5v-.59l1.71-1.71a1 1 0 0 0 .29-.71v-3c0-2.76 2.24-5 5-5s5 2.24 5 5v3c0 .27.11.52.29.71L19 15.41zM5.64 3.3 4.23 1.89A10.9 10.9 0 0 0 1 9.67h2c0-2.4.94-4.66 2.64-6.36Zm12.72 0C20.06 5 21 7.26 21 9.66h2c0-2.94-1.14-5.7-3.22-7.78l-1.41 1.41ZM12 22c1.31 0 2.41-.83 2.82-2H9.18c.41 1.17 1.51 2 2.82 2"></path></svg>
+                <i className='bx bx-bell' style={{ fontSize: '24px', color: '#64748b' }}></i>
                 {unreadCount > 0 && <span style={{ position: 'absolute', top: '-2px', right: '-2px', background: 'red', borderRadius: '50%', width: '8px', height: '8px' }}></span>}
             </div>
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ddd', overflow: 'hidden' }}>
@@ -182,7 +232,23 @@ const WorkerDashboard = () => {
           overflow: 'hidden'
         }}>
             <div style={{ position: 'relative', zIndex: 1 }}>
-                <h1 style={{ fontSize: '36px', fontWeight: '800', color: '#1e293b', marginBottom: '5px' }}>สวัสดี" {user.name || 'ผู้ใช้งาน'} "👋</h1>
+                <h1 style={{ fontSize: '36px', fontWeight: '800', color: '#1e293b', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  สวัสดี" {user.name || 'ผู้ใช้งาน'} "
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '999px',
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: '#1e293b'
+                  }}>
+                    LV.{workerLevel} ({workerLevelLabel})
+                  </span>
+                </h1>
                 <p style={{ fontSize: '18px', color: '#334155', margin: '0 0 15px 0', fontWeight: '500' }}>พร้อมสำหรับการทำงานในวันนี้หรือยัง?</p>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px', color: '#475569', background: 'rgba(255,255,255,0.6)', padding: '10px 20px', borderRadius: '12px', width: 'fit-content', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.8)' }}>
@@ -209,11 +275,13 @@ const WorkerDashboard = () => {
         </div>
 
         {/* Dashboard Grid - 3 cards row */}
-        <div className="worker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '30px' }}>
+        <div className="worker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
              {/* Card 1: Status */}
              <div style={{ background: 'white', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid #e2e8f0' }}>
                 <div style={{ width: '45px', height: '45px', background: '#fef3c7', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
-                    <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M12 2C6.58 2 2 6.58 2 12s4.58 10 10 10 10-4.58 10-10S17.42 2 12 2m0 18c-4.34 0-8-3.66-8-8s3.66-8 8-8 8 3.66 8 8-3.66 8-8 8"></path><path d="M13 7h-2v6h6v-2h-4z"></path></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" style={{ color: '#d97706' }}>
+                    <path d="M17 14H9v2h8v3l5-4-5-4zm-2-4V8H7V5L2 9l5 4v-3z"></path>
+                  </svg>
                 </div>
                 <div>
                     <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>สถานะทักษะ</h4>
@@ -222,14 +290,35 @@ const WorkerDashboard = () => {
              </div>
 
              {/* Card 2: Assigned Jobs */}
-             <div style={{ background: 'white', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid #e2e8f0' }}>
+             <div 
+                style={{ background: 'white', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid #e2e8f0', cursor: assignedTask && assignedTask.status !== 'submitted' ? 'pointer' : 'default' }}
+                onClick={() => assignedTask && assignedTask.status !== 'submitted' && navigate('/worker-task-detail', { state: { task: assignedTask } })}
+             >
                 <div style={{ width: '45px', height: '45px', background: '#e0f2fe', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2M9 4h6v2H9zM4 20V8h16v12z"></path></svg>
+                    <i className='bx bx-briefcase' style={{ color: '#0284c7' }}></i>
                 </div>
                 <div>
-                    <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>งานที่ได้รับมอบหมาย</h4>
+                    <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>งานที่ต้องทำ</h4>
                     <h3 style={{ margin: 0, fontSize: '18px', color: '#0284c7' }}>
-                        {assignedTask && (assignedTask.status === 'accepted' || assignedTask.status === 'submitted') ? '1 งาน' : '0 งาน'}
+                        {assignedTask && (assignedTask.status === 'accepted' || assignedTask.status === 'in-progress') ? '1 งาน' : '0 งาน'}
+                    </h3>
+                </div>
+             </div>
+
+             {/* Card 3: Pending Review */}
+             <div 
+                style={{ background: 'white', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid #e2e8f0' }}
+             >
+                <div style={{ width: '45px', height: '45px', background: '#fff7ed', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" style={{ color: '#d97706' }}>
+                    <path d="M19 3h-2c0-.55-.45-1-1-1H8c-.55 0-1 .45-1 1H5c-1.1 0-2 .9-2 2v15c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m0 17H5V5h2v2h10V5h2z"></path>
+                    <path d="M11 14.09 8.71 11.8 7.3 13.21l3 3c.2.2.45.29.71.29s.51-.1.71-.29l5-5-1.41-1.41-4.29 4.29Z"></path>
+                  </svg>
+                </div>
+                <div>
+                    <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>รอตรวจสอบ</h4>
+                    <h3 style={{ margin: 0, fontSize: '18px', color: '#d97706' }}>
+                        {assignedTask && assignedTask.status === 'submitted' ? '1 งาน' : '0 งาน'}
                     </h3>
                 </div>
              </div>
@@ -240,7 +329,7 @@ const WorkerDashboard = () => {
                 onClick={() => navigate('/skill-assessment')}
              >
                 <div style={{ width: '45px', height: '45px', background: '#e0e7ff', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h9v2H8z"></path><path d="M20 2H6C4.35 2 3 3.35 3 5v14c0 1.65 1.35 3 3 3h15v-2H6c-.55 0-1-.45-1-1s.45-1 1-1h14c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1m-6 14H6c-.35 0-.69.07-1 .18V5c0-.55.45-1 1-1h13v12z"></path></svg>
+                    <i className='bx bx-book-content' style={{ color: '#4338ca' }}></i>
                 </div>
                 <div>
                     <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>แบบทดสอบวัดทักษะ</h4>
@@ -261,6 +350,16 @@ const WorkerDashboard = () => {
                                 {assignedTask.project || 'Project Name'}
                             </span>
                             <span style={{ fontSize: '14px', color: '#64748b' }}>📅 กำหนดส่ง: {assignedTask.date || '-'}</span>
+                            {assignedTask.status === 'submitted' && (
+                                <span style={{ background: '#fff7ed', color: '#c2410c', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', border: '1px solid #ffedd5' }}>
+                                    ⏳ รอตรวจสอบ
+                                </span>
+                            )}
+                            {assignedTask.status === 'rejected' && (
+                                <span style={{ background: '#fef2f2', color: '#b91c1c', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
+                                    ❌ ต้องแก้ไข
+                                </span>
+                            )}
                         </div>
                         <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 10px 0' }}>{assignedTask.location || 'Task Name'}</h2>
                         <p style={{ color: '#64748b', margin: 0 }}>หัวหน้างาน: {assignedTask.foreman || '-'}</p>

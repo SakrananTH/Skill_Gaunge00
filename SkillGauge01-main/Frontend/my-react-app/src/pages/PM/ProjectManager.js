@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 import { mockUser } from '../../mock/mockData';
-import PMSidebar from '../../components/Sidebar/PMSidebar';
 
 const ProjectManager = () => {
-  const navigate = useNavigate();
   const location = useLocation();
-  const user = location.state?.user || { ...mockUser, role: 'Project Manager' };
+  const navigate = useNavigate();
+  const navUser = location.state?.user;
+  // default to a PM user if none is passed
+  const user = navUser || { ...mockUser, role: 'Project Manager' };
 
   const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
@@ -63,10 +64,9 @@ const ProjectManager = () => {
     setLoading(true);
     setErr('');
     try {
-      const url = new URL('/api/dashboard/tasks-overview', API);
+      const url = new URL('/api/tasks', API);
       url.searchParams.set('limit', String(limit));
       url.searchParams.set('offset', String(offset));
-      url.searchParams.set('sort', sort);
       if (search) url.searchParams.set('search', search);
       if (status) url.searchParams.set('status', status);
       const token = sessionStorage.getItem('auth_token');
@@ -75,7 +75,27 @@ const ProjectManager = () => {
       });
       if (!res.ok) throw new Error('failed_items');
       const data = await res.json();
-      setItems(data.items || []);
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      const normalizedItems = rawItems.map((item) => ({
+        task_id: item.id,
+        title: item.title,
+        status: item.status,
+        project_name: item.project_name,
+        site_name: item.site_name,
+        assignee_name: item.assignee_name,
+        due_date: item.due_date
+      }));
+
+      const sortedItems = [...normalizedItems].sort((a, b) => {
+        const aDate = a.due_date ? new Date(a.due_date).getTime() : 0;
+        const bDate = b.due_date ? new Date(b.due_date).getTime() : 0;
+        if (sort === 'due_date_desc') return bDate - aDate;
+        return aDate - bDate;
+      });
+
+      setItems(sortedItems);
+      setOffset(Number(data.offset ?? offset));
+      setLimit(Number(data.limit ?? limit));
     } catch (e) {
       setErr('โหลดข้อมูลงานไม่สำเร็จ');
       setItems([]);
@@ -96,7 +116,15 @@ const ProjectManager = () => {
 
   return (
     <div className="dash-layout">
-      <PMSidebar user={user} />
+      <aside className="dash-sidebar">
+        <nav className="menu">
+          <button type="button" className="menu-item active" onClick={() => navigate('/pm', { state: { user } })}>Dashboard</button>
+          <button type="button" className="menu-item" onClick={() => navigate('/project-tasks', { state: { user } })}>Tasks</button>
+          <button type="button" className="menu-item">Projects</button>
+          <button type="button" className="menu-item">History</button>
+          <button type="button" className="menu-item">Settings</button>
+        </nav>
+      </aside>
 
       <main className="dash-main">
         <div className="dash-topbar">

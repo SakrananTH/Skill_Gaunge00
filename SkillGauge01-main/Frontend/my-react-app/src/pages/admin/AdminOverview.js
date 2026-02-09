@@ -17,11 +17,20 @@ const BRANCH_OPTIONS = [
   { value: 'tiling', label: 'ช่างกระเบื้อง' }
 ];
 
+// ✅ ย้าย Lookup Map ออกมาข้างนอกเพื่อไม่ต้องสร้างใหม่ทุกครั้งที่ Render
+const NORMALIZED_BRANCH_MAP = BRANCH_OPTIONS.reduce((acc, opt) => {
+  acc[opt.value] = opt.label;
+  acc[opt.value.toLowerCase()] = opt.label;
+  acc[opt.label] = opt.label;
+  return acc;
+}, {});
+
 // กำหนดชุดสีพาสเทล (Pastel Palette)
 const PASTEL_COLORS = {
-  high: { bg: '#86efac', text: '#1f2937' }, // Green 300 (Expert)
-  mid:  { bg: '#fcd34d', text: '#1f2937' }, // Amber 300 (Intermediate)
-  low:  { bg: '#fca5a5', text: '#1f2937' }  // Red 300 (Beginner)
+  level0: { bg: '#fca5a5', text: '#1f2937' }, // Red 300 (Fail)
+  level1: { bg: '#fcd34d', text: '#1f2937' }, // Amber 300 (Basic)
+  level2: { bg: '#93c5fd', text: '#1f2937' }, // Blue 300 (Intermediate)
+  level3: { bg: '#86efac', text: '#1f2937' }  // Green 300 (High)
 };
 
 // Inline SVG icon components (use currentColor so CSS controls color)
@@ -46,7 +55,13 @@ const PassedIcon = () => (
   </svg>
 );
 
-const AdminOverview = () => {
+const TestingIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2a2 2 0 1 0 0 4 2 2 0 1 0 0-4M4 9h5v13h2v-7h2v7h2V9h5V7H4z"></path>
+  </svg>
+);
+
+const AdminOverview = ({ setTab }) => {
   const navigate = useNavigate();
 
   // 1. ปรับ KPI เป็น Action-driven
@@ -54,7 +69,7 @@ const AdminOverview = () => {
     { id: 'failed', label: 'ยังไม่ผ่านเกณฑ์', value: 0, unit: 'คน', color: 'red', insight: 'ต้องพัฒนาเร่งด่วน', filterSkill: 'failed', icon: <WarningIcon /> },
     { id: 'none', label: 'ยังไม่ได้ทดสอบ', value: 0, unit: 'คน', color: 'orange', insight: 'ควรมอบหมายการสอบ', filterSkill: 'none', icon: <PendingIcon /> },
     { id: 'passed', label: 'ผ่านเกณฑ์แล้ว', value: 0, unit: 'คน', color: 'green', insight: 'พร้อมทำงาน', filterSkill: 'passed', icon: <PassedIcon /> },
-    { id: 'avg', label: 'กำลังทดสอบภาคปฏิบัติ', value: 0, unit: 'คน', color: 'blue', insight: 'อยู่ระหว่างทดสอบ', filterSkill: 'all', filterStatus: 'probation' },
+    { id: 'avg', label: 'กำลังทดสอบภาคปฏิบัติ', value: 0, unit: 'คน', color: 'blue', insight: 'มอบหมายงานปฏิบัติแล้ว', filterSkill: 'all', filterStatus: 'probation', icon: <TestingIcon /> },
   ]);
 
   const [pendingActions, setPendingActions] = useState([]);
@@ -88,15 +103,22 @@ const AdminOverview = () => {
         const [
           workersRes, 
           pendingQuizRes, 
-          logsRes
+          logsRes,
+          practicalTestingRes
         ] = await Promise.allSettled([
           apiRequest(`/api/admin/workers${queryParams}`),
           apiRequest('/api/admin/quizzes?status=pending'),
-          apiRequest('/api/admin/audit-logs?page=1&limit=5')
+          apiRequest('/api/admin/audit-logs?page=1&limit=5'),
+          apiRequest('/api/dashboard/practical-testing-count')
         ]);
 
         if (!active) {
           return;
+        }
+
+        // ✅ ตรวจสอบว่า API หลักทำงานได้หรือไม่
+        if (workersRes.status === 'rejected') {
+          throw new Error('ไม่สามารถเชื่อมต่อข้อมูลพนักงานได้ กรุณาตรวจสอบการเชื่อมต่อเซิร์ฟเวอร์');
         }
 
         // --- 1. Process Workers Data ---
@@ -104,18 +126,29 @@ const AdminOverview = () => {
         const items = Array.isArray(workersData?.items) ? workersData.items : (Array.isArray(workersData) ? workersData : []);
 
         // กรองข้อมูลฝั่ง Client-side เพิ่มเติมเพื่อให้แน่ใจว่าแสดงผลถูกต้อง (กรณี API ไม่รองรับ Filter)
-        const filteredItems = selectedBranch !== 'all' 
-          ? items.filter(w => w.category === selectedBranch)
-          : items;
+        const normalizeRole = (role) => String(role || '').trim().toLowerCase();
+        const isWorkerRole = (role, category) => {
+          const key = normalizeRole(role);
+          if (!key && category) return true;
+          if (key.includes('หัวหน้า') || key.includes('foreman') || key === 'fm' || key.includes('(fm)')) return false;
+          if (key.includes('ผู้จัดการ') || key.includes('project_manager') || key === 'pm' || key.includes('(pm)')) return false;
+          if (key.includes('worker') || key === 'wk' || key.includes('(wk)')) return true;
+          if (key.includes('ช่าง')) return true;
+          return false;
+        };
+
+        const roleFilteredItems = items.filter(w => isWorkerRole(w.role, w.category));
+        const filteredItems = selectedBranch !== 'all'
+          ? roleFilteredItems.filter(w => w.category === selectedBranch)
+          : roleFilteredItems;
 
         const totalWorkers = filteredItems.length;
         const probationWorkers = filteredItems.filter(worker => worker.status === 'probation' || worker.status === 'active');
         const pendingWorkers = probationWorkers.length;
-        const probationWithScore = probationWorkers.filter(worker =>
-          worker.assessmentPassed !== undefined && worker.assessmentPassed !== null
-            ? true
-            : (worker.score !== undefined && worker.score !== null)
-        ).length;
+        
+        // 🎯 ดึงข้อมูลการทดสอบภาคปฏิบัติจาก API เดียวกับหน้า PM
+        const practicalTestingData = practicalTestingRes.status === 'fulfilled' ? practicalTestingRes.value : { count: 0 };
+        const practicalCount = Number(practicalTestingData?.count ?? 0);
         
         setStatusStats({
           probation: pendingWorkers,
@@ -173,12 +206,13 @@ const AdminOverview = () => {
           {
             id: 'avg',
             label: 'กำลังทดสอบภาคปฏิบัติ',
-            value: probationWithScore,
+            value: practicalCount,
             unit: 'คน',
             color: 'blue',
-            insight: 'อยู่ระหว่างทดสอบ',
+            insight: 'มอบหมายงานปฏิบัติแล้ว',
             filterSkill: 'all',
-            filterStatus: 'probation'
+            filterStatus: 'probation',
+            icon: <TestingIcon />
           },
         ]);
 
@@ -214,26 +248,22 @@ const AdminOverview = () => {
         // Initialize branchMap with all 8 branches to ensure they appear even with 0 workers
         const branchMap = {};
         BRANCH_OPTIONS.forEach(opt => {
-          branchMap[opt.label] = { name: opt.label, value: opt.value, total: 0, levels: { high: 0, mid: 0, low: 0 } };
+          branchMap[opt.label] = {
+            name: opt.label,
+            value: opt.value,
+            total: 0,
+            levels: { level0: 0, level1: 0, level2: 0, level3: 0 }
+          };
         });
         // เพิ่มหมวดอื่นๆ เพื่อเก็บตกข้อมูลที่ไม่อยู่ใน 8 สาขาหลัก
-        branchMap['อื่นๆ'] = { name: 'อื่นๆ', value: 'other', total: 0, levels: { high: 0, mid: 0, low: 0 } };
-
-        // Performance Optimization: สร้าง Lookup Map เพื่อลดความซับซ้อนในการค้นหาจาก O(N*M) เป็น O(N)
-        const normalizedBranchMap = {};
-        BRANCH_OPTIONS.forEach(opt => {
-          normalizedBranchMap[opt.value] = opt.label;
-          normalizedBranchMap[opt.value.toLowerCase()] = opt.label;
-          normalizedBranchMap[opt.label] = opt.label;
-        });
-
+        branchMap['อื่นๆ'] = { name: 'อื่นๆ', value: 'other', total: 0, levels: { level0: 0, level1: 0, level2: 0, level3: 0 } };
+        
         const branchScoreMap = {};
         const notEvaluatedMap = {};
 
         filteredItems.forEach(w => {
           const rawCat = (w.category || '').trim();
-          // ใช้ Lookup Map แทนการวนหา (.find) เพื่อประสิทธิภาพที่ดีกว่า (O(1))
-          let label = normalizedBranchMap[rawCat] || normalizedBranchMap[rawCat.toLowerCase()];
+          let label = NORMALIZED_BRANCH_MAP[rawCat] || NORMALIZED_BRANCH_MAP[rawCat.toLowerCase()];
 
           if (!label || !branchMap[label]) {
              // ถ้าไม่ตรงกับสาขาหลัก หรือไม่มีใน map ให้ลงหมวดอื่นๆ
@@ -243,21 +273,40 @@ const AdminOverview = () => {
           branchMap[label].total++;
           
           // ตรวจสอบคะแนนจริง (ไม่รวมคนที่ยังไม่มีคะแนน)
+          const totalScore = w.assessmentTotalScore ?? null;
+          const totalQuestions = w.assessmentTotalQuestions ?? null;
           const rawScore = w.score !== undefined ? w.score : w.evaluation_score;
-          const hasScore = rawScore !== undefined && rawScore !== null;
-          const score = hasScore ? Number(rawScore) : 0;
+          const scorePercent = totalScore !== null && totalQuestions
+            ? (Number(totalScore) / Number(totalQuestions)) * 100
+            : (rawScore !== undefined && rawScore !== null ? Number(rawScore) : null);
+          const hasScore = scorePercent !== null && scorePercent !== undefined;
 
           // 1. จัดกลุ่มระดับทักษะ (นับเฉพาะคนที่มีคะแนนเท่านั้น)
           if (hasScore) {
-            if (score >= 80) branchMap[label].levels.high++;
-            else if (score >= 60) branchMap[label].levels.mid++;
-            else branchMap[label].levels.low++;
+            const isPassed = w.assessmentPassed === true
+              ? true
+              : w.assessmentPassed === false
+                ? false
+                : scorePercent >= 60;
+
+            if (!isPassed) {
+              branchMap[label].levels.level0++;
+            } else {
+              const assessedLevel = Number(w.assessmentRoundLevel);
+              if (assessedLevel >= 3) {
+                branchMap[label].levels.level3++;
+              } else if (assessedLevel === 2) {
+                branchMap[label].levels.level2++;
+              } else {
+                branchMap[label].levels.level1++;
+              }
+            }
           }
 
           // 2. คำนวณคะแนนเฉลี่ย (เฉพาะคนที่มีคะแนน)
           if (hasScore) {
             if (!branchScoreMap[label]) branchScoreMap[label] = { sum: 0, count: 0 };
-            branchScoreMap[label].sum += score;
+            branchScoreMap[label].sum += scorePercent;
             branchScoreMap[label].count++;
           } else {
             // 3. นับคนที่ยังไม่ได้รับการประเมิน
@@ -457,9 +506,10 @@ const AdminOverview = () => {
                            width: `${animateChart ? barWidthPercent : 0}%`, 
                            transitionDelay: `${idx * 0.1}s`
                          }}>
-                            {branch.levels.low > 0 && <div style={{ width: `${(branch.levels.low / branch.total) * 100}%`, background: PASTEL_COLORS.low.bg }} title={`ระดับ 1 (ต่ำ): ${branch.levels.low} คน`} />}
-                            {branch.levels.mid > 0 && <div style={{ width: `${(branch.levels.mid / branch.total) * 100}%`, background: PASTEL_COLORS.mid.bg }} title={`ระดับ 2 (กลาง): ${branch.levels.mid} คน`} />}
-                            {branch.levels.high > 0 && <div style={{ width: `${(branch.levels.high / branch.total) * 100}%`, background: PASTEL_COLORS.high.bg }} title={`ระดับ 3 (สูง): ${branch.levels.high} คน`} />}
+                            {branch.levels.level0 > 0 && <div style={{ width: `${(branch.levels.level0 / branch.total) * 100}%`, background: PASTEL_COLORS.level0.bg }} title={`ระดับ 0 (ต่ำ): ${branch.levels.level0} คน`} />}
+                            {branch.levels.level1 > 0 && <div style={{ width: `${(branch.levels.level1 / branch.total) * 100}%`, background: PASTEL_COLORS.level1.bg }} title={`ระดับ 1 (พื้นฐาน): ${branch.levels.level1} คน`} />}
+                            {branch.levels.level2 > 0 && <div style={{ width: `${(branch.levels.level2 / branch.total) * 100}%`, background: PASTEL_COLORS.level2.bg }} title={`ระดับ 2 (กลาง): ${branch.levels.level2} คน`} />}
+                            {branch.levels.level3 > 0 && <div style={{ width: `${(branch.levels.level3 / branch.total) * 100}%`, background: PASTEL_COLORS.level3.bg }} title={`ระดับ 3 (สูง): ${branch.levels.level3} คน`} />}
                          </div>
                       </div>
                     </div>
@@ -467,9 +517,10 @@ const AdminOverview = () => {
                 })}
                 
                 <div className="branch-legend">
-                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.low.bg }}></span> ระดับ 1 (ต่ำ)</div>
-                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.mid.bg }}></span> ระดับ 2 (กลาง)</div>
-                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.high.bg }}></span> ระดับ 3 (สูง)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.level0.bg }}></span> ระดับ 0 (ต่ำ)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.level1.bg }}></span> ระดับ 1 (พื้นฐาน)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.level2.bg }}></span> ระดับ 2 (กลาง)</div>
+                    <div className="branch-legend-item"><span className="branch-legend-dot" style={{ background: PASTEL_COLORS.level3.bg }}></span> ระดับ 3 (สูง)</div>
                 </div>
               </div>
             )}

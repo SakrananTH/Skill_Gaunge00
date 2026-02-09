@@ -19,9 +19,18 @@ import WorkerSettings from './pages/Worker/WorkerSettings';
 import WorkHistory from './pages/Worker/WorkHistory';
 import PMProjectManager from './pages/pm/PMProjectManager';
 import WKProjectTasks from './pages/pm/WKProject_Tasks';
+import PMProjects from './pages/pm/PMProjects';
+import WKCreateProject from './pages/pm/WKCreateProject';
+import ProjectDetail from './pages/pm/ProjectDetail';
+import WKAssignWorker from './pages/pm/WKAssignWorker';
+import PMSettings from './pages/pm/PMSettings';
 import SkillAssessmentTest from './pages/Worker/SkillAssessmentTest';
 import SkillAssessmentSummary from './pages/Worker/SkillAssessmentSummary';
 import SkillAssessmentQuiz from './pages/Skill Assessment Quiz';
+import ForemanDashboard from './pages/Foreman/ForemanDashboard';
+import ForemanAssessment from './pages/Foreman/ForemanAssessment';
+import ForemanReportSystem from './pages/Foreman/ForemanReportSystem';
+import ForemanSettings from './pages/Foreman/ForemanSettings';
 import './App.css';
 
 function App() {
@@ -49,7 +58,16 @@ function App() {
             <Route path="worker/task-detail" element={<WorkerTaskDetail />} />
             <Route path="admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="pm" element={<PMProjectManager />} />
+            <Route path="projects" element={<PMProjects />} />
+            <Route path="create-project" element={<WKCreateProject />} />
+            <Route path="project-detail" element={<ProjectDetail />} />
             <Route path="project-tasks" element={<WKProjectTasks />} />
+            <Route path="assign-worker" element={<WKAssignWorker />} />
+            <Route path="pm-settings" element={<PMSettings />} />
+            <Route path="foreman" element={<ForemanDashboard />} />
+            <Route path="foreman-assessment" element={<ForemanAssessment />} />
+            <Route path="foreman-reports" element={<ForemanReportSystem />} />
+            <Route path="foreman-settings" element={<ForemanSettings />} />
             <Route path="skill-assessment" element={<SkillAssessmentTest />} />
             <Route path="skill-assessment/summary" element={<SkillAssessmentSummary />} />
             <Route path="skill-assessment/quiz" element={<SkillAssessmentQuiz />} />

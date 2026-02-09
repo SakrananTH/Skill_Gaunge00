@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import '../pm/WKDashboard.css';
+import './PMTheme.css';
+import PMTopNav from './PMTopNav';
 
 const ProjectDetail = () => {
   const location = useLocation();
@@ -9,6 +11,7 @@ const ProjectDetail = () => {
   
   // รับ ID จากการส่ง State หรือจาก URL (ถ้ามีการปรับ Router ในอนาคต)
   const pj_id = location.state?.pj_id;
+  const incomingProject = location.state?.project || null;
   
   // ดึง User เพื่อใช้ใน Sidebar
   const userStr = sessionStorage.getItem('user');
@@ -18,8 +21,20 @@ const ProjectDetail = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState('');
 
-  const API = 'http://localhost:4000';
+  // ✅ ระบบแจ้งเตือน (Toast Notification)
+  useEffect(() => {
+    const msg = sessionStorage.getItem('pm_notification');
+    if (msg) {
+      setToast(msg);
+      sessionStorage.removeItem('pm_notification');
+      const timer = setTimeout(() => setToast(''), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+    const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
   // ฟังก์ชัน Logout
   const handleLogout = () => {
@@ -41,14 +56,23 @@ const ProjectDetail = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // ยิง API 2 ตัวพร้อมกัน: รายละเอียดโปรเจค และ งานย่อย
+            const token = sessionStorage.getItem('auth_token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+            // ดึงสรุปโครงการ + งานย่อยจาก API ที่มีอยู่จริง
             const [resProj, resTasks] = await Promise.all([
-                axios.get(`${API}/api/manageproject/get/${pj_id}`),
-                axios.get(`${API}/api/manageprojecttask/project/${pj_id}`)
+                axios.get(`${API}/api/dashboard/project-task-counts`, { headers }),
+                axios.get(`${API}/api/tasks`, { headers, params: { project_id: pj_id, limit: 200, offset: 0 } })
             ]);
 
-            setProject(resProj.data);
-            setTasks(resTasks.data);
+            const projects = Array.isArray(resProj.data) ? resProj.data : [];
+            const foundProject = projects.find(p => p.project_id === pj_id) || null;
+            const resolvedProject = foundProject
+              ? { ...foundProject, project_name: foundProject.project_name }
+              : (incomingProject || { project_name: 'โครงการ', project_id: pj_id });
+
+            setProject(resolvedProject);
+            setTasks(Array.isArray(resTasks.data?.items) ? resTasks.data.items : []);
             setLoading(false);
         } catch (err) {
             console.error("Error fetching detail:", err);
@@ -83,24 +107,27 @@ const ProjectDetail = () => {
 
   if (error) return <div style={{padding:'40px', textAlign:'center', color:'red'}}>{error}</div>;
 
-  return (
-    <div className="dash-layout">
-      {/* Sidebar เต็มรูปแบบ */}
-      <aside className="dash-sidebar">
-        <div className="sidebar-title" style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
-          PM Portal
-        </div>
-        <nav className="menu">
-          <button type="button" className="menu-item" onClick={() => navigate('/pm', { state: { user } })}>หน้าหลัก</button>
-          <button type="button" className="menu-item" onClick={() => navigate('/project-tasks', { state: { user } })}>มอบหมายงาน</button>
-          <button type="button" className="menu-item active" onClick={() => navigate('/projects', { state: { user } })}>โครงการทั้งหมด</button>
-          <button type="button" className="menu-item" onClick={() => navigate('/pm-settings', { state: { user } })}>ตั้งค่า</button>
-          <button type="button" className="menu-item logout-btn" style={{ marginTop: '20px', color: '#ef4444', background: '#fef2f2', borderColor: '#fee2e2' }} onClick={handleLogout}>ออกจากระบบ</button>
-        </nav>
-      </aside>
+    return (
+        <div className="pm-page">
+            {/* ✅ Toast Notification */}
+            {toast && (
+              <div style={{
+                position: 'fixed', top: '30px', left: '50%', transform: 'translateX(-50%)',
+                backgroundColor: '#10b981', color: 'white', padding: '12px 24px', borderRadius: '16px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', zIndex: 2000,
+                display: 'flex', alignItems: 'center', gap: '12px', fontWeight: '600',
+                animation: 'toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+              }}>
+                <style>{`
+                  @keyframes toastIn { from { transform: translate(-50%, -40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+                `}</style>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg>
+                {toast}
+              </div>
+            )}
+            <PMTopNav active="projects" user={user} onLogout={handleLogout} />
 
-      <main className="dash-main">
-        <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+            <main className="pm-content">
           
           {/* Header & Back Button */}
           <div style={{ marginBottom: '20px' }}>
@@ -110,7 +137,7 @@ const ProjectDetail = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 style={{ color: '#2c3e50', margin: 0 }}>{project.project_name}</h1>
                 <button 
-                    onClick={() => navigate('/define-tasks', { state: { project } })} 
+                    onClick={() => navigate('/project-tasks', { state: { project } })} 
                     style={{ background: '#e67e22', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(230, 126, 34, 0.3)' }}
                 >
                     + สร้างงานย่อย (Task)
@@ -119,13 +146,13 @@ const ProjectDetail = () => {
           </div>
 
           {/* Card 1: Project Overview */}
-          <div style={{ background: 'white', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+          <div className="pm-section" style={{ marginBottom: '30px' }}>
             <h3 style={{ borderBottom: '2px solid #f1f2f6', paddingBottom: '15px', marginTop: 0, color: '#34495e' }}>📌 รายละเอียดโครงการ</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
                 <div>
-                    <p style={detailRowStyle}><span style={labelStyle}>ประเภท:</span> {project.project_type}</p>
+                    <p style={detailRowStyle}><span style={labelStyle}>ประเภท:</span> {project.project_type || '-'}</p>
                     <p style={detailRowStyle}><span style={labelStyle}>สถานที่:</span> {project.site_location || '-'}</p>
-                    <p style={detailRowStyle}><span style={labelStyle}>PM ผู้ดูแล ID:</span> {project.manager_id}</p>
+                    <p style={detailRowStyle}><span style={labelStyle}>PM ผู้ดูแล ID:</span> {project.manager_id || '-'}</p>
                 </div>
                 <div>
                     <p style={detailRowStyle}><span style={labelStyle}>ระยะเวลา:</span> {formatDate(project.start_date)} - {formatDate(project.end_date)}</p>
@@ -135,7 +162,7 @@ const ProjectDetail = () => {
           </div>
 
           {/* Card 2: Task List */}
-          <div style={{ background: 'white', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+          <div className="pm-section">
              <h3 style={{ borderBottom: '2px solid #f1f2f6', paddingBottom: '15px', marginTop: 0, color: '#34495e', display:'flex', justifyContent:'space-between' }}>
                 📋 รายการงานย่อย (Tasks)
                 <span style={{fontSize:'14px', color:'#7f8c8d', fontWeight:'normal'}}>ทั้งหมด {tasks.length} งาน</span>
@@ -147,33 +174,24 @@ const ProjectDetail = () => {
                         <thead>
                             <tr style={{ background: '#f8f9fa', color: '#7f8c8d', textAlign: 'left' }}>
                                 <th style={{ padding: '12px' }}>ชื่องาน</th>
-                                <th style={{ padding: '12px' }}>สายงานช่าง</th>
                                 <th style={{ padding: '12px' }}>ความสำคัญ</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>คนงาน (ต้องการ)</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>สถานะมอบหมาย</th>
+                                <th style={{ padding: '12px' }}>สถานะ</th>
+                                <th style={{ padding: '12px' }}>ผู้รับผิดชอบ</th>
+                                <th style={{ padding: '12px' }}>กำหนดส่ง</th>
                             </tr>
                         </thead>
                         <tbody>
                             {tasks.map(task => (
-                                <tr key={task.pj_t_id} style={{ borderBottom: '1px solid #eee' }}>
-                                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{task.task_name}</td>
-                                    <td style={{ padding: '12px' }}>{task.technician_type}</td>
+                                <tr key={task.id} style={{ borderBottom: '1px solid #eee' }}>
+                                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{task.title}</td>
                                     <td style={{ padding: '12px' }}>
                                         <span style={{ color: getPriorityColor(task.priority), fontWeight: 'bold', border: `1px solid ${getPriorityColor(task.priority)}`, padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>
-                                            {task.priority}
+                                            {task.priority || '-'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '12px', textAlign: 'center' }}>{task.required_workers} คน</td>
-                                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                                        {/* แสดงจำนวนคนที่ Assign ไปแล้ว */}
-                                        <span style={{ 
-                                            background: task.assigned_count >= task.required_workers ? '#d4edda' : '#fff3cd', 
-                                            color: task.assigned_count >= task.required_workers ? '#155724' : '#856404',
-                                            padding: '4px 10px', borderRadius: '6px', fontSize: '13px' 
-                                        }}>
-                                            {task.assigned_count} / {task.required_workers}
-                                        </span>
-                                    </td>
+                                    <td style={{ padding: '12px' }}>{task.status || '-'}</td>
+                                    <td style={{ padding: '12px' }}>{task.assignee_name || '-'}</td>
+                                    <td style={{ padding: '12px' }}>{task.due_date ? formatDate(task.due_date) : '-'}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -189,10 +207,9 @@ const ProjectDetail = () => {
              )}
           </div>
 
+            </main>
         </div>
-      </main>
-    </div>
-  );
+    );
 };
 
 const labelStyle = { color: '#7f8c8d', fontWeight: 'bold', marginRight: '10px' };

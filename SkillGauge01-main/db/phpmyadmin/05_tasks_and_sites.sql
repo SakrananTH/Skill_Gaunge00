@@ -16,7 +16,6 @@ INSERT INTO sites (id, name, address) VALUES
 (UUID(), 'Site B: Asoke Office', '456 Asoke Rd, Bangkok'),
 (UUID(), 'Site C: Pattaya Hotel', '789 Beach Rd, Pattaya');
 
--- 2. ตาราง Tasks (งาน)
 CREATE TABLE IF NOT EXISTS tasks (
     id CHAR(36) NOT NULL PRIMARY KEY DEFAULT (UUID()),
     project_id CHAR(36) NOT NULL,
@@ -33,6 +32,22 @@ CREATE TABLE IF NOT EXISTS tasks (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS task_worker_assignments (
+    id CHAR(36) NOT NULL PRIMARY KEY DEFAULT (UUID()),
+    task_id CHAR(36) NOT NULL,
+    worker_id INT UNSIGNED NOT NULL,
+    assignment_type VARCHAR(50) NOT NULL DEFAULT 'general',
+    status ENUM('assigned', 'in-progress', 'completed') NOT NULL DEFAULT 'assigned',
+    assigned_by_user_id CHAR(36) NULL,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP NULL,
+    completed_at TIMESTAMP NULL,
+    KEY idx_task_worker_assignments_task (task_id),
+    KEY idx_task_worker_assignments_worker (worker_id),
+    KEY idx_task_worker_assignments_status (status),
+    KEY idx_task_worker_assignments_type (assignment_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Seed Tasks
 SET @p_id = (SELECT id FROM projects LIMIT 1);
