@@ -3,448 +3,61 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import mysql from 'mysql2/promise';
 import { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 
-const {
-  PORT = 4000,
-  CORS_ORIGIN = 'http://localhost:3002',
-  MYSQL_HOST = 'localhost',
-  MYSQL_PORT = '3306',
-  MYSQL_DATABASE = 'admin-worker-registration',
-  MYSQL_USER = 'root',
-  MYSQL_PASSWORD = 'rootpassword',
-  JWT_SECRET = 'dev_secret_change_me',
-  JWT_EXPIRES_IN = '12h'
-} = process.env;
+// Refactored Modules
+import { env } from './config/env.js';
+import { pool } from './config/database.js';
+import { ROLE_LABELS, TRADE_LABELS, ADMIN_BYPASS } from './config/constants.js';
+import { 
+  execute, query, queryOne, withTransaction, buildUpdateClause, writeAuditLog 
+} from './utils/db.js';
+import { 
+  normalizePhoneTH, uuidSchema, getRequestIp, getRoleLabel, getTradeLabel, 
+  toNullableString, parseDateValue, parseDateTimeInput, toISODateString,
+  parseAgeValue, parseExperienceYears
+} from './utils/helpers.js';
+import { 
+  requireAuth, authorizeRoles, hasRole, getTokenFromHeader, canAccessUser 
+} from './middlewares/auth.js';
+import { loadThaiAddressDataset, searchThaiAddressRecords } from './services/thaiAddressService.js';
+import addressRoutes from './routes/addressRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const resolvedThaiAddressPath = (() => {
-  const customPath = process.env.THAI_ADDRESS_DATA_PATH;
-  if (customPath && customPath.trim()) {
-    return path.resolve(customPath.trim());
-  }
-  return path.resolve(
-    __dirname,
-    '..',
-    '..',
-    'thailand-province-district-subdistrict-zipcode-latitude-longitude-master',
-    'thailand-province-district-subdistrict-zipcode-latitude-longitude-master',
-    'output.csv'
-  );
-})();
-
-const allowedAddressFields = new Set(['province', 'district', 'subdistrict']);
-
-let thaiAddressRecords = [];
-let thaiAddressLastLoadedAt = null;
-let thaiAddressLoadError = null;
-
-function normalizeSearchText(value) {
-  return String(value ?? '')
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(/\s+/g, '');
-}
-
-function dedupeRecords(records, keySelector) {
-  if (!Array.isArray(records) || !keySelector) {
-    return [];
-  }
-  const seen = new Set();
-  const output = [];
-  for (const record of records) {
-    const key = keySelector(record);
-    if (!key || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    output.push(record);
-  }
-  return output;
-}
-
-async function loadThaiAddressDataset(dataPath = resolvedThaiAddressPath) {
-  try {
-    const fileContent = await readFile(dataPath, 'utf8');
-    const lines = fileContent.split(/\r?\n/);
-    const nextRecords = [];
-
-    for (let index = 1; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (!line || !line.trim()) {
-        continue;
-      }
-      const parts = line.split(',');
-      if (parts.length < 4) {
-        continue;
-      }
-
-      const [provinceRaw, districtRaw, subdistrictRaw, zipcodeRaw, latitudeRaw, longitudeRaw] = parts;
-      const province = (provinceRaw || '').trim();
-      const district = (districtRaw || '').trim();
-      const subdistrict = (subdistrictRaw || '').trim();
-      const zipcode = (zipcodeRaw || '').trim();
-
-      if (!province || !district || !subdistrict || !zipcode) {
-        continue;
-      }
-
-      const latitude = latitudeRaw ? Number.parseFloat(latitudeRaw) : null;
-      const longitude = longitudeRaw ? Number.parseFloat(longitudeRaw) : null;
-
-      nextRecords.push({
-        province,
-        district,
-        subdistrict,
-        zipcode,
-        latitude: Number.isFinite(latitude) ? latitude : null,
-        longitude: Number.isFinite(longitude) ? longitude : null,
-        searchProvince: normalizeSearchText(province),
-        searchDistrict: normalizeSearchText(district),
-        searchSubdistrict: normalizeSearchText(subdistrict),
-        searchZipcode: normalizeSearchText(zipcode)
-      });
-    }
-    thaiAddressRecords = nextRecords;
-    thaiAddressLastLoadedAt = new Date();
-    thaiAddressLoadError = null;
-    if (thaiAddressRecords.length > 0) {
-      console.info(
-        `[addresses] Loaded ${thaiAddressRecords.length.toLocaleString()} Thai address records from ${dataPath}`
-      );
-    } else {
-      console.warn(`[addresses] No Thai address records were loaded from ${dataPath}`);
-    }
-  } catch (error) {
-    thaiAddressRecords = [];
-    thaiAddressLastLoadedAt = null;
-    thaiAddressLoadError = error;
-    console.warn(`[addresses] Unable to load Thai address dataset from ${dataPath}`, error?.message || error);
-  }
-}
-
-function searchThaiAddressRecords({ field, query, provinceFilter, districtFilter, subdistrictFilter, limit }) {
-  if (!allowedAddressFields.has(field)) {
-    return [];
-  }
-
-  const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) {
-    return [];
-  }
-
-  let results = thaiAddressRecords;
-  if (!Array.isArray(results) || results.length === 0) {
-    return [];
-  }
-
-  const normalizedProvince = normalizeSearchText(provinceFilter);
-  if (normalizedProvince) {
-    results = results.filter(record => record.searchProvince === normalizedProvince);
-  }
-
-  const normalizedDistrict = normalizeSearchText(districtFilter);
-  if (normalizedDistrict) {
-    results = results.filter(record => record.searchDistrict === normalizedDistrict);
-  }
-
-  const normalizedSubdistrict = normalizeSearchText(subdistrictFilter);
-  if (normalizedSubdistrict) {
-    results = results.filter(record => record.searchSubdistrict === normalizedSubdistrict);
-  }
-
-  if (field === 'province') {
-    results = results.filter(record => record.searchProvince.includes(normalizedQuery));
-    results = dedupeRecords(results, record => record.searchProvince);
-  } else if (field === 'district') {
-    results = results.filter(record => record.searchDistrict.includes(normalizedQuery));
-    results = dedupeRecords(results, record => `${record.searchProvince}|${record.searchDistrict}`);
-  } else {
-    results = results.filter(record => record.searchSubdistrict.includes(normalizedQuery));
-    results = dedupeRecords(
-      results,
-      record => `${record.searchProvince}|${record.searchDistrict}|${record.searchSubdistrict}|${record.zipcode}`
-    );
-  }
-  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 12;
-  return results.slice(0, safeLimit);
-}
-
-loadThaiAddressDataset().catch(error => {
-  console.warn('[addresses] Initial dataset load failed', error?.message || error);
-});
-
-const pool = mysql.createPool({
-  host: MYSQL_HOST,
-  port: Number(MYSQL_PORT),
-  database: MYSQL_DATABASE,
-  user: MYSQL_USER,
-  password: MYSQL_PASSWORD,
-  waitForConnections: true,
-  connectionLimit: 10,
-  namedPlaceholders: false
-});
+loadThaiAddressDataset();
 
 const app = express();
-app.use(cors({ origin: CORS_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(cors({ origin: env.CORS_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json());
 
-app.get('/api/lookups/addresses', (req, res) => {
-  const fieldRaw = typeof req.query.field === 'string' ? req.query.field.toLowerCase() : '';
-  const queryRaw = typeof req.query.query === 'string' ? req.query.query.trim() : '';
-
-  const provinceFilter = typeof req.query.province === 'string' ? req.query.province : '';
-  const districtFilter = typeof req.query.district === 'string' ? req.query.district : '';
-  const subdistrictFilter = typeof req.query.subdistrict === 'string' ? req.query.subdistrict : '';
-
-  const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-  const limitValue = Number.parseInt(typeof limitParam === 'string' ? limitParam : '', 10);
-
-  const searchResults = searchThaiAddressRecords({
-    field: fieldRaw,
-    query: queryRaw,
-    provinceFilter,
-    districtFilter,
-    subdistrictFilter,
-    limit: Number.isNaN(limitValue) ? undefined : limitValue
-  }).map(record => ({
-    province: record.province,
-    district: record.district,
-    subdistrict: record.subdistrict,
-    zipcode: record.zipcode,
-    latitude: record.latitude,
-    longitude: record.longitude
-  }));
-
-  res.json({
-    query: queryRaw,
-    field: fieldRaw,
-    results: searchResults,
-    meta: {
-      total: searchResults.length,
-      datasetLoaded: thaiAddressRecords.length > 0,
-      lastLoadedAt: thaiAddressLastLoadedAt ? thaiAddressLastLoadedAt.toISOString() : null,
-      loadError: thaiAddressLoadError ? String(thaiAddressLoadError.message || thaiAddressLoadError) : null
-    }
-  });
-});
+// Mount New Routes
+app.use('/api/lookups', addressRoutes);
+app.use('/api/auth', authRoutes); // Includes signup, login
+app.use('/api/admin', adminRoutes); // Includes users, workers
 
 // ---------------------------------------------------------------------------
-// Utility helpers
+// Legacy / Remaining Logic
 // ---------------------------------------------------------------------------
-function normalizePhoneTH(input) {
-  const raw = String(input || '').trim();
-  if (!raw) return raw;
-  if (raw.startsWith('+')) return raw;
-  if (/^0\d{9}$/.test(raw)) return `+66${raw.slice(1)}`;
-  if (/^66\d{9}$/.test(raw)) return `+${raw}`;
-  return raw;
-}
 
-const uuidSchema = z.string().uuid();
 
-function getRequestIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.ip || req.connection?.remoteAddress || null;
-}
+/* Removed broken legacy address code */
 
-async function execute(sql, params = [], connection) {
-  const executor = connection ?? pool;
-  const [result] = await executor.execute(sql, params);
-  return result;
-}
 
-async function writeAuditLog({ req, username, role, action, details, status }) {
-  try {
-    await ensureAuditLogSchemaReady();
-    const ipAddress = getRequestIp(req);
-    try {
-      await execute(
-        `INSERT INTO audit_logs (username, role, action, details, ip_address, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, NOW(6))`,
-        [
-          username || null,
-          role || null,
-          action,
-          details ? JSON.stringify(details) : null,
-          ipAddress,
-          status || 'success'
-        ]
-      );
-    } catch (error) {
-      if (error?.code === 'ER_BAD_FIELD_ERROR') {
-        await execute(
-          `INSERT INTO audit_logs (actor_user_id, action, details, ip_address, created_at)
-           VALUES (?, ?, ?, ?, NOW(6))`,
-          [
-            null,
-            action,
-            details ? JSON.stringify(details) : null,
-            ipAddress
-          ]
-        );
-      } else {
-        throw error;
-      }
-    }
-  } catch (error) {
-    console.warn('[audit-logs] Failed to write log', error?.message || error);
-  }
-}
+/* 
+  Legacy code removed - use addressRoutes instead.
+*/
 
-async function query(sql, params = [], connection) {
-  const result = await execute(sql, params, connection);
-  return Array.isArray(result) ? result : [];
-}
 
-async function queryOne(sql, params = [], connection) {
-  const rows = await query(sql, params, connection);
-  return rows[0] ?? null;
-}
+/* Utility helpers removed - imported from ./utils */
 
-async function withTransaction(handler) {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const result = await handler(connection);
-    await connection.commit();
-    return result;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-}
-
-function buildUpdateClause(data) {
-  const entries = Object.entries(data).filter(([, value]) => value !== undefined);
-  return {
-    sets: entries.map(([column]) => `${column} = ?`),
-    values: entries.map(([, value]) => value)
-  };
-}
-
-const ROLE_LABELS = {
-  admin: 'ผู้ดูแลระบบ',
-  project_manager: 'ผู้จัดการโครงการ (PM)',
-  pm: 'ผู้จัดการโครงการ (PM)',
-  foreman: 'หัวหน้าช่าง (FM)',
-  fm: 'หัวหน้าช่าง (FM)',
-  worker: 'ช่าง (WK)',
-  wk: 'ช่าง (WK)'
-};
-
-const TRADE_LABELS = {
-  structure: 'ช่างโครงสร้าง',
-  plumbing: 'ช่างประปา',
-  roofing: 'ช่างหลังคา',
-  masonry: 'ช่างก่ออิฐฉาบปูน',
-  aluminum: 'ช่างประตูหน้าต่างอลูมิเนียม',
-  ceiling: 'ช่างฝ้าเพดาล',
-  electric: 'ช่างไฟฟ้า',
-  tiling: 'ช่างกระเบื้อง'
-};
-
-const ADMIN_BYPASS = {
-  id: '11111111-1111-1111-1111-111111111111',
-  phone: '0863125891',
-  normalizedPhone: '+66863125891',
-  email: 'admin@example.com',
-  fullName: 'ผู้ดูแลระบบ',
-  password: '0863503381'
-};
-
-function getRoleLabel(role) {
-  if (!role) return 'ไม่ระบุ';
-  return ROLE_LABELS[role] || role;
-}
-
-function getTradeLabel(trade) {
-  if (!trade) return 'ไม่ระบุ';
-  return TRADE_LABELS[trade] || trade;
-}
-
-function toNullableString(value) {
-  if (value === null || value === undefined) return null;
-  const trimmed = String(value).trim();
-  return trimmed.length ? trimmed : null;
-}
-
-function buildPhoneCandidates(input) {
-  const value = toNullableString(input);
-  if (!value) return [];
-  const candidates = new Set([value]);
-  const normalized = normalizePhoneTH(value);
-  if (normalized) candidates.add(normalized);
-  if (normalized && normalized.startsWith('+66')) {
-    const digits = normalized.slice(3);
-    if (/^\d+$/.test(digits)) candidates.add(`0${digits}`);
-  }
-  return Array.from(candidates);
-}
-
-function parseDateValue(value) {
-  const trimmed = toNullableString(value);
-  if (!trimmed) return null;
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
-}
-
-function parseDateTimeInput(value) {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
-}
-
-function calculateAgeFromDate(dateString) {
-  if (!dateString) return null;
-  const birth = new Date(dateString);
-  if (Number.isNaN(birth.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age -= 1;
-  }
-  return age >= 0 ? age : null;
-}
-
-function parseExperienceYears(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return null;
-  if (numeric < 0) return 0;
-  if (numeric > 255) return 255;
-  return Math.round(numeric);
-}
-
-function parseAgeValue(ageInput, birthDate) {
-  const ageFromBirth = calculateAgeFromDate(birthDate);
-  if (ageFromBirth !== null) return ageFromBirth;
-  if (ageInput === null || ageInput === undefined || ageInput === '') return null;
-  const numeric = Number(ageInput);
-  if (Number.isNaN(numeric)) return null;
-  if (numeric < 0) return 0;
-  if (numeric > 120) return 120;
-  return Math.round(numeric);
-}
 
 let workerTableColumns = new Set();
 let workerAccountColumns = new Set();
@@ -542,26 +155,8 @@ async function fetchWorkerProfile(connection, workerId) {
   }
 }
 
-function getColumn(row, ...candidates) {
-  if (!row) return undefined;
-  const keys = Object.keys(row);
-  for (const candidate of candidates) {
-    if (Object.prototype.hasOwnProperty.call(row, candidate)) {
-      return row[candidate];
-    }
-    const lower = candidate.toLowerCase();
-    const matchKey = keys.find(key => key.toLowerCase() === lower);
-    if (matchKey) return row[matchKey];
-  }
-  return undefined;
-}
+/* getColumn and toISODateString removed - imported */
 
-function toISODateString(value) {
-  if (!value) return '';
-  if (typeof value === 'string') return value.slice(0, 10);
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  return '';
-}
 
 function buildWorkerProfileFromRow(row, fallbackProfile) {
   const profile = typeof fallbackProfile === 'object' && fallbackProfile
@@ -881,43 +476,8 @@ async function replaceUserRoles(userId, roles, connection) {
   }
 }
 
-function getTokenFromHeader(req) {
-  const header = req.headers?.authorization || req.headers?.Authorization;
-  if (typeof header !== 'string') return null;
-  const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
-  return token;
-}
+/* Auth functions removed - imported from ./middlewares/auth.js */
 
-function requireAuth(req, res, next) {
-  try {
-    const token = getTokenFromHeader(req);
-    if (!token) return res.status(401).json({ message: 'missing_token' });
-    const payload = jwt.verify(token, JWT_SECRET, {
-      issuer: 'skillgauge-api',
-      audience: 'skillgauge-spa'
-    });
-    req.user = { id: payload.sub, roles: payload.roles || [] };
-    next();
-  } catch (error) {
-    return res.status(401).json({ message: 'invalid_token' });
-  }
-}
-
-function authorizeRoles(...allowed) {
-  return (req, res, next) => {
-    if (allowed.length === 0) return next();
-    const currentRoles = Array.isArray(req.user?.roles) ? req.user.roles : [];
-    const permitted = allowed.some(role => currentRoles.includes(role));
-    if (!permitted) return res.status(403).json({ message: 'forbidden' });
-    next();
-  };
-}
-
-function hasRole(req, ...allowed) {
-  const currentRoles = Array.isArray(req.user?.roles) ? req.user.roles : [];
-  return allowed.some(role => currentRoles.includes(role));
-}
 
 async function ensureForemanAssessmentSchema(connection) {
   await execute(
@@ -964,11 +524,8 @@ async function ensureTaskWorkerAssignmentSchema(connection) {
   );
 }
 
-function canAccessUser(req, userId) {
-  if (!userId) return false;
-  if (req.user?.id === userId) return true;
-  return hasRole(req, 'admin', 'project_manager', 'foreman');
-}
+/* canAccessUser removed - imported */
+
 
 // ---------------------------------------------------------------------------
 // Health
@@ -5260,6 +4817,6 @@ app.get('/api/worker/history', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Server bootstrap
 // ---------------------------------------------------------------------------
-app.listen(Number(PORT), () => {
-  console.log(`SkillGauge API listening on http://localhost:${PORT}`);
+app.listen(Number(env.PORT), () => {
+  console.log(`SkillGauge API listening on http://localhost:${env.PORT}`);
 });
