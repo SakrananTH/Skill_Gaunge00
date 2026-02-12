@@ -106,6 +106,86 @@ const toFriendlyApiMessage = (error, fallback = 'เกิดข้อผิด�
   return fallback;
 };
 
+const generateUuid = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
+};
+
+const parseJsonField = (value, fallback = null) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const getSessionUser = () => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.sessionStorage?.getItem('user');
+    return raw ? JSON.parse(raw) || {} : {};
+  } catch {
+    return {};
+  }
+};
+
+const resolveUserLabel = () => {
+  if (typeof window === 'undefined') return 'admin';
+  const storedRole = window.sessionStorage?.getItem('role');
+  if (storedRole && storedRole.toLowerCase() === 'admin') {
+    return 'Admin';
+  }
+  const user = getSessionUser();
+  if (user?.role && String(user.role).toLowerCase() === 'admin') {
+    return 'Admin';
+  }
+  return user?.name
+    || user?.email
+    || user?.id
+    || window.sessionStorage?.getItem('user_email')
+    || window.sessionStorage?.getItem('user_id')
+    || 'admin';
+};
+
+const mapRoundFromApi = (row) => {
+  if (!row) return null;
+  const parsedHistory = parseJsonField(row.history ?? row.history, []);
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    description: row.description,
+    frequencyMonths: row.frequency_months ?? row.frequencyMonths ?? null,
+    questionCount: row.question_count ?? row.questionCount ?? ASSESSMENT_QUESTION_COUNT,
+    passingScore: row.passing_score ?? row.passingScore ?? null,
+    durationMinutes: row.duration_minutes ?? row.durationMinutes ?? null,
+    startAt: row.start_at ?? row.startAt ?? null,
+    endAt: row.end_at ?? row.endAt ?? null,
+    showScore: row.show_score ?? row.showScore ?? true,
+    showAnswers: row.show_answers ?? row.showAnswers ?? false,
+    showBreakdown: row.show_breakdown ?? row.showBreakdown ?? true,
+    subcategoryQuotas: parseJsonField(row.subcategory_quotas ?? row.subcategoryQuotas, {}),
+    difficultyWeights: parseJsonField(row.difficulty_weights ?? row.difficultyWeights, null),
+    criteria: parseJsonField(row.criteria ?? row.criteria, null),
+    status: row.status ?? 'draft',
+    active: row.active ?? null,
+    history: Array.isArray(parsedHistory) ? parsedHistory : [],
+    createdBy: row.created_by ?? row.createdBy ?? null,
+    updatedBy: row.updated_by ?? row.updatedBy ?? null,
+    createdAt: row.created_at ?? row.createdAt,
+    updatedAt: row.updated_at ?? row.updatedAt,
+  };
+};
+
 const toLocalISOString = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -176,14 +256,14 @@ const AdminQuizBank = () => {
     category: initialCategory,
     description: '',
     questionCount: ASSESSMENT_QUESTION_COUNT,
-    passingScore: 60, // Default 60%
+    scoreWeights: { exam: 70, practical: 30 },
     durationMinutes: DEFAULT_ASSESSMENT_DURATION_MINUTES,
     showScore: true,
     showAnswers: false,
     showBreakdown: true,
     targetLevel: '',
     subcategoryQuotas: {},
-    criteria: { level1: 60, level2: 70, level3: 80 },
+    criteria: { passThreshold: 60 },
     difficultyWeights: { easy: 0, medium: 0, hard: 0 }
   });
   const [roundSelectionTouched, setRoundSelectionTouched] = useState(Boolean(storedRoundId));
@@ -207,13 +287,17 @@ const AdminQuizBank = () => {
     try {
       // โหลดคำถามปกติ
       const response = await apiRequest(`/api/admin/questions?limit=${QUESTIONS_FETCH_LIMIT}`);
-      const items = Array.isArray(response?.items) ? response.items : [];
+      const items = Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
       setQuestions(items);
 
       // โหลดคำถามโครงสร้าง
       try {
-        const structResponse = await apiRequest('/api/question-structural/all');
-        const structItems = Array.isArray(structResponse) ? structResponse : [];
+        const structResponse = await apiRequest(`/api/admin/question-structural?limit=${QUESTIONS_FETCH_LIMIT}`);
+        const structItems = Array.isArray(structResponse?.data) ? structResponse.data : [];
         
         console.log('Loaded structural questions:', structItems.length); // Debug log
         
@@ -279,8 +363,13 @@ const AdminQuizBank = () => {
     setRoundsLoading(true);
     setRoundsError('');
     try {
-      const response = await apiRequest('/api/admin/assessments/rounds');
-      const items = Array.isArray(response?.items) ? response.items : [];
+      const response = await apiRequest('/api/admin/assessment-rounds?limit=200');
+      const rawItems = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response?.items)
+          ? response.items
+          : [];
+      const items = rawItems.map(mapRoundFromApi).filter(Boolean);
       setRounds(items);
 
       if (!keepSelection) {
@@ -352,19 +441,37 @@ const AdminQuizBank = () => {
           : matchedWeights.hard === 100 && matchedWeights.easy === 0 && matchedWeights.medium === 0
             ? 'hard'
             : (matchedWeights.easy === 0 && matchedWeights.medium === 0 && matchedWeights.hard === 0) ? '' : 'all';
+      const rawScoreWeights = matched.criteria?.scoreWeights;
+      const fallbackExam = Number.isFinite(Number(matched.passingScore))
+        ? Math.max(0, Math.min(100, Number(matched.passingScore)))
+        : 70;
+      const normalizedScoreWeights = rawScoreWeights && typeof rawScoreWeights === 'object'
+        ? {
+            exam: Math.max(0, Math.min(100, Number(rawScoreWeights.exam ?? fallbackExam))),
+            practical: Math.max(0, Math.min(100, Number(rawScoreWeights.practical ?? (100 - fallbackExam))))
+          }
+        : {
+            exam: fallbackExam,
+            practical: Math.max(0, Math.min(100, 100 - fallbackExam))
+          };
+
+      if (normalizedScoreWeights.exam + normalizedScoreWeights.practical !== 100) {
+        normalizedScoreWeights.practical = Math.max(0, 100 - normalizedScoreWeights.exam);
+      }
+
       setRoundForm(prev => ({
         ...prev,
         category: matched.category || CATEGORY_OPTIONS[0].value,
         description: matched.description || '',
         frequencyMonths: matched.frequencyMonths || '',
         questionCount: matched.questionCount || ASSESSMENT_QUESTION_COUNT,
-        passingScore: matched.passingScore || 60,
+        scoreWeights: normalizedScoreWeights,
         durationMinutes: matched.durationMinutes || DEFAULT_ASSESSMENT_DURATION_MINUTES,
         showScore: matched.showScore ?? true,
         showAnswers: matched.showAnswers ?? false,
         showBreakdown: matched.showBreakdown ?? true,
         subcategoryQuotas: matched.subcategoryQuotas || {},
-        criteria: matched.criteria || { level1: 60, level2: 70, level3: 80 },
+        criteria: matched.criteria || { passThreshold: 60 },
         targetLevel: matchedTargetLevel,
         difficultyWeights: matchedWeights
       }));
@@ -596,26 +703,35 @@ const AdminQuizBank = () => {
 
   const createRoundForCategory = useCallback(async (categoryValue, selectionSeq = null) => {
     const expectedSeq = selectionSeq ?? categorySelectSeqRef.current;
+    const userLabel = resolveUserLabel();
     const payload = {
+      id: generateUuid(),
       category: categoryValue,
       title: buildUniqueRoundTitle(categoryValue),
       description: '',
-      questionCount: ASSESSMENT_QUESTION_COUNT,
-      passingScore: 60,
-      durationMinutes: DEFAULT_ASSESSMENT_DURATION_MINUTES,
-      showScore: true,
-      showAnswers: false,
-      showBreakdown: true,
-      subcategoryQuotas: {},
-      frequencyMonths: null,
-      criteria: { level1: 60, level2: 70, level3: 80 },
-      difficultyWeights: { easy: 0, medium: 0, hard: 0 }
+      question_count: ASSESSMENT_QUESTION_COUNT,
+      passing_score: 70,
+      duration_minutes: DEFAULT_ASSESSMENT_DURATION_MINUTES,
+      show_score: 1,
+      show_answers: 0,
+      show_breakdown: 1,
+      subcategory_quotas: JSON.stringify({}),
+      frequency_months: null,
+      criteria: JSON.stringify({ passThreshold: 60, scoreWeights: { exam: 70, practical: 30 } }),
+      difficulty_weights: JSON.stringify({ easy: 0, medium: 0, hard: 0 }),
+      status: 'draft',
+      active: 1,
+      history: JSON.stringify([
+        { timestamp: new Date().toISOString(), user: userLabel, action: 'created' }
+      ]),
+      created_by: userLabel,
+      updated_by: userLabel
     };
 
     setRoundSaving(true);
     try {
-      const response = await apiRequest('/api/admin/assessments/rounds', { method: 'POST', body: payload });
-      const createdId = response?.data?.id;
+      const response = await apiRequest('/api/admin/assessment-rounds', { method: 'POST', body: payload });
+      const createdId = response?.id || response?.data?.id || payload.id || null;
       if (expectedSeq !== categorySelectSeqRef.current) {
         return;
       }
@@ -650,14 +766,14 @@ const AdminQuizBank = () => {
       description: '',
       frequencyMonths: '',
       questionCount: ASSESSMENT_QUESTION_COUNT,
-      passingScore: 60,
+      scoreWeights: { exam: 70, practical: 30 },
       durationMinutes: DEFAULT_ASSESSMENT_DURATION_MINUTES,
       showScore: true,
       showAnswers: false,
       showBreakdown: true,
       targetLevel: '',
       subcategoryQuotas: {},
-      criteria: { level1: 60, level2: 70, level3: 80 },
+      criteria: { passThreshold: 60 },
       difficultyWeights: { easy: 0, medium: 0, hard: 0 }
     }));
 
@@ -761,6 +877,22 @@ const AdminQuizBank = () => {
       return;
     }
 
+    const examWeight = Number(roundForm.scoreWeights?.exam ?? NaN);
+    const practicalWeight = Number(roundForm.scoreWeights?.practical ?? NaN);
+    const weightTotal = examWeight + practicalWeight;
+    if (!Number.isFinite(examWeight) || !Number.isFinite(practicalWeight)) {
+      setRoundError('กรุณาระบุสัดส่วนคะแนนสอบและภาคปฏิบัติให้ครบถ้วน');
+      return;
+    }
+    if (examWeight < 0 || examWeight > 100 || practicalWeight < 0 || practicalWeight > 100) {
+      setRoundError('สัดส่วนคะแนนต้องอยู่ระหว่าง 0 ถึง 100%');
+      return;
+    }
+    if (weightTotal !== 100) {
+      setRoundError(`สัดส่วนคะแนนสอบและภาคปฏิบัติต้องรวมกันเป็น 100% (ปัจจุบัน ${weightTotal}%)`);
+      return;
+    }
+
     // ตรวจสอบยอดรวม Target % ของทุกหมวดหมู่ย่อย ต้องเท่ากับ 100% (เฉพาะถ้ามีหมวดหมู่ย่อย)
     if (subcategoryOptions[roundForm.category] && subcategoryOptions[roundForm.category].length > 0) {
       const currentTotalTargetPct = subcategoryOptions[roundForm.category].reduce((sum, opt) => {
@@ -774,26 +906,17 @@ const AdminQuizBank = () => {
       }
     }
 
-    const cLevel1 = Number(roundForm.criteria?.level1 || 60);
-    const cLevel2 = Number(roundForm.criteria?.level2 || 70);
-    const cLevel3 = Number(roundForm.criteria?.level3 || 80);
-
-    if (cLevel1 < 0 || cLevel2 < 0 || cLevel3 < 0) {
-      setRoundError('เกณฑ์คะแนนต้องไม่เป็นค่าติดลบ');
+    const passThreshold = Number(roundForm.criteria?.passThreshold ?? NaN);
+    if (!Number.isFinite(passThreshold)) {
+      setRoundError('กรุณาระบุเกณฑ์ผ่านรวม');
       return;
     }
-
-    if (cLevel1 > 100 || cLevel2 > 100 || cLevel3 > 100) {
-      setRoundError('เกณฑ์คะแนนต้องไม่เกิน 100%');
+    if (passThreshold < 0) {
+      setRoundError('เกณฑ์ผ่านรวมต้องไม่เป็นค่าติดลบ');
       return;
     }
-
-    if (cLevel1 >= cLevel2) {
-      setRoundError('เกณฑ์ระดับ 1 ต้องน้อยกว่าระดับ 2');
-      return;
-    }
-    if (cLevel2 >= cLevel3) {
-      setRoundError('เกณฑ์ระดับ 2 ต้องน้อยกว่าระดับ 3');
+    if (passThreshold > 100) {
+      setRoundError('เกณฑ์ผ่านรวมต้องไม่เกิน 100%');
       return;
     }
 
@@ -832,6 +955,12 @@ const AdminQuizBank = () => {
       ? existingTitle
       : buildUniqueRoundTitle(roundForm.category, selectedRound?.id ?? null);
 
+    const userLabel = resolveUserLabel();
+    const previousHistory = Array.isArray(selectedRound?.history) ? selectedRound.history : [];
+    const nextHistory = [...previousHistory, { timestamp: new Date().toISOString(), user: userLabel, action: selectedRoundId === ROUND_NEW_VALUE ? 'created' : 'updated' }];
+    const statusValue = selectedRound?.status || 'draft';
+    const activeValue = selectedRound?.active ?? 1;
+
     const normalizedSubcategoryQuotas = (subcategoryOptions[roundForm.category] || []).reduce((acc, option) => {
       const q = roundForm.subcategoryQuotas?.[option.value] || {};
       const pct = q.pct === '' || q.pct === undefined || q.pct === null ? 0 : Number(q.pct);
@@ -847,31 +976,38 @@ const AdminQuizBank = () => {
       category: roundForm.category,
       title: resolvedTitle,
       description: roundForm.description ? roundForm.description.trim() : '',
-      questionCount: finalQuestionCount,
-      frequencyMonths: roundForm.frequencyMonths ? Number(roundForm.frequencyMonths) : null,
-      passingScore: Number(roundForm.passingScore || 60),
-      durationMinutes: Number(roundForm.durationMinutes),
-      showScore: roundForm.showScore,
-      showAnswers: roundForm.showAnswers,
-      showBreakdown: roundForm.showBreakdown,
-      subcategoryQuotas: normalizedSubcategoryQuotas,
-      difficultyWeights: resolvedDifficultyWeights,
-      criteria: {
-        level1: Number(roundForm.passingScore || 60),
-        level2: Number(roundForm.criteria?.level2 || 70),
-        level3: Number(roundForm.criteria?.level3 || 80)
-      }
+      question_count: finalQuestionCount,
+      frequency_months: roundForm.frequencyMonths ? Number(roundForm.frequencyMonths) : null,
+      passing_score: Number(roundForm.scoreWeights?.exam ?? 70),
+      duration_minutes: Number(roundForm.durationMinutes),
+      show_score: roundForm.showScore ? 1 : 0,
+      show_answers: roundForm.showAnswers ? 1 : 0,
+      show_breakdown: roundForm.showBreakdown ? 1 : 0,
+      subcategory_quotas: JSON.stringify(normalizedSubcategoryQuotas),
+      difficulty_weights: JSON.stringify(resolvedDifficultyWeights),
+      status: statusValue,
+      active: activeValue ? 1 : 0,
+      history: JSON.stringify(nextHistory),
+      updated_by: userLabel,
+      criteria: JSON.stringify({
+        passThreshold: Number(roundForm.criteria?.passThreshold ?? 60),
+        scoreWeights: {
+          exam: examWeight,
+          practical: practicalWeight
+        }
+      })
     };
 
     setRoundSaving(true);
     try {
       if (selectedRoundId && selectedRoundId !== ROUND_NEW_VALUE) {
-        await apiRequest(`/api/admin/assessments/rounds/${selectedRoundId}`, { method: 'PUT', body: payload });
+        await apiRequest(`/api/admin/assessment-rounds/${selectedRoundId}`, { method: 'PUT', body: payload });
         await loadRounds(selectedRoundId, { keepSelection: true });
         setRoundMessage('บันทึกกิจกรรมข้อสอบเรียบร้อย');
       } else {
-        const created = await apiRequest('/api/admin/assessments/rounds', { method: 'POST', body: payload });
-        const createdId = created?.id || created?.data?.id || null;
+        const createPayload = { ...payload, id: generateUuid(), created_by: userLabel };
+        const created = await apiRequest('/api/admin/assessment-rounds', { method: 'POST', body: createPayload });
+        const createdId = created?.id || created?.data?.id || createPayload.id || null;
         await loadRounds(createdId || undefined, { keepSelection: true });
         if (createdId) {
           setSelectedRoundId(createdId);
@@ -1218,12 +1354,14 @@ const AdminQuizBank = () => {
     setShowSimulationModal(true);
   }, [roundForm, questionsForSelectedCategory, subcategoryOptions, getCategoryDisplayName]);
 
-  const criteriaL1 = Number(roundForm.criteria?.level1 ?? 0);
-  const criteriaL2 = Number(roundForm.criteria?.level2 ?? 0);
-  const criteriaL3 = Number(roundForm.criteria?.level3 ?? 0);
-  const isL1Error = roundError && (criteriaL1 < 0 || criteriaL1 > 100 || criteriaL1 >= criteriaL2);
-  const isL2Error = roundError && (criteriaL2 < 0 || criteriaL2 > 100 || criteriaL1 >= criteriaL2 || criteriaL2 >= criteriaL3);
-  const isL3Error = roundError && (criteriaL3 < 0 || criteriaL3 > 100 || criteriaL2 >= criteriaL3);
+  const rawPassThreshold = roundForm.criteria?.passThreshold ?? '';
+  const rawExamWeight = roundForm.scoreWeights?.exam ?? '';
+  const rawPracticalWeight = roundForm.scoreWeights?.practical ?? '';
+  const passThresholdValue = rawPassThreshold === '' ? NaN : Number(rawPassThreshold);
+  const examWeightValue = rawExamWeight === '' ? NaN : Number(rawExamWeight);
+  const practicalWeightValue = rawPracticalWeight === '' ? NaN : Number(rawPracticalWeight);
+  const weightTotalValue = (Number.isFinite(examWeightValue) ? examWeightValue : 0) + (Number.isFinite(practicalWeightValue) ? practicalWeightValue : 0);
+  const isPassThresholdError = roundError && (Number.isFinite(passThresholdValue) && (passThresholdValue < 0 || passThresholdValue > 100));
   const isSingleLevel = roundForm.targetLevel && roundForm.targetLevel !== 'all';
   const resolvedDifficultyWeights = isSingleLevel
     ? {
@@ -1294,19 +1432,43 @@ const AdminQuizBank = () => {
                       <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '4px' }}>ระยะเวลาเว้นช่วงก่อนสอบครั้งถัดไป</div>
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-passing-score" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เกณฑ์ผ่าน (%)</label>
+                      <label htmlFor="round-exam-weight" style={{ fontSize: '0.9rem', fontWeight: 600 }}>สัดส่วนคะแนนสอบ (%)</label>
                       <input
-                        id="round-passing-score"
+                        id="round-exam-weight"
                         type="number"
                         min="0"
                         max="100"
-                        value={roundForm.passingScore}
-                        onChange={(e) => setRoundForm({ ...roundForm, passingScore: Number(e.target.value) })}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (roundForm.passingScore === '' || roundForm.passingScore === null)) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                        value={roundForm.scoreWeights?.exam ?? ''}
+                        onChange={(e) => {
+                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                          setRoundForm(prev => ({
+                            ...prev,
+                            scoreWeights: { ...prev.scoreWeights, exam: nextValue }
+                          }));
+                        }}
+                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(examWeightValue) && (examWeightValue < 0 || examWeightValue > 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
                       />
-                      {(attemptedSubmit && (roundForm.passingScore === '' || roundForm.passingScore === null)) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุเกณฑ์ผ่าน</div>
-                      )}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label htmlFor="round-practical-weight" style={{ fontSize: '0.9rem', fontWeight: 600 }}>สัดส่วนคะแนนภาคปฏิบัติ (%)</label>
+                      <input
+                        id="round-practical-weight"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={roundForm.scoreWeights?.practical ?? ''}
+                        onChange={(e) => {
+                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                          setRoundForm(prev => ({
+                            ...prev,
+                            scoreWeights: { ...prev.scoreWeights, practical: nextValue }
+                          }));
+                        }}
+                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(practicalWeightValue) && (practicalWeightValue < 0 || practicalWeightValue > 100 || weightTotalValue !== 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
+                      />
+                      <div style={{ fontSize: '0.8rem', color: weightTotalValue === 100 ? '#38a169' : '#e53e3e', marginTop: '4px' }}>
+                        รวม {weightTotalValue}% {weightTotalValue === 100 ? '(ครบถ้วน)' : '(ต้องรวม 100%)'}
+                      </div>
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label htmlFor="round-question-count" style={{ fontSize: '0.9rem', fontWeight: 600 }}>จำนวนข้อสอบ (ข้อ)</label>
@@ -1316,7 +1478,7 @@ const AdminQuizBank = () => {
                         min={1}
                         value={roundForm.questionCount}
                         onChange={(e) => setRoundForm({ ...roundForm, questionCount: Number(e.target.value) })}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
                       />
                       {(attemptedSubmit && !roundForm.questionCount) && (
                         <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุจำนวนข้อสอบ</div>
@@ -1333,11 +1495,30 @@ const AdminQuizBank = () => {
                         min={1}
                         value={roundForm.durationMinutes}
                         onChange={(e) => setRoundForm({ ...roundForm, durationMinutes: Number(e.target.value) })}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
                       />
                       {(attemptedSubmit && !roundForm.durationMinutes) && (
                         <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุเวลาสอบ</div>
                       )}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
+                      <label htmlFor="criteria-pass-threshold" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เกณฑ์ผ่านรวม (%) (คะแนนสอบ + ภาคปฏิบัติ)</label>
+                      <input
+                        id="criteria-pass-threshold"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={roundForm.criteria?.passThreshold ?? ''}
+                        onChange={(e) => {
+                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                          setRoundForm(prev => ({
+                            ...prev,
+                            criteria: { ...prev.criteria, passThreshold: nextValue }
+                          }));
+                        }}
+                        style={{ padding: '0.45rem', borderRadius: '6px', border: isPassThresholdError ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
+                      />
+                      <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '4px' }}>ระบบจะเทียบคะแนนรวมกับเกณฑ์นี้เพื่อพิจารณาผ่าน</div>
                     </div>
                     <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
                       <label htmlFor="round-description" style={{ fontSize: '0.9rem', fontWeight: 600 }}>รายละเอียดเพิ่มเติม</label>

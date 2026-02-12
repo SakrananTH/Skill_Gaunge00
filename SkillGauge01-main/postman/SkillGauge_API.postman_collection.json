@@ -1,0 +1,457 @@
+{
+  "info": {
+    "name": "SkillGauge API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3002"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /api/auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"admin@example.com\",\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "roles",
+          "item": [
+            { "name": "GET /api/admin/roles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/roles", "host": ["{{baseUrl}}"], "path": ["api", "admin", "roles"] } } },
+            { "name": "GET /api/admin/roles/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/roles/{{roleId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "roles", "{{roleId}}"] } } },
+            { "name": "POST /api/admin/roles", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"key\": \"admin\",\n  \"description\": \"Administrator\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/roles", "host": ["{{baseUrl}}"], "path": ["api", "admin", "roles"] } } },
+            { "name": "PUT /api/admin/roles/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/roles/{{roleId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "roles", "{{roleId}}"] } } },
+            { "name": "DELETE /api/admin/roles/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/roles/{{roleId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "roles", "{{roleId}}"] } } }
+          ]
+        },
+        {
+          "name": "sites",
+          "item": [
+            { "name": "GET /api/admin/sites", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/sites", "host": ["{{baseUrl}}"], "path": ["api", "admin", "sites"] } } },
+            { "name": "GET /api/admin/sites/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "sites", "{{siteId}}"] } } },
+            { "name": "POST /api/admin/sites", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Site A\",\n  \"location\": \"Bangkok\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/sites", "host": ["{{baseUrl}}"], "path": ["api", "admin", "sites"] } } },
+            { "name": "PUT /api/admin/sites/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"location\": \"Updated Location\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "sites", "{{siteId}}"] } } },
+            { "name": "DELETE /api/admin/sites/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "sites", "{{siteId}}"] } } }
+          ]
+        },
+        {
+          "name": "workers",
+          "item": [
+            { "name": "GET /api/admin/workers", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/workers", "host": ["{{baseUrl}}"], "path": ["api", "admin", "workers"] } } },
+            { "name": "GET /api/admin/workers/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "workers", "{{workerId}}"] } } },
+            { "name": "POST /api/admin/workers", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"national_id\": \"1234567890123\",\n  \"full_name\": \"Worker Name\",\n  \"phone\": \"0812345678\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/workers", "host": ["{{baseUrl}}"], "path": ["api", "admin", "workers"] } } },
+            { "name": "PUT /api/admin/workers/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"phone\": \"0899999999\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "workers", "{{workerId}}"] } } },
+            { "name": "DELETE /api/admin/workers/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "workers", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-accounts",
+          "item": [
+            { "name": "GET /api/admin/worker-accounts", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-accounts", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-accounts"] } } },
+            { "name": "GET /api/admin/worker-accounts/:worker_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-accounts/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-accounts", "{{workerId}}"] } } },
+            { "name": "POST /api/admin/worker-accounts", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"email\": \"worker@example.com\",\n  \"password_hash\": \"$2a$10$replace_with_hash\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-accounts", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-accounts"] } } },
+            { "name": "PUT /api/admin/worker-accounts/:worker_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-accounts/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-accounts", "{{workerId}}"] } } },
+            { "name": "DELETE /api/admin/worker-accounts/:worker_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/worker-accounts/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-accounts", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-profiles",
+          "item": [
+            { "name": "GET /api/admin/worker-profiles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-profiles"] } } },
+            { "name": "GET /api/admin/worker-profiles/:worker_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "POST /api/admin/worker-profiles", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-profiles"] } } },
+            { "name": "PUT /api/admin/worker-profiles/:worker_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "DELETE /api/admin/worker-profiles/:worker_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-profiles", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "questions",
+          "item": [
+            { "name": "GET /api/admin/questions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/questions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "questions"] } } },
+            { "name": "GET /api/admin/questions/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "questions", "{{questionId}}"] } } },
+            { "name": "POST /api/admin/questions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"text\": \"Question text\",\n  \"category\": \"general\",\n  \"difficulty\": \"easy\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/questions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "questions"] } } },
+            { "name": "PUT /api/admin/questions/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"text\": \"Updated question text\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "questions", "{{questionId}}"] } } },
+            { "name": "DELETE /api/admin/questions/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "questions", "{{questionId}}"] } } }
+          ]
+        },
+        {
+          "name": "question-options",
+          "item": [
+            { "name": "GET /api/admin/question-options", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/question-options", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-options"] } } },
+            { "name": "GET /api/admin/question-options/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/question-options/{{optionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-options", "{{optionId}}"] } } },
+            { "name": "POST /api/admin/question-options", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"question_id\": \"{{questionId}}\",\n  \"text\": \"Option text\",\n  \"is_correct\": 0\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/question-options", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-options"] } } },
+            { "name": "PUT /api/admin/question-options/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"text\": \"Updated option text\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/question-options/{{optionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-options", "{{optionId}}"] } } },
+            { "name": "DELETE /api/admin/question-options/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/question-options/{{optionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-options", "{{optionId}}"] } } }
+          ]
+        },
+        {
+          "name": "question-structural",
+          "item": [
+            { "name": "GET /api/admin/question-structural", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/question-structural", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-structural"] } } },
+            { "name": "GET /api/admin/question-structural/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/question-structural/{{structuralId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-structural", "{{structuralId}}"] } } },
+            { "name": "POST /api/admin/question-structural", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"question_text\": \"Question text\",\n  \"choice_a\": \"A\",\n  \"choice_b\": \"B\",\n  \"choice_c\": \"C\",\n  \"choice_d\": \"D\",\n  \"answer\": \"a\",\n  \"set_no\": 1\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/question-structural", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-structural"] } } },
+            { "name": "PUT /api/admin/question-structural/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"question_text\": \"Updated question text\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/question-structural/{{structuralId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-structural", "{{structuralId}}"] } } },
+            { "name": "DELETE /api/admin/question-structural/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/question-structural/{{structuralId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "question-structural", "{{structuralId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-rounds",
+          "item": [
+            { "name": "GET /api/admin/assessment-rounds", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-rounds"] } } },
+            { "name": "GET /api/admin/assessment-rounds/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "POST /api/admin/assessment-rounds", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Round title\",\n  \"category\": \"structure\",\n  \"question_count\": 60\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-rounds"] } } },
+            { "name": "PUT /api/admin/assessment-rounds/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "DELETE /api/admin/assessment-rounds/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-rounds", "{{roundId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-settings",
+          "item": [
+            { "name": "GET /api/admin/assessment-settings", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-settings", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-settings"] } } },
+            { "name": "GET /api/admin/assessment-settings/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-settings/{{settingId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-settings", "{{settingId}}"] } } },
+            { "name": "POST /api/admin/assessment-settings", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"question_count\": 60\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-settings", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-settings"] } } },
+            { "name": "PUT /api/admin/assessment-settings/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"question_count\": 80\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-settings/{{settingId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-settings", "{{settingId}}"] } } },
+            { "name": "DELETE /api/admin/assessment-settings/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/assessment-settings/{{settingId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-settings", "{{settingId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-sessions",
+          "item": [
+            { "name": "GET /api/admin/assessment-sessions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-sessions"] } } },
+            { "name": "GET /api/admin/assessment-sessions/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "POST /api/admin/assessment-sessions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"round_id\": \"{{roundId}}\",\n  \"status\": \"in_progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-sessions"] } } },
+            { "name": "PUT /api/admin/assessment-sessions/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"finished\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "DELETE /api/admin/assessment-sessions/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-sessions", "{{sessionId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-session-questions",
+          "item": [
+            { "name": "GET /api/admin/assessment-session-questions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-session-questions"] } } },
+            { "name": "GET /api/admin/assessment-session-questions/:session_id/:question_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "POST /api/admin/assessment-session-questions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"session_id\": \"{{sessionId}}\",\n  \"question_id\": \"{{questionId}}\",\n  \"display_order\": 1,\n  \"source_table\": \"questions\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-session-questions"] } } },
+            { "name": "PUT /api/admin/assessment-session-questions/:session_id/:question_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"display_order\": 2\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "DELETE /api/admin/assessment-session-questions/:session_id/:question_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } }
+          ]
+        },
+        {
+          "name": "task-worker-assignments",
+          "item": [
+            { "name": "GET /api/admin/task-worker-assignments", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "admin", "task-worker-assignments"] } } },
+            { "name": "GET /api/admin/task-worker-assignments/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "POST /api/admin/task-worker-assignments", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"worker_id\": {{workerId}},\n  \"assignment_type\": \"general\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "admin", "task-worker-assignments"] } } },
+            { "name": "PUT /api/admin/task-worker-assignments/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"in-progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "DELETE /api/admin/task-worker-assignments/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "task-worker-assignments", "{{assignmentId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-assessment-results",
+          "item": [
+            { "name": "GET /api/admin/worker-assessment-results", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-assessment-results"] } } },
+            { "name": "GET /api/admin/worker-assessment-results/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "POST /api/admin/worker-assessment-results", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"total_score\": 10,\n  \"total_questions\": 20\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-assessment-results"] } } },
+            { "name": "PUT /api/admin/worker-assessment-results/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"passed\": 1\n}" }, "url": { "raw": "{{baseUrl}}/api/admin/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "DELETE /api/admin/worker-assessment-results/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/admin/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "worker-assessment-results", "{{resultId}}"] } } }
+          ]
+        },
+        {
+          "name": "views",
+          "item": [
+            { "name": "GET /api/admin/views/assessment-session-questions-with-level", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/admin/views/assessment-session-questions-with-level?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "admin", "views", "assessment-session-questions-with-level"], "query": [{ "key": "limit", "value": "100" }] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PM",
+      "item": [
+        {
+          "name": "sites",
+          "item": [
+            { "name": "GET /api/pm/sites", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/sites", "host": ["{{baseUrl}}"], "path": ["api", "pm", "sites"] } } },
+            { "name": "GET /api/pm/sites/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "sites", "{{siteId}}"] } } },
+            { "name": "POST /api/pm/sites", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Site A\",\n  \"location\": \"Bangkok\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/sites", "host": ["{{baseUrl}}"], "path": ["api", "pm", "sites"] } } },
+            { "name": "PUT /api/pm/sites/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"location\": \"Updated Location\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "sites", "{{siteId}}"] } } },
+            { "name": "DELETE /api/pm/sites/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/sites/{{siteId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "sites", "{{siteId}}"] } } }
+          ]
+        },
+        {
+          "name": "workers",
+          "item": [
+            { "name": "GET /api/pm/workers", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/workers", "host": ["{{baseUrl}}"], "path": ["api", "pm", "workers"] } } },
+            { "name": "GET /api/pm/workers/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "workers", "{{workerId}}"] } } },
+            { "name": "POST /api/pm/workers", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"national_id\": \"1234567890123\",\n  \"full_name\": \"Worker Name\",\n  \"phone\": \"0812345678\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/workers", "host": ["{{baseUrl}}"], "path": ["api", "pm", "workers"] } } },
+            { "name": "PUT /api/pm/workers/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"phone\": \"0899999999\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "workers", "{{workerId}}"] } } },
+            { "name": "DELETE /api/pm/workers/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "workers", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-profiles",
+          "item": [
+            { "name": "GET /api/pm/worker-profiles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-profiles"] } } },
+            { "name": "GET /api/pm/worker-profiles/:worker_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "POST /api/pm/worker-profiles", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-profiles"] } } },
+            { "name": "PUT /api/pm/worker-profiles/:worker_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "DELETE /api/pm/worker-profiles/:worker_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-profiles", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-rounds",
+          "item": [
+            { "name": "GET /api/pm/assessment-rounds", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-rounds"] } } },
+            { "name": "GET /api/pm/assessment-rounds/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "POST /api/pm/assessment-rounds", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Round title\",\n  \"category\": \"structure\",\n  \"question_count\": 60\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-rounds"] } } },
+            { "name": "PUT /api/pm/assessment-rounds/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "DELETE /api/pm/assessment-rounds/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-rounds", "{{roundId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-sessions",
+          "item": [
+            { "name": "GET /api/pm/assessment-sessions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-sessions"] } } },
+            { "name": "GET /api/pm/assessment-sessions/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "POST /api/pm/assessment-sessions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"round_id\": \"{{roundId}}\",\n  \"status\": \"in_progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-sessions"] } } },
+            { "name": "PUT /api/pm/assessment-sessions/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"finished\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "DELETE /api/pm/assessment-sessions/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-sessions", "{{sessionId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-session-questions",
+          "item": [
+            { "name": "GET /api/pm/assessment-session-questions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-session-questions"] } } },
+            { "name": "GET /api/pm/assessment-session-questions/:session_id/:question_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "POST /api/pm/assessment-session-questions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"session_id\": \"{{sessionId}}\",\n  \"question_id\": \"{{questionId}}\",\n  \"display_order\": 1,\n  \"source_table\": \"questions\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-session-questions"] } } },
+            { "name": "PUT /api/pm/assessment-session-questions/:session_id/:question_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"display_order\": 2\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "DELETE /api/pm/assessment-session-questions/:session_id/:question_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } }
+          ]
+        },
+        {
+          "name": "task-worker-assignments",
+          "item": [
+            { "name": "GET /api/pm/task-worker-assignments", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "pm", "task-worker-assignments"] } } },
+            { "name": "GET /api/pm/task-worker-assignments/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "POST /api/pm/task-worker-assignments", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"worker_id\": {{workerId}},\n  \"assignment_type\": \"general\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "pm", "task-worker-assignments"] } } },
+            { "name": "PUT /api/pm/task-worker-assignments/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"in-progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "DELETE /api/pm/task-worker-assignments/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "task-worker-assignments", "{{assignmentId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-assessment-results",
+          "item": [
+            { "name": "GET /api/pm/worker-assessment-results", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-assessment-results"] } } },
+            { "name": "GET /api/pm/worker-assessment-results/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "POST /api/pm/worker-assessment-results", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"total_score\": 10,\n  \"total_questions\": 20\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-assessment-results"] } } },
+            { "name": "PUT /api/pm/worker-assessment-results/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"passed\": 1\n}" }, "url": { "raw": "{{baseUrl}}/api/pm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "DELETE /api/pm/worker-assessment-results/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/pm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "pm", "worker-assessment-results", "{{resultId}}"] } } }
+          ]
+        },
+        {
+          "name": "views",
+          "item": [
+            { "name": "GET /api/pm/views/assessment-session-questions-with-level", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/pm/views/assessment-session-questions-with-level?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "pm", "views", "assessment-session-questions-with-level"], "query": [{ "key": "limit", "value": "100" }] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "WK",
+      "item": [
+        {
+          "name": "workers",
+          "item": [
+            { "name": "GET /api/wk/workers", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/workers", "host": ["{{baseUrl}}"], "path": ["api", "wk", "workers"] } } },
+            { "name": "GET /api/wk/workers/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "workers", "{{workerId}}"] } } },
+            { "name": "POST /api/wk/workers", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"national_id\": \"1234567890123\",\n  \"full_name\": \"Worker Name\",\n  \"phone\": \"0812345678\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/workers", "host": ["{{baseUrl}}"], "path": ["api", "wk", "workers"] } } },
+            { "name": "PUT /api/wk/workers/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"phone\": \"0899999999\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "workers", "{{workerId}}"] } } },
+            { "name": "DELETE /api/wk/workers/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "workers", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-profiles",
+          "item": [
+            { "name": "GET /api/wk/worker-profiles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-profiles"] } } },
+            { "name": "GET /api/wk/worker-profiles/:worker_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "POST /api/wk/worker-profiles", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-profiles"] } } },
+            { "name": "PUT /api/wk/worker-profiles/:worker_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "DELETE /api/wk/worker-profiles/:worker_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-profiles", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-rounds",
+          "item": [
+            { "name": "GET /api/wk/assessment-rounds", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-rounds"] } } },
+            { "name": "GET /api/wk/assessment-rounds/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "POST /api/wk/assessment-rounds", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Round title\",\n  \"category\": \"structure\",\n  \"question_count\": 60\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-rounds"] } } },
+            { "name": "PUT /api/wk/assessment-rounds/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "DELETE /api/wk/assessment-rounds/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-rounds", "{{roundId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-sessions",
+          "item": [
+            { "name": "GET /api/wk/assessment-sessions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-sessions"] } } },
+            { "name": "GET /api/wk/assessment-sessions/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "POST /api/wk/assessment-sessions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"round_id\": \"{{roundId}}\",\n  \"status\": \"in_progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-sessions"] } } },
+            { "name": "PUT /api/wk/assessment-sessions/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"finished\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "DELETE /api/wk/assessment-sessions/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-sessions", "{{sessionId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-session-questions",
+          "item": [
+            { "name": "GET /api/wk/assessment-session-questions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-session-questions"] } } },
+            { "name": "GET /api/wk/assessment-session-questions/:session_id/:question_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "POST /api/wk/assessment-session-questions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"session_id\": \"{{sessionId}}\",\n  \"question_id\": \"{{questionId}}\",\n  \"display_order\": 1,\n  \"source_table\": \"questions\"\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-session-questions"] } } },
+            { "name": "PUT /api/wk/assessment-session-questions/:session_id/:question_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"display_order\": 2\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "DELETE /api/wk/assessment-session-questions/:session_id/:question_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-assessment-results",
+          "item": [
+            { "name": "GET /api/wk/worker-assessment-results", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-assessment-results"] } } },
+            { "name": "GET /api/wk/worker-assessment-results/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "POST /api/wk/worker-assessment-results", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"total_score\": 10,\n  \"total_questions\": 20\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-assessment-results"] } } },
+            { "name": "PUT /api/wk/worker-assessment-results/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"passed\": 1\n}" }, "url": { "raw": "{{baseUrl}}/api/wk/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "DELETE /api/wk/worker-assessment-results/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/wk/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "wk", "worker-assessment-results", "{{resultId}}"] } } }
+          ]
+        },
+        {
+          "name": "views",
+          "item": [
+            { "name": "GET /api/wk/views/assessment-session-questions-with-level", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/wk/views/assessment-session-questions-with-level?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "wk", "views", "assessment-session-questions-with-level"], "query": [{ "key": "limit", "value": "100" }] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FM",
+      "item": [
+        {
+          "name": "workers",
+          "item": [
+            { "name": "GET /api/fm/workers", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/workers", "host": ["{{baseUrl}}"], "path": ["api", "fm", "workers"] } } },
+            { "name": "GET /api/fm/workers/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "workers", "{{workerId}}"] } } },
+            { "name": "POST /api/fm/workers", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"national_id\": \"1234567890123\",\n  \"full_name\": \"Worker Name\",\n  \"phone\": \"0812345678\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/workers", "host": ["{{baseUrl}}"], "path": ["api", "fm", "workers"] } } },
+            { "name": "PUT /api/fm/workers/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"phone\": \"0899999999\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "workers", "{{workerId}}"] } } },
+            { "name": "DELETE /api/fm/workers/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/workers/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "workers", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-profiles",
+          "item": [
+            { "name": "GET /api/fm/worker-profiles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-profiles"] } } },
+            { "name": "GET /api/fm/worker-profiles/:worker_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "POST /api/fm/worker-profiles", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/worker-profiles", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-profiles"] } } },
+            { "name": "PUT /api/fm/worker-profiles/:worker_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payload\": \"{}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-profiles", "{{workerId}}"] } } },
+            { "name": "DELETE /api/fm/worker-profiles/:worker_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/worker-profiles/{{workerId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-profiles", "{{workerId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-rounds",
+          "item": [
+            { "name": "GET /api/fm/assessment-rounds", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-rounds"] } } },
+            { "name": "GET /api/fm/assessment-rounds/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "POST /api/fm/assessment-rounds", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Round title\",\n  \"category\": \"structure\",\n  \"question_count\": 60\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-rounds", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-rounds"] } } },
+            { "name": "PUT /api/fm/assessment-rounds/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-rounds", "{{roundId}}"] } } },
+            { "name": "DELETE /api/fm/assessment-rounds/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/assessment-rounds/{{roundId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-rounds", "{{roundId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-sessions",
+          "item": [
+            { "name": "GET /api/fm/assessment-sessions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-sessions"] } } },
+            { "name": "GET /api/fm/assessment-sessions/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "POST /api/fm/assessment-sessions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"round_id\": \"{{roundId}}\",\n  \"status\": \"in_progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-sessions", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-sessions"] } } },
+            { "name": "PUT /api/fm/assessment-sessions/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"finished\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-sessions", "{{sessionId}}"] } } },
+            { "name": "DELETE /api/fm/assessment-sessions/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/assessment-sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-sessions", "{{sessionId}}"] } } }
+          ]
+        },
+        {
+          "name": "assessment-session-questions",
+          "item": [
+            { "name": "GET /api/fm/assessment-session-questions", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-session-questions"] } } },
+            { "name": "GET /api/fm/assessment-session-questions/:session_id/:question_id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "POST /api/fm/assessment-session-questions", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"session_id\": \"{{sessionId}}\",\n  \"question_id\": \"{{questionId}}\",\n  \"display_order\": 1,\n  \"source_table\": \"questions\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-session-questions", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-session-questions"] } } },
+            { "name": "PUT /api/fm/assessment-session-questions/:session_id/:question_id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"display_order\": 2\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } },
+            { "name": "DELETE /api/fm/assessment-session-questions/:session_id/:question_id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/assessment-session-questions/{{sessionId}}/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "assessment-session-questions", "{{sessionId}}", "{{questionId}}"] } } }
+          ]
+        },
+        {
+          "name": "task-worker-assignments",
+          "item": [
+            { "name": "GET /api/fm/task-worker-assignments", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "fm", "task-worker-assignments"] } } },
+            { "name": "GET /api/fm/task-worker-assignments/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "POST /api/fm/task-worker-assignments", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"worker_id\": {{workerId}},\n  \"assignment_type\": \"general\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/task-worker-assignments", "host": ["{{baseUrl}}"], "path": ["api", "fm", "task-worker-assignments"] } } },
+            { "name": "PUT /api/fm/task-worker-assignments/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"in-progress\"\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "task-worker-assignments", "{{assignmentId}}"] } } },
+            { "name": "DELETE /api/fm/task-worker-assignments/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/task-worker-assignments/{{assignmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "task-worker-assignments", "{{assignmentId}}"] } } }
+          ]
+        },
+        {
+          "name": "worker-assessment-results",
+          "item": [
+            { "name": "GET /api/fm/worker-assessment-results", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-assessment-results"] } } },
+            { "name": "GET /api/fm/worker-assessment-results/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "POST /api/fm/worker-assessment-results", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"worker_id\": {{workerId}},\n  \"total_score\": 10,\n  \"total_questions\": 20\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/worker-assessment-results", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-assessment-results"] } } },
+            { "name": "PUT /api/fm/worker-assessment-results/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"passed\": 1\n}" }, "url": { "raw": "{{baseUrl}}/api/fm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-assessment-results", "{{resultId}}"] } } },
+            { "name": "DELETE /api/fm/worker-assessment-results/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/fm/worker-assessment-results/{{resultId}}", "host": ["{{baseUrl}}"], "path": ["api", "fm", "worker-assessment-results", "{{resultId}}"] } } }
+          ]
+        },
+        {
+          "name": "views",
+          "item": [
+            { "name": "GET /api/fm/views/assessment-session-questions-with-level", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/fm/views/assessment-session-questions-with-level?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "fm", "views", "assessment-session-questions-with-level"], "query": [{ "key": "limit", "value": "100" }] } } }
+          ]
+        }
+      ]
+    }
+  ]
+}

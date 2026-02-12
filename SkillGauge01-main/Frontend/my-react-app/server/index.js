@@ -1070,21 +1070,30 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     if (!user && identifier.includes('@')) {
-      const workerAccount = await queryOne(
-        `SELECT 
-           a.worker_id,
-           a.email,
-           a.password_hash,
-           a.status,
-           w.full_name,
-           w.phone,
-           w.role_code
-         FROM worker_accounts a
-         INNER JOIN workers w ON w.id = a.worker_id
-         WHERE LOWER(a.email) = LOWER(?)
-         LIMIT 1`,
-        [identifier]
-      );
+      let workerAccount = null;
+      try {
+        workerAccount = await queryOne(
+          `SELECT 
+             a.worker_id,
+             a.email,
+             a.password_hash,
+             a.status,
+             w.full_name,
+             w.phone,
+             w.role_code
+           FROM worker_accounts a
+           INNER JOIN workers w ON w.id = a.worker_id
+           WHERE LOWER(a.email) = LOWER(?)
+           LIMIT 1`,
+          [identifier]
+        );
+      } catch (error) {
+        if (error?.code !== 'ER_NO_SUCH_TABLE' &&
+            error?.code !== 'ER_BAD_TABLE_ERROR' &&
+            error?.code !== 'ER_BAD_FIELD_ERROR') {
+          throw error;
+        }
+      }
 
       if (workerAccount) {
         user = {
@@ -1102,7 +1111,17 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!user) return res.status(401).json({ message: 'invalid_credentials' });
 
-    const isMatch = await bcrypt.compare(parsed.password, user.password_hash ?? '');
+    if (!user.password_hash) {
+      return res.status(401).json({ message: 'invalid_credentials' });
+    }
+
+    let isMatch = false;
+    try {
+      isMatch = await bcrypt.compare(parsed.password, user.password_hash);
+    } catch (error) {
+      console.warn('[login] password compare failed', error?.message || error);
+      return res.status(401).json({ message: 'invalid_credentials' });
+    }
     if (!isMatch) return res.status(401).json({ message: 'invalid_credentials' });
 
     if (userSource === 'worker_accounts' && (!user.status || user.status !== 'active')) {
@@ -1118,10 +1137,17 @@ app.post('/api/auth/login', async (req, res) => {
       return 'worker';
     };
 
-    const roles =
-      userSource === 'worker_accounts'
-        ? [normalizeRoleKey(workerRoleKey)]
-        : (await fetchUserRoles(user.id)).map(normalizeRoleKey);
+    let roles = [];
+    if (userSource === 'worker_accounts') {
+      roles = [normalizeRoleKey(workerRoleKey)];
+    } else {
+      try {
+        roles = (await fetchUserRoles(user.id)).map(normalizeRoleKey);
+      } catch (error) {
+        console.warn('[login] fetch roles failed', error?.message || error);
+        roles = ['worker'];
+      }
+    }
     const token = jwt.sign({ sub: user.id, roles }, JWT_SECRET, {
       expiresIn: JWT_EXPIRES_IN,
       issuer: 'skillgauge-api',

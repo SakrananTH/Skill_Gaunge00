@@ -111,7 +111,7 @@ const AdminQuestionForm = () => {
           // ตรวจสอบว่าเป็นคำถาม Structural หรือไม่ (ID ขึ้นต้นด้วย struct_)
           if (id.startsWith('struct_')) {
             const realId = id.replace('struct_', '');
-            const rawData = await apiRequest(`/api/question-structural/${realId}`); // สมมติ Endpoint นี้
+            const rawData = await apiRequest(`/api/admin/question-structural/${realId}`);
             
             // แปลงข้อมูล Structural เป็นฟอร์แมตของฟอร์ม
             data = {
@@ -321,7 +321,7 @@ const AdminQuestionForm = () => {
             choice_d: sanitizedOptions[3]?.text || '',
             answer: answerChar
           };
-          await apiRequest(`/api/question-structural/${realId}`, { method: 'PUT', body: structPayload });
+          await apiRequest(`/api/admin/question-structural/${realId}`, { method: 'PUT', body: structPayload });
         } else {
           await apiRequest(`/api/admin/questions/${editingQuestion.id}`, { method: 'PUT', body: payload });
         }

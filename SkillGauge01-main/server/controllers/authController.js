@@ -1,150 +1,117 @@
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import { queryOne, query, writeAuditLog } from '../utils/db.js';
-import { normalizePhoneTH, getRequestIp, getRoleLabel } from '../utils/helpers.js';
-import { signupSchema, loginSchema } from '../schemas/authSchemas.js';
-import { userService } from '../services/userService.js';
-import { ADMIN_BYPASS } from '../config/constants.js';
+import { queryOne } from '../utils/db.js';
+
+function normalizeIdentifier(identifier) {
+  if (!identifier) return { phone: '', email: '' };
+  const value = String(identifier).trim();
+  if (value.includes('@')) return { phone: '', email: value.toLowerCase() };
+  return { phone: value, email: '' };
+}
+
+async function resolveUserRoles(userId) {
+  const row = await queryOne(
+    `SELECT JSON_ARRAYAGG(r.key) AS roles
+     FROM user_roles ur
+     JOIN roles r ON r.id = ur.role_id
+     WHERE ur.user_id = ?`,
+    [userId]
+  );
+  if (!row || !row.roles) return [];
+  if (Array.isArray(row.roles)) return row.roles;
+  try {
+    const parsed = JSON.parse(row.roles);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+  function normalizeWorkerRole(roleCode) {
+    if (!roleCode) return 'worker';
+    const value = String(roleCode).toLowerCase();
+    if (value === 'admin') return 'admin';
+    if (value === 'project_manager' || value === 'pm') return 'pm';
+    if (value === 'foreman' || value === 'fm') return 'fm';
+    return value === 'worker' || value === 'wk' ? 'wk' : 'worker';
+  }
 
 export const authController = {
-  async signup(req, res) {
-    try {
-      const payload = signupSchema.parse(req.body);
-      const user = await userService.createSignupUser(payload, req);
-      
-      await writeAuditLog({
-        req,
-        action: 'AUTH_SIGNUP',
-        details: { userId: user.id },
-        username: user.phone,
-        role: 'guest'
-      });
-
-      res.status(201).json({ message: 'User created successfully', userId: user.id });
-    } catch (error) {
-       if (error.status) {
-           return res.status(error.status).json({ error: error.message });
-       }
-       if (error.issues) { // Zod error
-           return res.status(400).json({ error: 'Validation Error', details: error.issues });
-       }
-       console.error('Signup error:', error);
-       res.status(500).json({ error: 'Internal Server Error' });
-    }
-  },
-
   async login(req, res) {
     try {
-      const { identifier, phone, password } = loginSchema.parse(req.body);
-      let targetPhone = phone;
-
-      // Logic to resolve identifier/phone
-      if (!targetPhone && identifier) {
-          // simple heuristic
-          if (/^[0-9+]+$/.test(identifier)) {
-              targetPhone = identifier;
-          }
-      }
-      
-      const normalizedPhone = normalizePhoneTH(targetPhone);
-
-      // Admin Bypass
-      if (
-          normalizedPhone === ADMIN_BYPASS.normalizedPhone && 
-          password === ADMIN_BYPASS.password
-      ) {
-           const token = jwt.sign(
-               { 
-                   id: ADMIN_BYPASS.id, 
-                   roles: ['admin', 'project_manager'], 
-                   full_name: ADMIN_BYPASS.fullName 
-               },
-               env.JWT_SECRET,
-               { expiresIn: env.JWT_EXPIRES_IN }
-           );
-           
-           return res.json({
-               token,
-               user: {
-                   id: ADMIN_BYPASS.id,
-                   full_name: ADMIN_BYPASS.fullName,
-                   roles: ['admin', 'project_manager'],
-                   roles_label: ['ผู้ดูแลระบบ', 'ผู้จัดการโครงการ (PM)']
-               }
-           });
+      const { identifier, password } = req.body || {};
+      if (!identifier || !password) {
+        return res.status(400).json({ error: 'Missing identifier or password' });
       }
 
-      if (!normalizedPhone) {
-          return res.status(400).json({ error: 'Invalid phone number format' });
-      }
+      const { phone, email } = normalizeIdentifier(identifier);
 
-      const user = await queryOne(
-          `SELECT u.*, 
-           (SELECT JSON_ARRAYAGG(r.key) 
-            FROM user_roles ur 
-            JOIN roles r ON r.id = ur.role_id 
-            WHERE ur.user_id = u.id) as roles
-           FROM users u 
-           WHERE u.phone = ? 
-           LIMIT 1`,
-          [normalizedPhone]
+      let user = await queryOne(
+        `SELECT id, full_name, phone, email, password_hash, status
+         FROM users
+         WHERE phone = ? OR LOWER(email) = ?
+         LIMIT 1`,
+        [phone || '', email || '']
       );
 
-      if (!user) {
-          // Fake delay/verify to prevent timing attacks?
-          await bcrypt.compare(password, '$2a$10$abcdefghijklmnopqrstuvwxyz123456'); 
-          return res.status(401).json({ error: 'Invalid credentials' });
+      let roles = [];
+      let source = 'users';
+
+      if (!user && email) {
+        const worker = await queryOne(
+          `SELECT a.worker_id AS id, w.full_name, w.phone, a.email, a.password_hash, a.status, w.role_code
+           FROM worker_accounts a
+           JOIN workers w ON w.id = a.worker_id
+           WHERE LOWER(a.email) = LOWER(?)
+           LIMIT 1`,
+          [email]
+        );
+
+        if (worker) {
+          user = worker;
+          source = 'worker_accounts';
+          roles = [normalizeWorkerRole(worker.role_code)];
+        }
       }
 
-       const isMatch = await bcrypt.compare(password, user.password_hash || '');
-       if (!isMatch) {
-            await writeAuditLog({
-                req,
-                username: normalizedPhone,
-                action: 'AUTH_LOGIN_FAILED',
-                status: 'failure',
-                details: 'Incorrect password'
-            });
-            return res.status(401).json({ error: 'Invalid credentials' });
-       }
+      if (!user || !user.password_hash) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
 
-       if (user.status !== 'active') {
-            return res.status(403).json({ error: 'Account is inactive' });
-       }
+      const match = await bcrypt.compare(password, user.password_hash);
+      if (!match) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
 
-       const roles = user.roles || []; // MySQL JSON might return null if no roles
-       // Clean up roles (if JSON_ARRAYAGG returns null/string weirdness)
-       const rolesArray = Array.isArray(roles) ? roles : [];
-       
-       const token = jwt.sign(
-           { id: user.id, roles: rolesArray, full_name: user.full_name },
-           env.JWT_SECRET,
-           { expiresIn: env.JWT_EXPIRES_IN }
-       );
+      if (user.status && user.status !== 'active') {
+        return res.status(403).json({ error: 'Account is inactive' });
+      }
 
-       await writeAuditLog({
-          req,
-          username: user.full_name,
-          role: rolesArray[0] || 'user',
-          action: 'AUTH_LOGIN',
-          details: { userId: user.id }
-       });
+      if (source === 'users') {
+        roles = await resolveUserRoles(user.id);
+        if (!roles.length) roles = ['worker'];
+      }
 
-       res.json({
-           token,
-           user: {
-               id: user.id,
-               full_name: user.full_name,
-               roles: rolesArray,
-               roles_label: rolesArray.map(r => getRoleLabel(r))
-           }
-       });
+      const token = jwt.sign(
+        { id: user.id, roles, full_name: user.full_name || '' },
+        env.JWT_SECRET,
+        { expiresIn: env.JWT_EXPIRES_IN }
+      );
 
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          full_name: user.full_name || '',
+          phone: user.phone || '',
+          email: user.email || '',
+          roles
+        }
+      });
     } catch (error) {
-        if (error.issues) return res.status(400).json({ error: 'Validation Error', details: error.issues });
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Login failed', error);
+      res.status(500).json({ error: 'Login failed' });
     }
   }
 };

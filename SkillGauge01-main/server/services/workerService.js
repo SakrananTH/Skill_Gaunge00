@@ -3,6 +3,7 @@ import { getColumn, toNullableString, toISODateString, parseDateValue, parseAgeV
 
 let workerProfilesTableExists = false;
 let workerProfilesWorkerIdIsNumeric = false;
+let workerProfilesPayloadColumn = null;
 
 // Initialize metadata
 export async function refreshWorkerMetadata() {
@@ -34,6 +35,27 @@ export async function refreshWorkerMetadata() {
   } catch (error) {
     workerProfilesWorkerIdIsNumeric = false;
   }
+
+  if (!workerProfilesTableExists) {
+    workerProfilesPayloadColumn = null;
+    return;
+  }
+
+  try {
+    const columns = await query(
+      `SHOW COLUMNS FROM worker_profiles`
+    );
+    const columnNames = new Set((columns || []).map(col => String(col.Field)));
+    if (columnNames.has('payload')) {
+      workerProfilesPayloadColumn = 'payload';
+    } else if (columnNames.has('profile_data')) {
+      workerProfilesPayloadColumn = 'profile_data';
+    } else {
+      workerProfilesPayloadColumn = null;
+    }
+  } catch (error) {
+    workerProfilesPayloadColumn = null;
+  }
 }
 
 // Call on load
@@ -41,22 +63,26 @@ refreshWorkerMetadata().catch(console.warn);
 
 export const workerService = {
   async fetchWorkerProfile(connection, workerId) {
-      if (!workerProfilesTableExists) return {};
+      if (!workerProfilesTableExists || !workerProfilesPayloadColumn) return {};
       // Handle ID type mismatch if schema varies
       if (workerProfilesWorkerIdIsNumeric && !Number.isInteger(Number(workerId))) return {};
       
       try {
-          const rows = await query(
-              'SELECT * FROM worker_profiles WHERE worker_id = ? ORDER BY created_at DESC LIMIT 1',
-              [workerId],
-              connection
-          );
+        const rows = await query(
+          `SELECT ${workerProfilesPayloadColumn} AS profile_payload
+           FROM worker_profiles
+           WHERE worker_id = ?
+           LIMIT 1`,
+          [workerId],
+          connection
+        );
           if (!rows.length) return {};
           
           try {
-              return typeof rows[0].profile_data === 'string' 
-                ? JSON.parse(rows[0].profile_data) 
-                : rows[0].profile_data;
+          const rawPayload = rows[0]?.profile_payload;
+          return typeof rawPayload === 'string'
+          ? JSON.parse(rawPayload)
+          : (rawPayload || {});
           } catch {
               return {};
           }
@@ -67,14 +93,14 @@ export const workerService = {
   },
 
   async saveWorkerProfile(connection, workerId, payload) {
-      if (!workerProfilesTableExists) return;
+      if (!workerProfilesTableExists || !workerProfilesPayloadColumn) return;
       if (workerProfilesWorkerIdIsNumeric && !Number.isInteger(Number(workerId))) return;
 
       try {
           const jsonStr = JSON.stringify(payload);
           await execute(
-              `INSERT INTO worker_profiles (worker_id, profile_data, created_at) VALUES (?, ?, NOW())
-               ON DUPLICATE KEY UPDATE profile_data = VALUES(profile_data), updated_at = NOW()`,
+          `INSERT INTO worker_profiles (worker_id, ${workerProfilesPayloadColumn}) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE ${workerProfilesPayloadColumn} = VALUES(${workerProfilesPayloadColumn})`,
               [workerId, jsonStr],
               connection
           );

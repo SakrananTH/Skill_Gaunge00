@@ -57,9 +57,11 @@ const AdminUsersTable = () => {
       const data = await apiRequest('/api/admin/workers');
       const items = Array.isArray(data?.items)
         ? data.items
-        : Array.isArray(data)
-          ? data
-          : [];
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
       setWorkers(items);
     } catch (err) {
       console.error('Failed to load workers', err);
@@ -142,9 +144,10 @@ const AdminUsersTable = () => {
     }
 
     try {
-      const payload = worker.fullData
+      const rawPayload = worker.fullData
         ? worker
         : await apiRequest(`/api/admin/workers/${worker.id}`);
+      const payload = rawPayload?.data ?? rawPayload;
       navigate('/admin/worker-registration', {
         state: {
           editWorker: payload,

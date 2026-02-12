@@ -123,7 +123,11 @@ const AdminOverview = ({ setTab }) => {
 
         // --- 1. Process Workers Data ---
         const workersData = workersRes.status === 'fulfilled' ? workersRes.value : [];
-        const items = Array.isArray(workersData?.items) ? workersData.items : (Array.isArray(workersData) ? workersData : []);
+        const items = Array.isArray(workersData?.items)
+          ? workersData.items
+          : Array.isArray(workersData?.data)
+            ? workersData.data
+            : (Array.isArray(workersData) ? workersData : []);
 
         // กรองข้อมูลฝั่ง Client-side เพิ่มเติมเพื่อให้แน่ใจว่าแสดงผลถูกต้อง (กรณี API ไม่รองรับ Filter)
         const normalizeRole = (role) => String(role || '').trim().toLowerCase();
