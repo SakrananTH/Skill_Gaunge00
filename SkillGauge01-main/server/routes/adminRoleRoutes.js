@@ -1,5 +1,6 @@
 import { buildRoleRouter } from './roleCrud.js';
 import { requireAuth, authorizeRoles } from '../middlewares/auth.js';
+import { execute, query } from '../utils/db.js';
 
 const tables = [
   { path: 'roles', table: 'roles', idColumn: 'id' },
@@ -32,6 +33,39 @@ const adminRoleRoutes = buildRoleRouter({
   allowedRoles: ['admin'],
   tables,
   views
+});
+
+// Custom route to reset worker assessment
+adminRoleRoutes.post('/workers/:id/reset-assessment', async (req, res) => {
+  const workerId = req.params.id;
+  try {
+    // 1. Delete assessment results
+    await execute('DELETE FROM worker_assessment_results WHERE worker_id = ?', [workerId]);
+
+    // 2. Find sessions related to this worker to clean up dependent data
+    // (If foreign keys cascade, this might happen automatically, but we do it explicitly to be safe)
+    const sessions = await query('SELECT id FROM assessment_sessions WHERE worker_id = ?', [workerId]);
+    
+    if (sessions.length > 0) {
+      const sessionIds = sessions.map(s => s.id);
+      // Create placeholders for IN clause
+      const placeholders = sessionIds.map(() => '?').join(',');
+      
+      // Delete session questions
+      await execute(`DELETE FROM assessment_session_questions WHERE session_id IN (${placeholders})`, sessionIds);
+      
+      // Delete sessions
+      await execute(`DELETE FROM assessment_sessions WHERE id IN (${placeholders})`, sessionIds);
+    }
+
+    // 3. Just in case, if assessment_sessions uses id/worker_id directly without cascading and we missed something
+    // (The above covers it)
+
+    res.json({ success: true, message: 'Assessment reset successfully' });
+  } catch (error) {
+    console.error('Failed to reset assessment:', error);
+    res.status(500).json({ message: 'Failed to reset assessment', error: error.message });
+  }
 });
 
 export default adminRoleRoutes;

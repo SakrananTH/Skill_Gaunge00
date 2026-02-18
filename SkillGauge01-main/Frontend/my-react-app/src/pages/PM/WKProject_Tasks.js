@@ -3,7 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { mockUser } from '../../mock/mockData';
 import '../pm/WKDashboard.css';
 import './PMTheme.css';
+import './WKProject_Tasks.css';
 import PMTopNav from './PMTopNav';
+import { apiRequest } from '../../utils/api';
+import { performLogout } from '../../utils/logout';
 
 const WKProjectTasks = () => {
   const location = useLocation();
@@ -11,8 +14,7 @@ const WKProjectTasks = () => {
   
   // ✅ จุดสำคัญ: รับข้อมูลโครงการที่ส่งมาจากหน้า Projects (TaskSummary)
   const { project: incomingProject, selectedWorker, mode } = location.state || {};
-  const user = location.state?.user || { ...mockUser, role: 'Project Manager', name: 'สมชาย ใจดี' };
-  const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+  const user = location.state?.user || { ...mockUser, role: 'ผู้จัดการโครงการ', name: 'สมชาย ใจดี' };
   const [availableCounts, setAvailableCounts] = useState({});
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -25,10 +27,16 @@ const WKProjectTasks = () => {
     'ช่างประปา': 'งานประปา',
     'ช่างหลังคา': 'งานหลังคา',
     'ช่างกระเบื้อง': 'งานกระเบื้อง',
-    'ช่างก่ออิฐฉาบปูน': 'งานก่ออิฐฉาบปูน'
+    'ช่างก่ออิฐฉาบปูน': 'งานก่ออิฐฉาบปูน',
+    'ช่างประตูหน้าต่างอลูมิเนียม': 'งานประตูหน้าต่างอลูมิเนียม',
+    'ช่างฝ้าเพดาน': 'งานฝ้าเพดาน'
   };
 
   const resolveTaskType = (value) => workerCategoryToTaskType[value] || value;
+  const resolveProjectTaskType = (project) => {
+    const candidate = project?.project_type || project?.taskType || project?.trade_type || '';
+    return resolveTaskType(candidate) || 'งานโครงสร้าง';
+  };
   
   // ✅ ฟังก์ชันเล่นเสียง Beep เมื่อเกิด Error
   const playErrorBeep = () => {
@@ -49,8 +57,7 @@ const WKProjectTasks = () => {
   // ฟังก์ชัน Logout สำหรับ Sidebar
   const handleLogout = () => {
     if (window.confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
-      sessionStorage.clear();
-      navigate('/login');
+      performLogout(navigate);
     }
   };
 
@@ -58,7 +65,7 @@ const WKProjectTasks = () => {
 
   const [taskForm, setTaskForm] = useState({
     taskName: mode === 'assessment' ? `แบบฝึกภาคปฏิบัติ: ${selectedWorker?.name || ''}` : (incomingProject?.taskName || ''),
-    taskType: resolveTaskType(selectedWorker?.skill) || incomingProject?.taskType || 'งานโครงสร้าง',
+    taskType: resolveTaskType(selectedWorker?.skill) || resolveProjectTaskType(incomingProject),
     milpCondition: incomingProject?.milpCondition || 'ทั่วไป',
     requiredWorkers: mode === 'assessment' ? '1' : (incomingProject?.requiredWorkers || '1'),
     requiredLevel: incomingProject?.requiredLevel || '1', // ✅ เพิ่ม Field ระดับฝีมือ
@@ -71,45 +78,36 @@ const WKProjectTasks = () => {
   useEffect(() => {
     const fetchAvailableWorkers = async () => {
       try {
-        const token = sessionStorage.getItem('auth_token');
-        const res = await fetch(`${API}/api/admin/workers`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const items = Array.isArray(data?.items) ? data.items : data;
+        const data = await apiRequest('/api/admin/workers');
+        const items = Array.isArray(data?.items) ? data.items : data;
           
-          // ✅ Normalize Worker Data และคำนวณ Level
-          const processedWorkers = (Array.isArray(items) ? items : []).map(w => {
-            const scoreValue = w?.assessmentTotalScore ?? w?.score ?? w?.exam_score ?? null;
-            const totalQuestionsValue = w?.assessmentTotalQuestions ?? w?.total_questions ?? null;
-            const theoryPercent = totalQuestionsValue > 0 ? (scoreValue / totalQuestionsValue) * 100 : 0;
-            
-            let level = 0;
-            if (theoryPercent >= 90) level = 3;
-            else if (theoryPercent >= 80) level = 2;
-            else if (theoryPercent >= 60) level = 1;
+        // ✅ Normalize Worker Data และคำนวณ Level
+        const processedWorkers = (Array.isArray(items) ? items : []).map(w => {
+          const scoreValue = w?.assessmentTotalScore ?? w?.score ?? w?.exam_score ?? null;
+          const totalQuestionsValue = w?.assessmentTotalQuestions ?? w?.total_questions ?? null;
+          const theoryPercent = totalQuestionsValue > 0 ? (scoreValue / totalQuestionsValue) * 100 : 0;
+          
+          let level = 0;
+          if (theoryPercent >= 90) level = 3;
+          else if (theoryPercent >= 80) level = 2;
+          else if (theoryPercent >= 60) level = 1;
 
-            const foremanPercent = w?.foremanAssessmentPercent ?? null;
-            const hasForemanAssessment = w?.foremanAssessed === true || w?.foremanAssessmentTotalScore != null || foremanPercent != null;
-            
-            let status = 'ยังไม่ได้ทำข้อสอบ';
-            if (hasForemanAssessment) status = 'ประเมินแล้ว';
-            else if (scoreValue != null || w?.assessmentPassed === true || theoryPercent >= 60) status = 'รอการประเมิน';
+          const foremanPercent = w?.foremanAssessmentPercent ?? null;
+          const hasForemanAssessment = w?.foremanAssessed === true || w?.foremanAssessmentTotalScore != null || foremanPercent != null;
+          
+          let status = 'ยังไม่ได้ทำข้อสอบ';
+          if (hasForemanAssessment) status = 'ประเมินแล้ว';
+          else if (scoreValue != null || w?.assessmentPassed === true || theoryPercent >= 60) status = 'รอการประเมิน';
 
-            return {
-              ...w,
-              skillType: resolveTaskType(w?.category || w?.skill || w?.trade_type || ''),
-              level,
-              status
-            };
-          });
+          return {
+            ...w,
+            skillType: resolveTaskType(w?.category || w?.skill || w?.trade_type || ''),
+            level,
+            status
+          };
+        });
 
-          setAvailableWorkerList(processedWorkers.filter(w => w.status === 'รอการประเมิน')); // เก็บเฉพาะคนที่พร้อมรับงาน (รอประเมินภาคปฏิบัติ)
-        }
+        setAvailableWorkerList(processedWorkers.filter(w => w.status === 'รอการประเมิน')); // เก็บเฉพาะคนที่พร้อมรับงาน (รอประเมินภาคปฏิบัติ)
       } catch (e) { console.error(e); }
     };
     fetchAvailableWorkers();
@@ -124,26 +122,15 @@ const WKProjectTasks = () => {
   useEffect(() => {
     const loadProjects = async () => {
       try {
-        const token = sessionStorage.getItem('auth_token');
-        const res = await fetch(`${API}/api/dashboard/project-task-counts`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProjects(Array.isArray(data) ? data : []);
-          const incomingProjectId = incomingProject?.project_id || incomingProject?.id || incomingProject?.pj_id;
-          const incomingProjectName = incomingProject?.project_name || incomingProject?.projectName || incomingProject?.name;
-          if (incomingProjectId) {
-            setSelectedProjectId(incomingProjectId);
-          } else if (incomingProjectName) {
-            const match = (Array.isArray(data) ? data : []).find(p => p.project_name === incomingProjectName);
-            setSelectedProjectId(match?.project_id || '');
-          }
-        } else {
-          setProjects([]);
+        const data = await apiRequest('/api/dashboard/project-task-counts');
+        setProjects(Array.isArray(data) ? data : []);
+        const incomingProjectId = incomingProject?.project_id || incomingProject?.id || incomingProject?.pj_id;
+        const incomingProjectName = incomingProject?.project_name || incomingProject?.projectName || incomingProject?.name;
+        if (incomingProjectId) {
+          setSelectedProjectId(incomingProjectId);
+        } else if (incomingProjectName) {
+          const match = (Array.isArray(data) ? data : []).find(p => p.project_name === incomingProjectName);
+          setSelectedProjectId(match?.project_id || '');
         }
       } catch (error) {
         console.error(error);
@@ -178,7 +165,7 @@ const WKProjectTasks = () => {
     const requested = parseInt(taskForm.requiredWorkers);
 
     if (requested > available) {
-      newErrors.requiredWorkers = `มีช่างสาย "${taskForm.taskType}" (Lv.${taskForm.requiredLevel}+) ว่างเพียง ${available} คน`;
+      newErrors.requiredWorkers = `มีช่างสาย "${taskForm.taskType}" (ระดับ ${taskForm.requiredLevel}+) ว่างเพียง ${available} คน`;
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -209,185 +196,222 @@ const WKProjectTasks = () => {
 
   return (
     <div className="pm-page">
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-6px); }
-          50% { transform: translateX(6px); }
-          75% { transform: translateX(-6px); }
-        }
-      `}</style>
-      <PMTopNav active="tasks" user={user} onLogout={handleLogout} />
+      <PMTopNav active="projects" user={user} onLogout={handleLogout} />
 
       <main className="pm-content">
           {/* ✅ ปุ่มย้อนกลับด้านบน */}
-          <div style={{ marginBottom: '15px' }}>
+          <div className="back-button-container">
             <button 
               onClick={() => navigate(-1)} 
-              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500' }}
+              className="back-button"
             >
-              ← ย้อนกลับ
+              <i className='bx bx-left-arrow-alt' style={{ fontSize: '18px' }}></i> ย้อนกลับ
             </button>
           </div>
 
-          {/* ✅ เลเยอร์หัวข้อ: แสดงชื่อโครงการที่กำลังเพิ่มงานให้ (สีน้ำเงินเข้ม) */}
-          <header style={{ marginBottom: '30px' }}>
-            <div style={{ background: '#1e293b', color: 'white', padding: '25px 35px', borderRadius: '20px', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}>
-              {mode === 'assessment' ? (
-                <>
-                  <h2 style={{ margin: 0, fontSize: '24px' }}>🎯 มอบหมายงานประเมินภาคปฏิบัติ</h2>
-                  <p style={{ opacity: 0.8, marginTop: '8px', fontSize: '14px' }}>สำหรับช่าง: {selectedWorker?.name} ({selectedWorker?.skill})</p>
-                  <div style={{ marginTop: '15px' }}>
-                    <label style={{ fontSize: '13px', display: 'block', marginBottom: '5px' }}>เลือกโครงการที่จะใช้ประเมิน:</label>
-                    <select 
-                      value={selectedProjectId} 
-                      onChange={(e) => setSelectedProjectId(e.target.value)}
-                      style={{ padding: '8px', borderRadius: '8px', width: '100%', maxWidth: '400px', color: '#1e293b' }}
-                    >
-                      <option value="">-- เลือกโครงการ --</option>
-                      {projects.map((p) => <option key={p.project_id} value={p.project_id}>{p.project_name}</option>)}
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h2 style={{ margin: 0, fontSize: '24px' }}>🏗️ เพิ่มภารกิจย่อยในโครงการ: {incomingProject?.project_name || incomingProject?.projectName}</h2>
-                  <p style={{ opacity: 0.8, marginTop: '8px', fontSize: '14px' }}>
-                    ประเภท: {incomingProject?.projectType} | สถานที่: {incomingProject?.location || incomingProject?.locationDetail}
-                  </p>
-                </>
-              )}
-            </div>
+          {/* ✅ เลเยอร์หัวข้อ */}
+          <header className={`task-header animate-slide-up ${mode === 'assessment' ? 'exam-mode' : 'normal-mode'}`}>
+              <div className="header-bg-icon">
+                {mode === 'assessment' ? <i className='bx bx-id-card'></i> : <i className='bx bx-briefcase-alt-2'></i>}
+              </div>
+              
+              <div className="header-content-wrapper">
+                {mode === 'assessment' ? (
+                  <>
+                    <div className="header-left">
+                      <div className="status-badge">
+                        <i className='bx bx-id-card'></i> โหมดการประเมิน
+                      </div>
+                      <h2 className="header-title">
+                        มอบหมายงานประเมินภาคปฏิบัติ
+                      </h2>
+                      <p className="header-subtitle">
+                        ผู้รับการประเมิน: <span className="highlight-name">{selectedWorker?.name}</span>
+                        <span className="worker-skill-badge">• {selectedWorker?.skill}</span>
+                      </p>
+                    </div>
+                    
+                    <div className="header-right">
+                      <div className="project-select-box">
+                        <label className="project-select-label">
+                          <i className='bx bx-building-house'></i> เลือกโครงการที่จะใช้ประเมิน:
+                        </label>
+                        <select 
+                          value={selectedProjectId} 
+                          onChange={(e) => setSelectedProjectId(e.target.value)}
+                          className="header-select"
+                        >
+                          <option value="">-- เลือกโครงการ --</option>
+                          {projects.map((p) => <option key={p.project_id} value={p.project_id}>{p.project_name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="header-left">
+                      <div className="status-badge">
+                        <i className='bx bx-briefcase-alt-2'></i> งานใหม่
+                      </div>
+                      <h2 className="header-title">
+                        เพิ่มภารกิจย่อยในโครงการ
+                      </h2>
+                      <h3 className="header-subtitle project-name">{incomingProject?.project_name || incomingProject?.projectName}</h3>
+                    </div>
+                    <div className="header-right">
+                      <div className="project-info-tags">
+                        <div className="info-tag">
+                          <i className='bx bx-category'></i> {incomingProject?.projectType}
+                        </div>
+                        <div className="info-tag">
+                          <i className='bx bx-map'></i> {incomingProject?.location || incomingProject?.locationDetail}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
           </header>
 
-          <form onSubmit={handleSubmitToAssign}>
-            {/* ✅ เลเยอร์ฟอร์ม: สีขาวมนๆ พร้อม Shadow นุ่มๆ */}
-            <section className="pm-section">
-              <h3 style={{ color: '#1e293b', marginBottom: '25px', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px' }}>รายละเอียดภารกิจใหม่</h3>
+          <form onSubmit={handleSubmitToAssign} className="animate-slide-up animate-delay-1">
+            {/* ✅ เลเยอร์ฟอร์ม: Modern Card */}
+            <section className="modern-card">
+              <div className="form-header">
+                <h3 className="form-title">
+                  <i className='bx bx-edit-alt' style={{ color: '#3b82f6', fontSize: '24px' }}></i>
+                  รายละเอียดภารกิจ
+                </h3>
+                <span className="form-subtitle">กรุณาระบุข้อมูลงานให้ชัดเจนเพื่อให้ผู้รับงานเข้าใจวัตถุประสงค์</span>
+              </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+              <div className="form-grid">
                 
-                {/* ✅ แถวที่ 1: ชื่อภารกิจ และ ประเภทงานช่าง (อยู่คู่กัน) */}
+                {/* ✅ แถวที่ 1 */}
                 <div>
-                  <label style={labelStyle}>ชื่องานย่อย</label>
+                  <label className="form-label">
+                    <i className='bx bx-task' style={{ color: '#3b82f6' }}></i> ชื่องานย่อย <span className="required-mark">*</span>
+                  </label>
                   <input 
-                    className="input" 
+                    className="modern-input" 
                     name="taskName" 
-                    placeholder="เช่น งานเดินสายไฟห้องน้ำ" 
+                    placeholder="ระบุชื่องาน เช่น เดินสายไฟห้องน้ำชั้น 1" 
                     value={taskForm.taskName} 
                     onChange={handleTaskChange} 
                     required 
-                    style={inputStyle} 
                   />
                 </div>
 
                 <div>
-                  <label style={labelStyle}>ประเภทสายงานช่าง</label>
-                  <select className="select" name="taskType" value={taskForm.taskType} onChange={handleTaskChange} style={inputStyle}>
-                    <option value="งานโครงสร้าง">งานโครงสร้าง</option>
-                    <option value="งานไฟฟ้า">งานไฟฟ้า</option>
-                    <option value="งานประปา">งานประปา</option>
-                    <option value="งานสี">งานสี</option>
-                    <option value="งานกระเบื้อง">งานกระเบื้อง</option>
-                    <option value="งานหลังคา">งานหลังคา</option>
-                  </select>
-                </div>
-
-                {/* ✅ แถวที่ 2: เงื่อนไขงาน และ จำนวนช่าง */}
-                <div>
-                  <label style={labelStyle}>เงื่อนไขงาน (Priority)</label>
-                  <select className="select" name="milpCondition" value={taskForm.milpCondition} onChange={handleTaskChange} style={inputStyle}>
-                    <option value="ทั่วไป">ทั่วไป (Normal)</option>
-                    <option value="เร่งด่วน">เร่งด่วน (Urgent)</option>
-                    <option value="วิกฤต">วิกฤต (Critical)</option>
-                  </select>
-                </div>
-
-                <div>
-                   <label style={labelStyle}>ระดับฝีมือขั้นต่ำ (Required Lv.)</label>
-                   <select className="select" name="requiredLevel" value={taskForm.requiredLevel} onChange={handleTaskChange} style={inputStyle}>
-                     <option value="1">Lv.1 (พื้นฐาน)</option>
-                     <option value="2">Lv.2 (ชำนาญการ)</option>
-                     <option value="3">Lv.3 (เชี่ยวชาญ)</option>
-                   </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>
-                    จำนวนช่างที่ต้องการ (คน) 
-                    <span style={{ color: '#0284c7', marginLeft: '10px', fontWeight: 'normal', fontSize: '13px' }}>
-                      (ว่างอยู่: {availableCount} คน)
-                    </span>
+                  <label className="form-label">
+                    <i className='bx bx-wrench' style={{ color: '#f59e0b' }}></i> ประเภทสายงานช่าง
                   </label>
-                  <input 
-                    key={errors.requiredWorkers ? `workers-err-${shakeKey}` : 'workers-ok'}
-                    type="number" 
-                    className="input" 
-                    name="requiredWorkers" 
-                    value={taskForm.requiredWorkers} 
-                    onChange={handleTaskChange} 
-                    min="1" 
-                    required 
-                    style={{ ...inputStyle, border: errors.requiredWorkers ? '1px solid #ef4444' : '1px solid #cbd5e1', animation: errors.requiredWorkers ? 'shake 0.4s ease-in-out' : 'none' }} 
-                  />
-                  {errors.requiredWorkers && <span style={errorStyle}>{errors.requiredWorkers}</span>}
+                  <div style={{ position: 'relative' }}>
+                    <select className="modern-input custom-select" name="taskType" value={taskForm.taskType} onChange={handleTaskChange}>
+                      <option value="งานโครงสร้าง">งานโครงสร้าง</option>
+                      <option value="งานไฟฟ้า">งานไฟฟ้า</option>
+                      <option value="งานประปา">งานประปา</option>
+                      <option value="งานกระเบื้อง">งานกระเบื้อง</option>
+                      <option value="งานหลังคา">งานหลังคา</option>
+                      <option value="งานก่ออิฐฉาบปูน">งานก่ออิฐฉาบปูน</option>
+                      <option value="งานประตูหน้าต่างอลูมิเนียม">งานประตูหน้าต่างอลูมิเนียม</option>
+                      <option value="งานฝ้าเพดาน">งานฝ้าเพดาน</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* ✅ แถวที่ 3: รายละเอียดงานย่อย (Textarea ตัวใหญ่) */}
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>รายละเอียดและคำสั่งงานปฏิบัติ</label>
+                {/* ✅ แถวที่ 2 */}
+                <div className="col-span-2">
+                  <label className="form-label">
+                    <i className='bx bx-error-circle' style={{ color: '#ef4444' }}></i> ความเร่งด่วน
+                  </label>
+                  <div className="priority-options">
+                    {['ทั่วไป', 'เร่งด่วน', 'วิกฤต'].map((cond) => (
+                      <label key={cond} className={`priority-label ${taskForm.milpCondition === cond ? `active ${cond}` : ''}`}>
+                        <input 
+                          type="radio" 
+                          name="milpCondition" 
+                          value={cond} 
+                          checked={taskForm.milpCondition === cond} 
+                          onChange={handleTaskChange} 
+                          style={{ display: 'none' }}
+                        />
+                        {cond}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="col-span-2 form-sub-grid">
+                   <div>
+                      <label className="form-label">
+                        <i className='bx bx-medal' style={{ color: '#8b5cf6' }}></i> ระดับฝีมือขั้นต่ำ
+                      </label>
+                      <select className="modern-input custom-select" name="requiredLevel" value={taskForm.requiredLevel} onChange={handleTaskChange}>
+                        <option value="1">ระดับ 1 (พื้นฐาน)</option>
+                        <option value="2">ระดับ 2 (ชำนาญการ)</option>
+                        <option value="3">ระดับ 3 (เชี่ยวชาญ)</option>
+                      </select>
+                   </div>
+                   
+                   <div>
+                      <label className="form-label">
+                        <i className='bx bx-group' style={{ color: '#10b981' }}></i> จำนวนที่ต้องการ
+                        {mode !== 'assessment' && (
+                          <span className="available-badge">
+                            ว่าง {availableCount}
+                          </span>
+                        )}
+                      </label>
+                      <input 
+                        key={errors.requiredWorkers ? `workers-err-${shakeKey}` : 'workers-ok'}
+                        type="number" 
+                        className={`modern-input ${errors.requiredWorkers ? 'input-error' : ''} ${mode === 'assessment' ? 'disabled' : ''}`}
+                        name="requiredWorkers" 
+                        value={taskForm.requiredWorkers} 
+                        onChange={handleTaskChange} 
+                        min="1" 
+                        required 
+                        disabled={mode === 'assessment'}
+                      />
+                      {errors.requiredWorkers && <span className="error-msg"><i className='bx bx-info-circle'></i> {errors.requiredWorkers}</span>}
+                   </div>
+                </div>
+
+                {/* ✅ แถวที่ 3 */}
+                <div className="col-span-2">
+                  <label className="form-label">
+                    <i className='bx bx-detail' style={{ color: '#64748b' }}></i> รายละเอียดและคำสั่งงาน
+                  </label>
                   <textarea 
-                    className="input" 
+                    className="modern-input textarea-input" 
                     name="taskDetail" 
-                    placeholder="ระบุรายละเอียดงานที่ต้องการให้ช่างปฏิบัติอย่างละเอียด..." 
+                    placeholder="อธิบายรายละเอียดของงาน สิ่งที่ต้องทำ และมาตรฐานที่คาดหวัง..." 
                     value={taskForm.taskDetail} 
                     onChange={handleTaskChange} 
                     required 
-                    style={{ ...inputStyle, minHeight: '150px', resize: 'vertical' }} 
                   />
+                  <div className="char-count">
+                    {taskForm.taskDetail.length} ตัวอักษร
+                  </div>
                 </div>
 
               </div>
 
-              {/* ปุ่มดำเนินการ - ปรับให้มีปุ่มยกเลิกคู่กับปุ่มบันทึก */}
-              <div style={{ marginTop: '40px', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '20px' }}>
+              {/* ปุ่มดำเนินการ */}
+              <div className="button-group">
                 <button 
                   type="button"
+                  className="action-button cancel-button"
                   onClick={() => navigate(-1)}
-                  style={{ 
-                    background: '#f1f5f9', 
-                    color: '#475569', 
-                    padding: '16px 60px', 
-                    borderRadius: '50px', 
-                    border: '1px solid #cbd5e1', 
-                    fontWeight: 'bold', 
-                    fontSize: '18px', 
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.background = '#e2e8f0'}
-                  onMouseOut={(e) => e.currentTarget.style.background = '#f1f5f9'}
                 >
                   ยกเลิก
                 </button>
                 <button 
                   type="submit" 
-                  style={{ 
-                    background: '#e67e22', 
-                    color: 'white', 
-                    padding: '16px 60px', 
-                    borderRadius: '50px', 
-                    border: 'none', 
-                    fontWeight: 'bold', 
-                    fontSize: '18px', 
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 15px rgba(230, 126, 34, 0.2)',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.background = '#d35400'}
-                  onMouseOut={(e) => e.currentTarget.style.background = '#e67e22'}
+                  className={`action-button submit-button ${mode === 'assessment' ? 'assessment-btn' : 'normal-btn'}`}
                 >
-                  บันทึกภารกิจและไปเลือกช่าง ➝
+                  <span>{mode === 'assessment' ? 'เริ่มการประเมิน' : 'บันทึกและเลือกช่าง'}</span>
+                  <i className='bx bx-right-arrow-alt' style={{ fontSize: '20px' }}></i>
                 </button>
               </div>
 
@@ -397,26 +421,5 @@ const WKProjectTasks = () => {
     </div>
   );
 };
-
-// สไตล์คุมเลเยอร์
-const labelStyle = { 
-  fontWeight: '700', 
-  display: 'block', 
-  marginBottom: '10px', 
-  color: '#475569', 
-  fontSize: '14px' 
-};
-
-const inputStyle = { 
-  width: '100%', 
-  padding: '14px 20px', 
-  borderRadius: '12px', 
-  border: '1px solid #cbd5e1', 
-  boxSizing: 'border-box',
-  fontSize: '16px',
-  background: '#fcfcfc',
-  outline: 'none'
-};
-const errorStyle = { color: '#ef4444', fontSize: '12px', marginTop: '5px', display: 'block', fontWeight: '500' };
 
 export default WKProjectTasks;

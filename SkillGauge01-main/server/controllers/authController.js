@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import { queryOne } from '../utils/db.js';
+import { queryOne, writeAuditLog } from '../utils/db.js';
 
 function normalizeIdentifier(identifier) {
   if (!identifier) return { phone: '', email: '' };
@@ -32,9 +32,9 @@ async function resolveUserRoles(userId) {
     if (!roleCode) return 'worker';
     const value = String(roleCode).toLowerCase();
     if (value === 'admin') return 'admin';
-    if (value === 'project_manager' || value === 'pm') return 'pm';
-    if (value === 'foreman' || value === 'fm') return 'fm';
-    return value === 'worker' || value === 'wk' ? 'wk' : 'worker';
+    if (value === 'project_manager' || value === 'pm') return 'project_manager';
+    if (value === 'foreman' || value === 'fm') return 'foreman';
+    return value === 'worker' || value === 'wk' ? 'worker' : 'worker';
   }
 
 export const authController = {
@@ -98,6 +98,19 @@ export const authController = {
         env.JWT_SECRET,
         { expiresIn: env.JWT_EXPIRES_IN }
       );
+
+      await writeAuditLog({
+        req,
+        userId: source === 'users' ? user.id : null,
+        action: 'เข้าสู่ระบบ',
+        details: {
+          event: 'login_success',
+          source,
+          user_name: user.full_name || '',
+          identifier,
+          roles
+        }
+      });
 
       res.json({
         token,

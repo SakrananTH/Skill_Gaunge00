@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { mockUser } from '../../mock/mockData';
+import { apiRequest } from '../../utils/api';
 import '../pm/WKDashboard.css';
 
 const WorkerSettings = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
 
   const tradeLabel = (value) => {
     const key = String(value || '').toLowerCase();
@@ -24,7 +24,12 @@ const WorkerSettings = () => {
   };
 
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker', email: 'worker@example.com' });
-  const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
+  const resolvedTrade =
+    user.fullData?.employment?.tradeType ||
+    user.technician_type ||
+    user.trade_type ||
+    user.tradeType ||
+    user.technicianType;
 
     useEffect(() => {
         const loadData = async () => {
@@ -50,20 +55,17 @@ const WorkerSettings = () => {
                 const query = numericWorkerId
                   ? `workerId=${encodeURIComponent(numericWorkerId)}`
                   : `userId=${encodeURIComponent(currentUser.id)}`;
-                const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data) {
-                            setUser(prev => ({ ...prev, ...data }));
-                        }
-                    }
+                const data = await apiRequest(`/api/worker/profile?${query}`);
+                if (data) {
+                  setUser(prev => ({ ...prev, ...data }));
+                }
                 } catch (err) {
                     console.error('Error fetching worker profile:', err);
                 }
             }
         };
         loadData();
-    }, [apiBase, location.state]);
+    }, [location.state]);
 
   const handleLogout = () => {
     if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {

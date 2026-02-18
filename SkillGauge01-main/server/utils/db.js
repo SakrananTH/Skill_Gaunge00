@@ -39,33 +39,55 @@ export function buildUpdateClause(data) {
   };
 }
 
-export async function writeAuditLog({ req, username, role, action, details, status, connection }) {
-  try {
-    const ipAddress = req ? (req.ip || req.connection?.remoteAddress || 'unknown') : 'system';
-    const userAgent = req ? (req.headers['user-agent'] || 'unknown') : 'system';
-    
-    // Minimal normalization if req is passed but username/role missing
-    const finalUsername = username || (req?.user?.phone) || 'system';
-    const finalRole = role || (req?.user?.roles?.[0]) || 'system';
-    
-    // Clean up details
-    let detailsStr = '';
-    if (typeof details === 'string') detailsStr = details;
-    else if (details) detailsStr = JSON.stringify(details);
+export async function ensureAuditLogSchema(connection) {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      actor_user_id CHAR(36) NULL,
+      action VARCHAR(120) NOT NULL,
+      details JSON NULL,
+      ip_address VARCHAR(45) NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id),
+      KEY idx_audit_logs_actor (actor_user_id),
+      CONSTRAINT fk_audit_logs_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    [],
+    connection
+  );
+}
 
+export async function writeAuditLog({ req, userId, action, details, connection }) {
+  try {
+    const ipAddress = req ? (req.ip || req.connection?.remoteAddress || null) : null;
+    const rawActorUserId = userId || req?.user?.id || null;
+    let actorUserId = null;
+    if (rawActorUserId !== null && rawActorUserId !== undefined) {
+      const userRow = await queryOne(
+        'SELECT id FROM users WHERE id = ? LIMIT 1',
+        [rawActorUserId],
+        connection
+      );
+      if (userRow?.id) {
+        actorUserId = userRow.id;
+      }
+    }
+    let detailsJson = null;
+    if (details !== undefined) {
+      detailsJson = JSON.stringify(details);
+    }
+
+    await ensureAuditLogSchema(connection);
     await execute(
-      `INSERT INTO audit_logs (username, role, action, details, status, ip_address, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_logs (actor_user_id, action, details, ip_address)
+       VALUES (?, ?, ?, ?)`,
       [
-        finalUsername,
-        finalRole,
+        actorUserId,
         action,
-        detailsStr,
-        status || 'success',
-        ipAddress,
-        userAgent
+        detailsJson,
+        ipAddress
       ],
-      connection // Optional passing of connection to be transactional
+      connection
     );
   } catch (error) {
     console.error('Audit log failed:', error);

@@ -4,6 +4,7 @@ import { mockUser } from '../../mock/mockData';
 import '../pm/WKDashboard.css';
 import './PMTheme.css';
 import PMTopNav from './PMTopNav';
+import { apiRequest } from '../../utils/api';
 
 // Internal StatCard Component (Consistent with PMProjectManager)
 const StatCard = ({ icon, label, value, color, bg, onClick, isActive }) => {
@@ -11,20 +12,20 @@ const StatCard = ({ icon, label, value, color, bg, onClick, isActive }) => {
       <div 
           onClick={onClick}
           style={{ 
-              background: 'white', 
+        background: bg,
               borderRadius: '16px', 
               padding: '24px', 
               display: 'flex', 
               alignItems: 'center', 
               gap: '24px', 
-              border: isActive ? `2px solid ${color}` : '1px solid #f1f5f9', 
+        border: '1px solid #e2e8f0', 
               boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', 
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               transform: isActive ? 'translateY(-2px)' : 'none'
           }}
       >
-          <div style={{ width: '64px', height: '64px', background: bg, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
+      <div style={{ width: '64px', height: '64px', background: 'white', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
               {icon}
           </div>
           <div>
@@ -41,7 +42,6 @@ const PMProjects = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const user = location.state?.user || { ...mockUser, role: 'Project Manager' };
-  const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
   const currentDate = new Date();
 
   const handleLogout = () => {
@@ -55,6 +55,7 @@ const PMProjects = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'done'
+  const [typeFilter, setTypeFilter] = useState('all');
   const [toast, setToast] = useState('');
 
   useEffect(() => {
@@ -70,20 +71,8 @@ const PMProjects = () => {
   const loadProjects = async () => {
     setLoading(true);
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/dashboard/project-task-counts`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data);
-      } else {
-        setProjects([]);
-      }
+      const data = await apiRequest('/api/dashboard/project-task-counts');
+      setProjects(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
       setProjects([]);
@@ -96,35 +85,24 @@ const PMProjects = () => {
     if (!window.confirm(`ยืนยันลบโครงการ "${name}"? ข้อมูลที่เกี่ยวข้องทั้งหมดจะหายไป`)) return;
 
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/projects/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-
-      if (res.ok) {
-        setProjects(prev => prev.filter(p => p.project_id !== id));
-        setToast(`ลบโครงการ "${name}" เรียบร้อยแล้ว`);
-        setTimeout(() => setToast(''), 3000);
-      } else {
-        alert('ลบรายการไม่สำเร็จ');
-      }
+      await apiRequest(`/api/projects/${id}`, { method: 'DELETE' });
+      setProjects(prev => prev.filter(p => p.project_id !== id));
+      setToast(`ลบโครงการ "${name}" เรียบร้อยแล้ว`);
+      setTimeout(() => setToast(''), 3000);
     } catch (e) {
       console.error(e);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+      alert(`ลบรายการไม่สำเร็จ: ${e?.data?.message || 'เกิดข้อผิดพลาด'}`);
     }
   };
 
   const filteredProjects = projects.filter(p => {
     const matchesSearch = (p.project_name || "").toLowerCase().includes(searchTerm.toLowerCase());
     const isDone = p.tasks_total > 0 && p.tasks_done === p.tasks_total;
-    
-    if (statusFilter === 'active') return matchesSearch && !isDone;
-    if (statusFilter === 'done') return matchesSearch && isDone;
-    return matchesSearch;
+
+    const matchesStatus = statusFilter === 'active' ? !isDone : (statusFilter === 'done' ? isDone : true);
+    const matchesType = typeFilter === 'all' ? true : p.project_type === typeFilter;
+
+    return matchesSearch && matchesStatus && matchesType;
   });
 
   const totalProjects = projects.length;
@@ -139,6 +117,18 @@ const PMProjects = () => {
     const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
     return `${d.getDate()} ${months[d.getMonth()]} ${String(year).slice(-2)}`;
   };
+
+  const projectTypes = [
+    { value: 'all', label: 'ทุกประเภท' },
+    { value: 'งานโครงสร้าง', label: 'งานโครงสร้าง' },
+    { value: 'งานไฟฟ้า', label: 'งานไฟฟ้า' },
+    { value: 'งานประปา', label: 'งานประปา' },
+    { value: 'งานหลังคา', label: 'งานหลังคา' },
+    { value: 'งานกระเบื้อง', label: 'งานกระเบื้อง' },
+    { value: 'งานก่ออิฐฉาบปูน', label: 'งานก่ออิฐฉาบปูน' },
+    { value: 'งานประตูหน้าต่างอลูมิเนียม', label: 'งานประตูหน้าต่างอลูมิเนียม' },
+    { value: 'งานฝ้าเพดาน', label: 'งานฝ้าเพดาน' },
+  ];
 
   return (
     <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
@@ -163,7 +153,7 @@ const PMProjects = () => {
         
         {/* Hero Banner - consistent with PMProjectManager */}
         <div style={{ 
-          background: 'linear-gradient(135deg, #e0f2fe 0%, #0ea5e9 100%)', // Blue Sky Tone
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', // Dark Executive Tone
           borderRadius: '24px', 
           padding: '24px 40px', 
           display: 'flex', 
@@ -179,9 +169,9 @@ const PMProjects = () => {
             <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.8), transparent 70%)', pointerEvents: 'none' }}></div>
             <div style={{ position: 'relative', zIndex: 1 }}>
                 <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#0f172a', marginBottom: '8px', letterSpacing: '-0.5px', fontFamily: "'Kanit', sans-serif" }}>
-                  ศูนย์บริหารจัดการโครงการ
+                  <span style={{ color: '#f8fafc' }}>ศูนย์บริหารจัดการโครงการ</span>
                 </h1>
-                <p style={{ fontSize: '16px', color: '#475569', margin: '0 0 16px 0', fontWeight: '500' }}>
+                <p style={{ fontSize: '16px', color: '#94a3b8', margin: '0 0 16px 0', fontWeight: '500' }}>
                   ติดตามความคืบหน้า ควบคุมระยะเวลา และบริหารทรัพยากร
                 </p>
                 <button 
@@ -209,7 +199,7 @@ const PMProjects = () => {
         {/* Search & Filter Bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
              <div style={{ display: 'flex', gap: '20px' }}>
-                <div style={{ position: 'relative', width: '300px' }}>
+                <div style={{ position: 'relative', width: '350px' }}>
                     <i className='bx bx-search' style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '20px' }}></i>
                     <input 
                     type="text" 
@@ -224,6 +214,43 @@ const PMProjects = () => {
                     />
                 </div>
              </div>
+             <button 
+                onClick={loadProjects}
+                style={{ 
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
+                    borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white',
+                    color: '#64748b', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#1e293b'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = '#64748b'; }}
+             >
+                <i className='bx bx-refresh' style={{ fontSize: '20px' }}></i> รีเฟรชข้อมูล
+             </button>
+        </div>
+
+        {/* Type Filter Buttons */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
+            {projectTypes.map((type) => (
+                <button
+                    key={type.value}
+                    onClick={() => setTypeFilter(type.value)}
+                    style={{
+                        padding: '8px 16px',
+                        borderRadius: '20px',
+                        border: '1px solid',
+                        borderColor: typeFilter === type.value ? '#0284c7' : '#e2e8f0',
+                        background: typeFilter === type.value ? '#eff6ff' : 'white',
+                        color: typeFilter === type.value ? '#0284c7' : '#64748b',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    {type.label}
+                </button>
+            ))}
         </div>
 
         {/* Stats Grid */}
@@ -237,7 +264,7 @@ const PMProjects = () => {
             isActive={statusFilter === 'all'}
           />
           <StatCard 
-            icon={<i className='bx bx-loader-alt'></i>}
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M11 2v5h2V2zm0 15v5h2v-5zm6-6v2h5v-2zM7 13v-2H2v2zm.76 1.83L5.99 16.6l-1.77 1.76.71.71.71.71 1.76-1.77 1.77-1.77-.71-.7zm8.48 0-.7.71-.71.7 1.77 1.77 1.76 1.77.71-.71.71-.71-1.77-1.76zM5.64 4.22l-.71.71-.71.71L5.99 7.4l1.77 1.77.7-.71.71-.7L7.4 5.99z"></path></svg>}
             label="กำลังดำเนินการ" 
             value={activeProjects} 
             color="#f59e0b" bg="#fffbeb" 
@@ -264,12 +291,12 @@ const PMProjects = () => {
                   padding: '16px 24px', 
                   borderBottom: '1px solid #e2e8f0' 
               }}>
-                <div style={{ fontWeight: '600', color: '#475569' }}>ชื่อโครงการ / สถานที่</div>
-                <div style={{ fontWeight: '600', color: '#475569' }}>ความคืบหน้า</div>
-                <div style={{ fontWeight: '600', color: '#475569' }}>ระยะเวลา</div>
-                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>จำนวนงาน</div>
-                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>สถานะ</div>
-                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>จัดการ</div>
+                <div style={{ fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}><i className='bx bx-building-house'></i> ชื่อโครงการ / สถานที่</div>
+                <div style={{ fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}><i className='bx bx-line-chart'></i> ความคืบหน้า</div>
+                <div style={{ fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}><i className='bx bx-calendar-event'></i> ระยะเวลา</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><i className='bx bx-list-check'></i> จำนวนงาน</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><i className='bx bx-info-circle'></i> สถานะ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><i className='bx bx-cog'></i> จัดการ</div>
               </div>
               
               <div className="tbody">
@@ -289,10 +316,13 @@ const PMProjects = () => {
                         transition: 'background 0.2s'
                     }}
                     onMouseOver={(e) => e.currentTarget.style.background = '#f8fafc'}
-                    onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                    onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       <div>
-                        <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '15px', marginBottom: '4px' }}>{p.project_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '15px' }}>{p.project_name}</div>
+                            {p.project_type && <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>{p.project_type}</span>}
+                        </div>
                         <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <i className='bx bx-map' style={{ color: '#94a3b8' }}></i> {p.site_address || 'ไม่ระบุสถานที่'}
                         </div>
@@ -304,7 +334,7 @@ const PMProjects = () => {
                             <span style={{ fontWeight: '700', color: isDone ? '#10b981' : '#3b82f6' }}>{percent}%</span>
                         </div>
                         <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                            <div style={{ width: `${percent}%`, height: '100%', background: isDone ? '#10b981' : 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: '4px' }}></div>
+                            <div style={{ width: `${percent}%`, height: '100%', background: isDone ? '#10b981' : 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: '4px', transition: 'width 1s ease-in-out' }}></div>
                         </div>
                       </div>
 
@@ -330,7 +360,7 @@ const PMProjects = () => {
                       <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
                            <button 
                             onClick={() => navigate('/project-tasks', { state: { project: p } })}
-                            title="ดูงานย่อย"
+                            title="มอบหมายงาน"
                             style={{ width: '32px', height: '32px', background: 'white', border: '1px solid #dbeafe', borderRadius: '8px', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseOver={(e) => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
                             onMouseOut={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#dbeafe'; }}

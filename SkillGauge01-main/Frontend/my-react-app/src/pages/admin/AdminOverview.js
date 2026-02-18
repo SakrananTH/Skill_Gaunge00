@@ -161,19 +161,17 @@ const AdminOverview = ({ setTab }) => {
         });
         
         // --- 2. Calculate KPI Stats ---
-        // 1. ยังไม่ผ่านเกณฑ์: คนที่มีคะแนน < 60 (และมีคะแนนแล้ว)
-        // 2. ยังไม่ได้ทดสอบ: คนที่ไม่มีคะแนน (score === undefined/null)
-        // 3. ผ่านเกณฑ์แล้ว: คนที่มีคะแนน >= 60
+        // 1. ยังไม่ผ่านเกณฑ์: ต้องอิงผลรวมทฤษฎี+ปฏิบัติที่ระบบตัดสินแล้วเท่านั้น
+        // 2. ยังไม่ได้ทดสอบ: คนที่ยังไม่มีผลสอบทฤษฎี
+        // 3. ผ่านเกณฑ์แล้ว: อิงผลรวมทฤษฎี+ปฏิบัติที่ระบบตัดสินแล้วเท่านั้น
         const failed = filteredItems.filter(w =>
-          w.assessmentPassed === false ||
-          (w.assessmentPassed === null || w.assessmentPassed === undefined) && w.score !== undefined && w.score !== null && Number(w.score) < 60
+          w.assessmentPassed === false
         ).length;
         const none = filteredItems.filter(w =>
           (w.assessmentPassed === null || w.assessmentPassed === undefined) && (w.score === undefined || w.score === null)
         ).length;
         const passed = filteredItems.filter(w =>
-          w.assessmentPassed === true ||
-          (w.assessmentPassed === null || w.assessmentPassed === undefined) && w.score !== undefined && w.score !== null && Number(w.score) >= 60
+          w.assessmentPassed === true
         ).length;
 
         setStats([
@@ -276,7 +274,7 @@ const AdminOverview = ({ setTab }) => {
 
           branchMap[label].total++;
           
-          // ตรวจสอบคะแนนจริง (ไม่รวมคนที่ยังไม่มีคะแนน)
+          // ตรวจสอบคะแนนจริง
           const totalScore = w.assessmentTotalScore ?? null;
           const totalQuestions = w.assessmentTotalQuestions ?? null;
           const rawScore = w.score !== undefined ? w.score : w.evaluation_score;
@@ -285,25 +283,22 @@ const AdminOverview = ({ setTab }) => {
             : (rawScore !== undefined && rawScore !== null ? Number(rawScore) : null);
           const hasScore = scorePercent !== null && scorePercent !== undefined;
 
-          // 1. จัดกลุ่มระดับทักษะ (นับเฉพาะคนที่มีคะแนนเท่านั้น)
-          if (hasScore) {
-            const isPassed = w.assessmentPassed === true
-              ? true
-              : w.assessmentPassed === false
-                ? false
-                : scorePercent >= 60;
-
-            if (!isPassed) {
-              branchMap[label].levels.level0++;
+          // 1. จัดกลุ่มระดับทักษะ
+          // - ถ้ายังไม่มีผลรวมสุดท้าย (ทฤษฎี+ปฏิบัติยังไม่ครบ) ให้เป็นระดับ 0 (แดง)
+          // - ผ่านเกณฑ์รวมแล้วเท่านั้นถึงจะแสดงระดับ 1-3
+          const hasFinalResult = w.assessmentPassed === true || w.assessmentPassed === false;
+          if (!hasFinalResult) {
+            branchMap[label].levels.level0++;
+          } else if (w.assessmentPassed === false) {
+            branchMap[label].levels.level0++;
+          } else {
+            const assessedLevel = Number(w.assessmentRoundLevel);
+            if (assessedLevel >= 3) {
+              branchMap[label].levels.level3++;
+            } else if (assessedLevel === 2) {
+              branchMap[label].levels.level2++;
             } else {
-              const assessedLevel = Number(w.assessmentRoundLevel);
-              if (assessedLevel >= 3) {
-                branchMap[label].levels.level3++;
-              } else if (assessedLevel === 2) {
-                branchMap[label].levels.level2++;
-              } else {
-                branchMap[label].levels.level1++;
-              }
+              branchMap[label].levels.level1++;
             }
           }
 
@@ -327,11 +322,15 @@ const AdminOverview = ({ setTab }) => {
 
         // เตรียมข้อมูลกราฟคะแนนเฉลี่ย
         // เตรียมข้อมูลคนรอประเมิน
-        const notEval = Object.keys(notEvaluatedMap).map(label => ({
-          name: label,
-          value: branchMap[label]?.value || 'other',
-          count: notEvaluatedMap[label]
-        })).sort((a, b) => b.count - a.count);
+        const visibleBranches = Object.values(branchMap)
+          .filter(b => b.value !== 'other');
+        const notEval = visibleBranches
+          .map(branch => ({
+            name: branch.name,
+            value: branch.value,
+            count: notEvaluatedMap[branch.name] || 0
+          }))
+          .sort((a, b) => b.count - a.count);
         setNotEvaluatedStats(notEval);
 
         // --- 6. Recent Activity ---
@@ -443,13 +442,23 @@ const AdminOverview = ({ setTab }) => {
       )}
       <header className="admin-welcome-section">
         <div className="welcome-text">
-          <h2>Dashboard</h2>
-          <p>สรุปสถานะและข้อมูลสำคัญของระบบ Skill Gauge</p>
+          <h2 style={{ fontSize: '2rem', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.025em' }}>Dashboard Overview</h2>
+          <p style={{ color: '#64748b', fontSize: '1.1rem', marginTop: '4px' }}>สรุปสถานะและข้อมูลสำคัญของระบบ Skill Gauge แบบ Real-time</p>
         </div>
-        <div className="date-display">
-          {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="date-display" style={{ background: '#fff', padding: '0.5rem 1rem', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', color: '#475569', fontWeight: '600', fontSize: '0.9rem' }}>
+            <i className='bx bx-calendar' style={{ marginRight: '8px', color: '#3b82f6' }}></i>
+            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </div>
+          <button 
+            onClick={() => setRefreshKey(prev => prev + 1)} 
+            className="refresh-btn-modern"
+            style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '0.6rem', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.3)' }}
+            title="รีเฟรชข้อมูล"
+          >
+            <i className='bx bx-refresh' style={{ fontSize: '1.5rem' }}></i>
+          </button>
         </div>
-        
       </header>
       {/* 1. & 2. KPI Cards พร้อม Insight */}
       <div className="admin-stats-grid">
@@ -479,10 +488,10 @@ const AdminOverview = ({ setTab }) => {
       <div className="overview-grid">
         {/* Left Column: Main Stats & Analysis */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* New Section: Stacked Bar Chart for Branch Skills */}
-          <section className="overview-section branch-section">
+          {/* Section: Stacked Bar Chart for Branch Skills */}
+          <section className="overview-section branch-section" style={{ background: 'white', padding: '2rem', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
             <div className="section-header branch-section-header">
-              <h3>จำนวนพนักงานแยกตามทักษะ</h3>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e293b' }}>จำนวนพนักงานแยกตามทักษะ</h3>
               <span className="branch-section-subtitle">แบ่งตามสาขาและระดับ</span>
             </div>
             
@@ -492,7 +501,10 @@ const AdminOverview = ({ setTab }) => {
               <div className="branch-list">
                 {branchStats.map((branch, idx) => {
                   const maxTotal = Math.max(...branchStats.map(b => b.total));
-                  const barWidthPercent = maxTotal > 0 ? (branch.total / maxTotal) * 100 : 0;
+                  const effectiveScaleMax = Math.max(maxTotal, 10);
+                  const barWidthPercent = effectiveScaleMax > 0
+                    ? Math.min(100, (branch.total / effectiveScaleMax) * 100)
+                    : 0;
                   
                   return (
                     <div 
@@ -502,11 +514,13 @@ const AdminOverview = ({ setTab }) => {
                       title={`คลิกเพื่อดูรายชื่อพนักงานสาขา ${branch.name}`}
                     >
                       <div className="branch-item-header">
-                        <span>{branch.name}</span>
-                        <span>{branch.total} คน</span>
+                        <span style={{ fontWeight: '700', color: '#334155' }}>{branch.name}</span>
+                        <span style={{ fontWeight: '600', color: '#64748b' }}>{branch.total} คน</span>
                       </div>
-                      <div className="branch-bar-container">
-                         <div className="branch-bar-animated" style={{ 
+                      <div className="branch-bar-container" style={{ height: '12px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', marginTop: '8px' }}>
+                         <div className="branch-bar-animated" style={{
+                           display: 'flex',
+                           height: '100%',
                            width: `${animateChart ? barWidthPercent : 0}%`, 
                            transitionDelay: `${idx * 0.1}s`
                          }}>
@@ -530,54 +544,63 @@ const AdminOverview = ({ setTab }) => {
             )}
           </section>
 
-          <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <section className="overview-section" style={{ background: 'white', padding: '2rem', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
             {/* รายการพนักงานรอการประเมิน (Pending Evaluation) */}
-            {notEvaluatedStats.length > 0 && (
-              <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #edf2f7' }}>
-                <h4 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#000000' }}>รอการประเมิน (ยังไม่ได้ทำแบบทดสอบ)</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
-                  {notEvaluatedStats.map((item, idx) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => navigate('/admin', { state: { initialTab: 'users', filterSkill: 'none', filterCategory: item.value } })}
-                      style={{ 
-                        background: '#ffffff', 
-                        padding: '0.75rem', 
-                        borderRadius: '8px', 
-                        border: '1px solid #e6cf03', 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 6px rgba(230, 207, 3, 0.2)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <span style={{ color: '#e6cf03', fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</span>
-                      <span style={{ background: '#e6cf03', color: 'white', padding: '0.1rem 0.5rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                        {item.count} คน
-                      </span>
-                    </div>
-                  ))}
-                </div>
+            <div style={{ marginTop: '0' }}>
+              <h4 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#000000' }}>รอการประเมิน (ยังไม่ได้ทำแบบทดสอบ)</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                {notEvaluatedStats.map((item, idx) => (
+                  (() => {
+                    const hasPending = Number(item.count) > 0;
+                    const cardBorderColor = hasPending ? '#fdba74' : '#facc15';
+                    const cardBgColor = hasPending ? '#fff7ed' : '#fefce8';
+                    const textColor = hasPending ? '#c2410c' : '#a16207';
+                    const badgeBgColor = hasPending ? '#f59e0b' : '#eab308';
+                    return (
+                  <div 
+                    key={idx} 
+                    onClick={() => navigate('/admin', { state: { initialTab: 'users', filterSkill: 'none', filterCategory: item.value } })}
+                    style={{ 
+                      background: cardBgColor, 
+                      padding: '0.75rem', 
+                      borderRadius: '8px', 
+                      border: `1px solid ${cardBorderColor}`, 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      transition: 'transform 0.2s, box-shadow 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = hasPending
+                        ? '0 4px 6px rgba(245, 158, 11, 0.16)'
+                        : '0 4px 6px rgba(234, 179, 8, 0.14)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <span style={{ color: textColor, fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</span>
+                    <span style={{ background: badgeBgColor, color: 'white', padding: '0.1rem 0.5rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      {item.count} คน
+                    </span>
+                  </div>
+                    );
+                  })()
+                ))}
               </div>
-            )}
+            </div>
           </section>
         </div>
         {/* Right Column Wrapper */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Donut Chart: สัดส่วนพนักงาน */}
-          <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <section className="overview-section" style={{ background: 'white', padding: '2rem', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
             <div className="section-header" style={{ marginBottom: '1.5rem' }}>
-              <h3>สัดส่วนพนักงาน</h3>
-              <span style={{ color: '#718096', fontSize: '0.9rem' }}>สถานะการจ้างงาน</span>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e293b' }}>สัดส่วนพนักงาน</h3>
+              <span style={{ color: '#64748b', fontSize: '0.9rem' }}>สถานะการจ้างงานปัจจุบัน</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               {/* Donut Chart (SVG) */}
@@ -645,9 +668,9 @@ const AdminOverview = ({ setTab }) => {
             </div>
           </section>
           {/* Pending Actions (Moved to Right Column) */}
-          <section className="overview-section" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div className="pending-actions-header">
-              <h3>สิ่งที่ต้องดำเนินการ</h3>
+          <section className="overview-section" style={{ background: 'white', padding: '2rem', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
+            <div className="pending-actions-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e293b', margin: 0 }}>สิ่งที่ต้องดำเนินการ</h3>
               {pendingActions.length > 0 && (
                 <button onClick={() => navigate('/admin/pending-actions')} className="btn-view-all">
                   ดูทั้งหมด

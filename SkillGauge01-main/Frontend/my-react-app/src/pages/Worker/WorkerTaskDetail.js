@@ -1,22 +1,62 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../pm/WKDashboard.css';
+import { apiRequest } from '../../utils/api';
+import Swal from 'sweetalert2';
 
 const WorkerTaskDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
   // รับข้อมูลงานที่ส่งมาจากหน้า Dashboard
-  const task = location.state?.task;
+    const incomingTask = location.state?.task;
+    const [task, setTask] = useState(incomingTask || null);
+    const [loadingTask, setLoadingTask] = useState(Boolean(incomingTask?.id));
 
   // State สำหรับฟอร์มส่งงาน
   const [submission, setSubmission] = useState({
     description: '',
     photo: null
   });
+  const [previewUrl, setPreviewUrl] = useState(null);
 
-  // ถ้าไม่มีข้อมูลงาน (เช่น พิมพ์ URL เข้ามาเอง) ให้เด้งกลับ
-  if (!task) {
+    useEffect(() => {
+        const loadTask = async () => {
+            const taskId = incomingTask?.id;
+            if (!taskId) {
+                setLoadingTask(false);
+                setTask(null);
+                return;
+            }
+
+            setLoadingTask(true);
+            try {
+                const items = await apiRequest('/api/worker/tasks');
+                const found = Array.isArray(items)
+                    ? items.find((item) => String(item.id) === String(taskId))
+                    : null;
+                setTask(found || incomingTask);
+            } catch (error) {
+                console.error('Load task detail error:', error);
+                setTask(incomingTask);
+            } finally {
+                setLoadingTask(false);
+            }
+        };
+
+        loadTask();
+    }, [incomingTask]);
+
+    if (loadingTask) {
+        return (
+            <div style={{ padding: '40px', textAlign: 'center' }}>
+                <h3>กำลังโหลดข้อมูลงาน...</h3>
+            </div>
+        );
+    }
+
+    // ถ้าไม่มีข้อมูลงาน (เช่น พิมพ์ URL เข้ามาเอง) ให้เด้งกลับ
+    if (!task) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <h3>ไม่พบข้อมูลงาน</h3>
@@ -29,34 +69,65 @@ const WorkerTaskDetail = () => {
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setSubmission({ ...submission, photo: e.target.files[0].name });
+      const file = e.target.files[0];
+      setSubmission({ ...submission, photo: file.name });
+      setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    const result = await Swal.fire({
+      title: 'ยืนยันการส่งงาน?',
+      text: "คุณตรวจสอบความถูกต้องของรายละเอียดและรูปภาพเรียบร้อยแล้วใช่หรือไม่?",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'ใช่, ยืนยันส่งงาน',
+      cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!result.isConfirmed) return;
+
     // Call API to submit task
     try {
-        const res = await fetch(`http://localhost:4000/api/worker/tasks/${task.id}/submit`, {
+        await apiRequest(`/api/worker/tasks/${task.id}/submit`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            body: {
                 description: submission.description,
                 photo: submission.photo,
                 submittedAt: new Date().toISOString()
-            })
+            }
         });
 
-        if (res.ok) {
-            alert("✅ ส่งงานเรียบร้อยแล้ว! หัวหน้างานจะทำการตรวจสอบต่อไป");
-            navigate('/worker');
-        } else {
-            alert("เกิดข้อผิดพลาดในการส่งงาน");
-        }
+        await Swal.fire({
+          icon: 'success',
+          title: 'ส่งงานสำเร็จ!',
+          text: 'หัวหน้างานจะทำการตรวจสอบต่อไป',
+          timer: 2000,
+          showConfirmButton: false
+        });
+
+        navigate('/worker');
     } catch (err) {
         console.error("Submit Error:", err);
-        alert("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้");
+        if (err?.data?.message === 'state_not_submittable') {
+            Swal.fire({
+              icon: 'warning',
+              title: 'ไม่สามารถส่งงานได้',
+              text: 'กรุณากดรับงานหรือเริ่มงานก่อนส่งงาน',
+              confirmButtonColor: '#2563eb'
+            });
+            return;
+        }
+        Swal.fire({
+          icon: 'error',
+          title: 'เกิดข้อผิดพลาด',
+          text: err?.data?.message || "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้",
+          confirmButtonColor: '#ef4444'
+        });
     }
   };
 
@@ -81,31 +152,34 @@ const WorkerTaskDetail = () => {
   const isReadOnly = ['submitted', 'approved', 'completed'].includes(task.status);
 
   return (
-    <div className="dash-layout" style={{ background: '#f8fafc' }}>
-      {/* Sidebar (ย่อ) */}
-      <aside className="dash-sidebar">
-        <nav className="menu">
-            <div style={{ padding: '30px 20px', textAlign: 'center', fontWeight: '800', fontSize: '20px', color: '#10b981', letterSpacing: '1px' }}>WORKER PORTAL</div>
-            <button className="menu-item" onClick={() => navigate('/worker')}>&larr; กลับหน้าหลัก</button>
-            <button className="menu-item" onClick={() => navigate('/assessment-history')}>📜 ประวัติการสอบ</button>
-            <button className="menu-item" onClick={() => navigate('/work-history')}>📅 ประวัติงาน</button>
-        </nav>
-      </aside>
+    <div className="dash-layout" style={{ display: 'block', background: '#f8fafc', minHeight: '100vh' }}>
 
-      <main className="dash-main">
-        <header className="dash-header" style={{ background: 'white', borderBottom: '1px solid #e2e8f0', padding: '20px 40px' }}>
-            <div className="header-info">
-                <h1 style={{ fontSize: '24px', color: '#1e293b', margin: 0 }}>รายละเอียดงาน: {task.id}</h1>
-                <p style={{ color: '#64748b', margin: '5px 0 0' }}>โครงการ: {task.project}</p>
-            </div>
-        </header>
-
-        <section className="dash-content" style={{ maxWidth: '900px', margin: '30px auto', padding: '0 20px' }}>
+      <main className="dash-main" style={{ marginLeft: 0, width: '100%', padding: '20px 0' }}>
+                <section className="dash-content" style={{ maxWidth: '900px', margin: '14px auto 24px', padding: '0 20px' }}>
+                        <header style={{ 
+                            background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)', 
+                            borderRadius: '20px', 
+                            padding: '30px 40px', 
+                            color: 'white', 
+                            marginBottom: '24px',
+                            boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.2)',
+                            position: 'relative',
+                            overflow: 'hidden'
+                        }}>
+                            <div style={{ position: 'relative', zIndex: 1 }}>
+                                <h1 style={{ fontSize: '26px', fontWeight: '800', margin: 0 }}>รายละเอียดงาน: {task.id}</h1>
+                                <p style={{ fontSize: '16px', opacity: 0.9, margin: '8px 0 0' }}>
+                                    <i className='bx bx-buildings' style={{ marginRight: '8px' }}></i>
+                                    โครงการ: {task.project}
+                                </p>
+                            </div>
+                            <i className='bx bx-task' style={{ position: 'absolute', right: '-20px', bottom: '-20px', fontSize: '150px', opacity: 0.1, transform: 'rotate(-15deg)' }}></i>
+                        </header>
             
             {/* 1. ส่วนแสดงรายละเอียดงาน */}
             <div style={{ background: 'white', padding: '30px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
                 <h2 style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '15px', marginBottom: '20px', color: '#334155', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2M9 4h6v2H9zM4 20V8h16v12z"></path></svg>
+                    <i className='bx bx-info-circle' style={{ color: '#3b82f6', fontSize: '24px' }}></i>
                     ข้อมูลงานที่ได้รับมอบหมาย
                 </h2> 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '25px' }}>
@@ -150,8 +224,8 @@ const WorkerTaskDetail = () => {
 
             {/* 2. ฟอร์มส่งงาน */}
             <form onSubmit={handleSubmit} style={{ background: 'white', padding: '30px', borderRadius: '16px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
-                <h2 style={{ marginBottom: '25px', color: '#10b981', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    🚀 ส่งมอบงาน (Submit Work)
+                <h2 style={{ marginBottom: '25px', color: '#2563eb', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <i className='bx bx-rocket' style={{ fontSize: '24px' }}></i> ส่งมอบงาน (Submit Work)
                 </h2>
                 
                 <div style={{ marginBottom: '25px' }}>
@@ -162,7 +236,7 @@ const WorkerTaskDetail = () => {
                         onChange={(e) => setSubmission({ ...submission, description: e.target.value })}
                         placeholder="ระบุรายละเอียดสิ่งที่ทำ หรือปัญหาที่พบ..."
                         disabled={isReadOnly}
-                        style={{ width: '100%', padding: '15px', border: '1px solid #cbd5e1', borderRadius: '10px', outline: 'none', fontSize: '15px', transition: 'border-color 0.2s', background: isReadOnly ? '#f1f5f9' : 'white' }}
+                        style={{ width: '100%', padding: '15px', border: '1.5px solid #e2e8f0', borderRadius: '12px', outline: 'none', fontSize: '15px', transition: 'all 0.2s', background: isReadOnly ? '#f8fafc' : 'white' }}
                         required
                     />
                 </div>
@@ -178,14 +252,36 @@ const WorkerTaskDetail = () => {
                             style={{ opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', cursor: isReadOnly ? 'not-allowed' : 'pointer' }}
                         />
                         <div style={{ color: '#64748b' }}>
-                            {submission.photo ? (
-                                <div style={{ color: '#0284c7', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ fontSize: '32px' }}>📷</span>
+                            {previewUrl ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                                    <img 
+                                        src={previewUrl} 
+                                        alt="Preview" 
+                                        style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '2px solid #fff' }} 
+                                    />
+                                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '14px' }}>{submission.photo}</span>
+                                    {!isReadOnly && (
+                                        <button 
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPreviewUrl(null);
+                                                setSubmission({ ...submission, photo: null });
+                                            }}
+                                            style={{ background: '#ef4444', color: 'white', border: 'none', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer', marginTop: '5px' }}
+                                        >
+                                            ลบรูปภาพ
+                                        </button>
+                                    )}
+                                </div>
+                            ) : submission.photo ? (
+                                <div style={{ color: '#2563eb', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                                    <i className='bx bx-image-add' style={{ fontSize: '40px' }}></i>
                                     {submission.photo}
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ fontSize: '32px', opacity: 0.5 }}>📷</span>
+                                    <i className='bx bx-cloud-upload' style={{ fontSize: '40px', opacity: 0.5 }}></i>
                                     <span>คลิกเพื่ออัปโหลดรูปภาพ</span>
                                     <span style={{ fontSize: '12px', opacity: 0.7 }}>(รองรับ .jpg, .png)</span>
                                 </div>
@@ -194,13 +290,24 @@ const WorkerTaskDetail = () => {
                     </div>
                 </div>
 
-                <button 
-                    type="submit" 
-                    disabled={isReadOnly}
-                    style={{ width: '100%', padding: '16px', background: isReadOnly ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: isReadOnly ? 'not-allowed' : 'pointer', boxShadow: isReadOnly ? 'none' : '0 4px 10px rgba(16, 185, 129, 0.3)', transition: 'transform 0.1s' }}
-                >
-                    {isReadOnly ? (task.status === 'submitted' ? '⏳ รอการตรวจสอบ' : '✅ งานเสร็จสิ้นแล้ว') : '🚀 ยืนยันส่งงาน'}
-                </button>
+                <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
+                    <button 
+                        type="button"
+                        onClick={() => navigate('/worker')}
+                        style={{ flex: 1, padding: '16px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onMouseOver={(e) => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                    >
+                        &larr; กลับหน้าหลัก
+                    </button>
+                    <button 
+                        type="submit" 
+                        disabled={isReadOnly}
+                        style={{ flex: 2, padding: '16px', background: isReadOnly ? '#94a3b8' : 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: isReadOnly ? 'not-allowed' : 'pointer', boxShadow: isReadOnly ? 'none' : '0 4px 15px rgba(37, 99, 235, 0.3)', transition: 'all 0.3s ease' }}
+                    >
+                        {isReadOnly ? (task.status === 'submitted' ? '⏳ รอการตรวจสอบ' : '✅ งานเสร็จสิ้นแล้ว') : 'ยืนยันส่งงาน'}
+                    </button>
+                </div>
                 
             </form>
 

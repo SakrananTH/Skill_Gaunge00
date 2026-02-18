@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Login.css';
 import { chooseRole } from '../utils/auth';
-import { API_BASE_URL } from '../utils/api';
+import { apiRequest } from '../utils/api';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -45,8 +45,6 @@ const Login = () => {
     setRole((prev) => (prev === target ? '' : target));
   };
 
-  const API = API_BASE_URL || process.env.REACT_APP_API_URL || '';
-
   const onLogin = async () => {
     setError(''); // Clear previous errors
     
@@ -60,17 +58,10 @@ const Login = () => {
     // NOTE: Do not bypass on the client. Always authenticate via the API so we receive a valid JWT.
 
     try {
-      const loginUrl = API ? `${API}/api/auth/login` : '/api/auth/login';
-      const res = await fetch(loginUrl, {
+      const data = await apiRequest('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: trimmedUsername, password }),
+        body: { identifier: trimmedUsername, password }
       });
-      if (!res.ok) {
-        setError('Username หรือ Password ไม่ถูกต้อง');
-        return;
-      }
-      const data = await res.json();
       const { token, user } = data;
       // Persist token and identity
       try {
@@ -128,7 +119,7 @@ const Login = () => {
       }
     } catch (e) {
       console.error(e);
-      setError('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+      setError(e?.status === 401 ? 'Username หรือ Password ไม่ถูกต้อง' : 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
     }
   };
 

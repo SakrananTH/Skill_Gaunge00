@@ -1,25 +1,366 @@
-.task-page { margin-top: 1rem; }
-.task-header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: 0.2px; margin: 0 0 0.75rem; }
+/* WKProject_Tasks.css */
 
-.task-grid { display: grid; grid-template-columns: 1fr 340px; gap: 1.25rem; }
+/* ส่วนหัวของหน้า (Header Section) */
+.task-header {
+  border-radius: 24px;
+  padding: 30px 40px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
-.task-form { background: #fff; border: 1px solid #e2e6ec; border-radius: 12px; padding: 1rem; }
-.section-title { margin: 0 0 0.75rem; font-weight: 800; font-size: 1.25rem; }
+.task-header.normal-mode {
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+}
 
-.field { margin-bottom: 0.75rem; }
-.input, .select { width: 100%; background: #f8fbff; border: 1px solid #e2e6ec; border-radius: 10px; padding: 0.75rem 0.9rem; font-size: 0.95rem; color: #2b3a52; font-family: 'Inter', 'Noto Sans Thai', sans-serif; }
-.select { -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23607078' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 2.2rem; }
+.task-header.exam-mode {
+  /* Blue Tone Gradient for Header */
+  background: linear-gradient(120deg, #1e40af 0%, #3b82f6 100%); 
+}
 
-.actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
-.btn-primary { background: #1a73e8; color: #fff; border: none; border-radius: 10px; padding: 0.6rem 1.25rem; font-weight: 700; cursor: pointer; }
-.btn-primary:hover { background: #1557b0; }
+.header-bg-icon {
+  position: absolute;
+  right: -30px;
+  bottom: -40px;
+  font-size: 200px;
+  opacity: 0.08;
+  transform: rotate(-15deg);
+  pointer-events: none;
+  z-index: 0;
+}
 
-.workers { background: #fff; border: 1px solid #e2e6ec; border-radius: 12px; padding: 1rem; }
-.worker-card { display: grid; grid-template-columns: 40px 1fr; gap: 0.75rem; align-items: center; border: 1px solid #e2e6ec; border-radius: 10px; padding: 0.7rem; background: #f8fbff; margin-bottom: 0.75rem; }
-.avatar.small { width: 32px; height: 32px; background: #9bb0c8; border-radius: 50%; }
-.w-name { font-weight: 700; }
-.w-sub { color: #5f6368; font-size: 0.9rem; }
+.header-content-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
 
-@media (max-width: 900px) {
-  .task-grid { grid-template-columns: 1fr; }
+.header-left {
+  flex: 1;
+}
+
+.header-right {
+  flex: 0 0 320px;
+  text-align: right;
+}
+
+.header-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+}
+
+.header-subtitle {
+  font-size: 16px;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.status-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 14px;
+  border-radius: 50px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  backdrop-filter: blur(4px);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.highlight-name {
+  color: #fbbf24;
+  font-weight: 700;
+  margin: 0 4px;
+}
+
+.worker-skill-badge {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+/* Project Select Box directly on Header */
+.project-select-box {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 16px;
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: left;
+}
+
+.project-select-label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.header-select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+
+.header-select option {
+  color: #1e293b;
+  background: white;
+}
+
+.header-select:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Info Tags for Normal Mode */
+.project-info-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.info-tag {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* การ์ดหลัก (Main Card Container) */
+.modern-card {
+  background: white;
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+/* ช่องกรอกข้อมูล (Modern Input Fields) */
+.modern-input {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1.5px solid #e2e8f0;
+  background-color: #f8fafc;
+  font-size: 15px;
+  color: #1e293b;
+  transition: all 0.2s ease-in-out;
+  outline: none;
+  box-sizing: border-box;
+  font-family: 'Kanit', sans-serif;
+}
+
+.modern-input:focus {
+  background-color: #ffffff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.textarea-input {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+/* Grid Helpers */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.col-span-2 {
+  grid-column: span 2;
+}
+
+.form-sub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ตัวเลือกความเร่งด่วน (Priority Chips) */
+.priority-options {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.priority-label {
+  flex: 1;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px solid #e2e8f0;
+  background: white;
+  color: #64748b;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.priority-label.active.ทั่วไป { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+.priority-label.active.เร่งด่วน { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.priority-label.active.วิกฤต { border-color: #ef4444; background: #fef2f2; color: #b91c1c; }
+
+.priority-label:hover {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+/* สถานะ Error และ Badge ต่างๆ */
+.input-error {
+  border-color: #ef4444 !important;
+  background-color: #fef2f2 !important;
+}
+
+.modern-input.disabled {
+  background-color: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+.available-badge {
+  margin-left: 8px;
+  background: #f0fdf4;
+  color: #16a34a;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #dcfce7;
+}
+
+/* Back Button */
+.back-button-container {
+  margin-bottom: 24px;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: white;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.back-button:hover {
+  background: #f8fafc;
+  color: #0ea5e9;
+  border-color: #bae6fd;
+  transform: translateX(-4px);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.15);
+}
+
+.back-button:active {
+  transform: translateX(0);
+}
+
+.back-button i {
+  font-size: 18px;
+  transition: transform 0.2s;
+}
+
+.back-button:hover i {
+  transform: translateX(-2px);
+}
+
+/* Action Buttons */
+.button-group {
+  margin-top: 40px;
+  display: flex;
+  justify-content: flex-end; /* Align right */
+  gap: 16px;
+  align-items: center;
+}
+
+.cancel-button {
+  padding: 10px 24px;
+  border-radius: 50px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #64748b;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-button:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.submit-button {
+  padding: 10px 32px;
+  border-radius: 50px;
+  border: none;
+  font-weight: 700;
+  font-size: 14px; /* Slightly smaller font */
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  min-width: 120px;
+  width: auto;
+  height: 44px; /* Fixed height for consistency */
+}
+
+.submit-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  filter: brightness(110%);
+}
+
+.submit-button:active {
+  transform: translateY(0);
+}
+
+.submit-button.assessment-btn {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: #f8fafc;
+  box-shadow: 0 10px 20px -5px rgba(30, 41, 59, 0.3);
+}
+
+.submit-button.normal-btn {
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 10px 20px -5px rgba(37, 99, 235, 0.4);
 }

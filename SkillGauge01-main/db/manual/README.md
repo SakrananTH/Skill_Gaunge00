@@ -2,6 +2,24 @@
 
 Manual SQL workspace for ad-hoc queries or temporary scripts.
 
+MySQL (current stack)
+
+- Runtime DB for this repository is MySQL (see `docker-compose.yml`, service `mysql`, host port `3307`).
+- If API logs show errors like `Unknown column 'project_type'` or `Unknown column 'description'`, run:
+  - `db/manual/08_schema_alignment_mysql.sql`
+
+Quick run (Windows PowerShell)
+
+```powershell
+mysql -h localhost -P 3307 -u skillgauge -pskillgauge -D "admin-worker-registration" -e "source db/manual/08_schema_alignment_mysql.sql"
+```
+
+Or from inside the repository root:
+
+```powershell
+mysql -h localhost -P 3307 -u skillgauge -pskillgauge -D "admin-worker-registration" < ".\db\manual\08_schema_alignment_mysql.sql"
+```
+
 Important:
 - Files in this folder are NOT executed automatically by Docker Postgres.
 - Use idempotent SQL when possible (CREATE IF NOT EXISTS, INSERT ... ON CONFLICT DO NOTHING) to avoid duplicate data.

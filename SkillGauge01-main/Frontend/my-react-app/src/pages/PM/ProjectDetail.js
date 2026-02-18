@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import '../pm/WKDashboard.css';
 import './PMTheme.css';
 import PMTopNav from './PMTopNav';
+import { apiRequest } from '../../utils/api';
 
 const ProjectDetail = () => {
   const location = useLocation();
@@ -34,8 +34,6 @@ const ProjectDetail = () => {
     }
   }, []);
 
-    const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
-
   // ฟังก์ชัน Logout
   const handleLogout = () => {
     if (window.confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
@@ -56,23 +54,26 @@ const ProjectDetail = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const token = sessionStorage.getItem('auth_token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+            const params = new URLSearchParams({
+              project_id: String(pj_id),
+              limit: '200',
+              offset: '0'
+            });
 
             // ดึงสรุปโครงการ + งานย่อยจาก API ที่มีอยู่จริง
-            const [resProj, resTasks] = await Promise.all([
-                axios.get(`${API}/api/dashboard/project-task-counts`, { headers }),
-                axios.get(`${API}/api/tasks`, { headers, params: { project_id: pj_id, limit: 200, offset: 0 } })
+            const [projectsData, tasksData] = await Promise.all([
+                apiRequest('/api/dashboard/project-task-counts'),
+                apiRequest(`/api/tasks?${params.toString()}`)
             ]);
 
-            const projects = Array.isArray(resProj.data) ? resProj.data : [];
+            const projects = Array.isArray(projectsData) ? projectsData : [];
             const foundProject = projects.find(p => p.project_id === pj_id) || null;
             const resolvedProject = foundProject
               ? { ...foundProject, project_name: foundProject.project_name }
               : (incomingProject || { project_name: 'โครงการ', project_id: pj_id });
 
             setProject(resolvedProject);
-            setTasks(Array.isArray(resTasks.data?.items) ? resTasks.data.items : []);
+            setTasks(Array.isArray(tasksData?.items) ? tasksData.items : []);
             setLoading(false);
         } catch (err) {
             console.error("Error fetching detail:", err);

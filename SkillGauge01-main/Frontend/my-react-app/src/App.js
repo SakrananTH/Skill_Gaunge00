@@ -14,6 +14,7 @@ import AdminWorkerRegistration from './pages/admin/AdminWorkerRegistration';
 import AdminQuestionForm from './pages/admin/AdminQuestionForm';
 import PendingActions from './pages/admin/PendingActions';
 import WorkerDashboard from './pages/Worker/WorkerDashboard';
+import WorkerPracticalResult from './pages/Worker/WorkerPracticalResult';
 import WorkerTaskDetail from './pages/Worker/WorkerTaskDetail';
 import WorkerSettings from './pages/Worker/WorkerSettings';
 import WorkHistory from './pages/Worker/WorkHistory';
@@ -53,6 +54,7 @@ function App() {
             <Route path="admin/pending-actions" element={<AdminRoute><PendingActions /></AdminRoute>} />
             <Route path="dashboard" element={<WorkerDashboard />} />
             <Route path="worker" element={<WorkerDashboard />} />
+            <Route path="worker/practical-result" element={<WorkerPracticalResult />} />
             <Route path="worker-settings" element={<WorkerSettings />} />
             <Route path="worker/history" element={<WorkHistory />} />
             <Route path="worker/task-detail" element={<WorkerTaskDetail />} />

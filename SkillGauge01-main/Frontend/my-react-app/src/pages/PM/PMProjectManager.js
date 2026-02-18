@@ -5,7 +5,7 @@ import '../pm/WorkerResponsive.css';
 import './PMTheme.css';
 import PMTopNav from './PMTopNav';
 import { mockUser } from '../../mock/mockData';
-import LogoutModal from '../../components/LogoutModal';
+import { apiRequest } from '../../utils/api';
 
 const TestingIcon = () => (
   <i className='bx bx-user-check'></i>
@@ -33,20 +33,23 @@ const ProjectManager = () => {
   const user = navUser || storedUser || { ...mockUser, role: 'Project Manager' };
   const [currentUser, setCurrentUser] = useState(user);
 
-  const handleLogout = () => setShowLogoutModal(true);
-
-  const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
-
   const [counts, setCounts] = useState([]); 
   const [workers, setWorkers] = useState([]);
   const [allWorkers, setAllWorkers] = useState([]);
   const [workerLoading, setWorkerLoading] = useState(false);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [animateChart, setAnimateChart] = useState(false);
   const [apiError, setApiError] = useState({ workers: '', counts: '' });
   const [trainingWorkerCount, setTrainingWorkerCount] = useState(0);
   const [trainingWorkerIds, setTrainingWorkerIds] = useState([]);
+
+  const practicalAssignedWorkerIdSet = useMemo(() => {
+    return new Set(
+      (Array.isArray(trainingWorkerIds) ? trainingWorkerIds : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+    );
+  }, [trainingWorkerIds]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDate(new Date()), 1000);
@@ -76,25 +79,25 @@ const ProjectManager = () => {
   }, [allWorkers]);
 
   const passedWorkerCount = useMemo(() => {
-    // ผ่านเกณฑ์แล้ว (Passed Practical Assessment)
     return allWorkers.filter(w => w.status === 'ประเมินแล้ว').length;
   }, [allWorkers]);
 
-  const notPassedWorkerCount = useMemo(() => {
-    // ยังไม่ผ่านเกณฑ์ (Failed Theory) -> Level 0
-    return allWorkers.filter(w => w.level_no === 0).length;
+  const theoryReadyForPracticalCount = useMemo(() => {
+    return allWorkers.filter((worker) => worker.theory_completed && worker.status !== 'ประเมินแล้ว').length;
   }, [allWorkers]);
 
-  const notTestedWorkerCount = useMemo(() => {
-    // ยังไม่ได้ทดสอบ (No Exam) -> Level -1
-    const assignedSet = new Set(trainingWorkerIds.map(id => String(id)));
-    // ✅ รวมคนที่ผ่านทฤษฎีแล้ว (Level >= 1) แต่ยังไม่ได้ถูกมอบหมายงานภาคปฏิบัติ (status=รอการประเมิน) เข้าไปด้วย เพราะยังถือว่า "รอการทดสอบ"
-    return allWorkers.filter(w => {
-      const workerId = String(w.id ?? w.worker_id ?? '');
-      if (assignedSet.has(workerId)) return false;
-      return w.level_no === -1 || (w.status === 'รอการประเมิน' && w.level_no >= 1);
+  const practicalAssignedCount = useMemo(() => {
+    return allWorkers.filter((worker) => {
+      if (!worker.theory_completed || worker.status === 'ประเมินแล้ว') return false;
+      const workerId = Number(worker.id);
+      return Number.isFinite(workerId) && practicalAssignedWorkerIdSet.has(workerId);
     }).length;
-  }, [allWorkers, trainingWorkerIds]);
+  }, [allWorkers, practicalAssignedWorkerIdSet]);
+
+  const notTestedPracticalCount = useMemo(() => {
+    const value = theoryReadyForPracticalCount - practicalAssignedCount;
+    return value > 0 ? value : 0;
+  }, [theoryReadyForPracticalCount, practicalAssignedCount]);
 
   // ✅ คำนวณสถิติจำนวนช่างแยกตามทักษะ (จากรายชื่อช่างที่โหลดมา)
   const workerSkillStats = useMemo(() => {
@@ -110,8 +113,8 @@ const ProjectManager = () => {
     const counts = new Map();
     allWorkers.forEach(worker => {
       const skill = worker.skill || 'ไม่ระบุ';
-      // ✅ กรองคนทียังไม่มีระดับ (Level -1) ออกจากกราฟ
-      if (worker.level_no === -1 || worker.level_no === null) return;
+      // ✅ กรองคนที่ยังไม่มีระดับ (Level -1) ออกจากกราฟ
+      if (worker.level_no === null) return;
       
       const levelNo = Number.isFinite(worker.level_no) ? worker.level_no : 0;
       const key = `${skill}||${levelNo}`;
@@ -148,9 +151,9 @@ const ProjectManager = () => {
       : null;
 
     let status = 'ยังไม่ได้ทำข้อสอบ';
-    // ✅ Default เป็น -1 เพื่อแยกระหว่าง "ไม่ผ่าน (0)" กับ "ยังไม่สอบ (-1)"
-    let level_no = -1;
-    let level_label = 'รอการทดสอบ';
+    // ✅ Default เป็น 0: ยังไม่สอบ/ยังไม่ครบผลรวม ให้แสดง LV.0 (ต่ำ)
+    let level_no = 0;
+    let level_label = 'ต่ำ';
 
     const scorePercent = theoryPercent != null
       ? Number(theoryPercent)
@@ -158,15 +161,16 @@ const ProjectManager = () => {
         ? Number(foremanPercent)
         : null;
 
-    const hasTheoryAttempt = scorePercent != null || item?.assessmentPassed != null;
-    const hasPassedTheory = item?.assessmentPassed === true || (scorePercent != null && scorePercent >= 60);
+    const hasTheoryAttempt = scorePercent != null;
+    const hasFinalResult = item?.assessmentPassed === true || item?.assessmentPassed === false;
+    const hasFinalPass = item?.assessmentPassed === true;
 
     if (hasTheoryAttempt) {
-      status = hasForemanAssessment ? 'ประเมินแล้ว' : 'รอการประเมิน';
-      if (item?.assessmentPassed === false || (scorePercent != null && scorePercent < 60)) {
+      status = hasFinalPass ? 'ประเมินแล้ว' : 'รอการประเมิน';
+      if (!hasFinalResult || item?.assessmentPassed === false) {
         level_no = 0;
         level_label = 'ต่ำ';
-      } else if (hasPassedTheory) {
+      } else if (hasFinalPass) {
         if (Number.isFinite(assessedRoundLevel) && assessedRoundLevel >= 1) {
           level_no = Math.min(3, Math.max(1, assessedRoundLevel));
           level_label = LEVEL_META[level_no]?.label || 'พื้นฐาน';
@@ -188,6 +192,7 @@ const ProjectManager = () => {
       role: item?.role || item?.role_code || '',
       exam_score: scoreValue,
       exam_total: totalQuestionsValue,
+      theory_completed: hasTheoryAttempt,
       status,
       level_no,
       level_label
@@ -206,35 +211,15 @@ const ProjectManager = () => {
   const loadWorkers = async () => {
     setWorkerLoading(true);
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/admin/workers`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const items = Array.isArray(data?.items) ? data.items : data;
-        const mapped = (Array.isArray(items) ? items : [])
-          .map(mapWorkerForDashboard)
-          .filter(w => isWorkerRole(w.role));
-        setAllWorkers(mapped);
-        setApiError(prev => ({ ...prev, workers: '' }));
-        // 🎯 แสดงเฉพาะคนที่ยังไม่มีระดับ (รอประเมิน / ยังไม่ทำข้อสอบ)
-        setWorkers(mapped.filter(w => w.status !== "ประเมินแล้ว"));
-      } else {
-        setApiError(prev => ({ ...prev, workers: 'เชื่อมต่อข้อมูลช่างไม่สำเร็จ (API Workers)' }));
-        // Mock Data ทดสอบ
-        const mockData = [
-          { id: 1, name: "นายสมชาย ใจดี", skill: "ช่างไฟฟ้า", exam_score: 55, status: "ประเมินแล้ว" },
-          { id: 2, name: "นายวิชัย สายไฟ", skill: "ช่างไฟฟ้า", exam_score: 42, status: "รอการประเมิน" },
-          { id: 3, name: "นายกอไก่ ใจดี", skill: "ช่างประปา", exam_score: 0, status: "ยังไม่ได้ทำข้อสอบ" }
-        ].map(item => ({ ...item, role: 'ช่าง (WK)' }));
-        setAllWorkers(mockData);
-        setWorkers(mockData.filter(w => w.status !== "ประเมินแล้ว"));
-      }
+      const data = await apiRequest('/api/admin/workers');
+      const items = Array.isArray(data?.items) ? data.items : data;
+      const mapped = (Array.isArray(items) ? items : [])
+        .map(mapWorkerForDashboard)
+        .filter(w => isWorkerRole(w.role));
+      setAllWorkers(mapped);
+      setApiError(prev => ({ ...prev, workers: '' }));
+      // 🎯 แสดงเฉพาะคนที่ยังไม่มีระดับ (รอประเมิน / ยังไม่ทำข้อสอบ)
+      setWorkers(mapped.filter(w => w.status !== "ประเมินแล้ว"));
     } catch (e) { 
       console.error(e); 
       setApiError(prev => ({ ...prev, workers: 'เชื่อมต่อข้อมูลช่างไม่สำเร็จ (Network Error)' }));
@@ -246,16 +231,9 @@ const ProjectManager = () => {
 
   const loadCounts = async () => {
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/dashboard/project-task-counts`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (res.ok) setCounts(await res.json());
-      if (!res.ok) setApiError(prev => ({ ...prev, counts: 'เชื่อมต่อข้อมูลโครงการไม่สำเร็จ (API Dashboard)' }));
-      if (res.ok) setApiError(prev => ({ ...prev, counts: '' }));
+      const data = await apiRequest('/api/dashboard/project-task-counts');
+      setCounts(Array.isArray(data) ? data : []);
+      setApiError(prev => ({ ...prev, counts: '' }));
     } catch (e) { 
       console.error(e); 
       setApiError(prev => ({ ...prev, counts: 'เชื่อมต่อข้อมูลโครงการไม่สำเร็จ (Network Error)' }));
@@ -264,21 +242,12 @@ const ProjectManager = () => {
 
   const loadTrainingAssignments = async () => {
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/dashboard/practical-testing-count`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTrainingWorkerCount(Number(data?.count ?? 0));
-        setTrainingWorkerIds(Array.isArray(data?.worker_ids) ? data.worker_ids : []);
-      } else {
-        setTrainingWorkerCount(0);
-        setTrainingWorkerIds([]);
-      }
+      const data = await apiRequest('/api/dashboard/practical-testing-count');
+      const workerIds = Array.isArray(data?.worker_ids)
+        ? data.worker_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+        : [];
+      setTrainingWorkerIds(workerIds);
+      setTrainingWorkerCount(workerIds.length || Number(data?.count ?? 0));
     } catch (error) {
       console.error(error);
       setTrainingWorkerCount(0);
@@ -314,9 +283,7 @@ const ProjectManager = () => {
 
   return (
     <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
-      <PMTopNav active="home" user={currentUser} onLogout={handleLogout} />
-
-      <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
+      <PMTopNav active="home" user={currentUser} />
 
       <main className="worker-main" style={{ flex: 1, padding: '40px 20px', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
         {(apiError.workers || apiError.counts) && (
@@ -435,17 +402,17 @@ const ProjectManager = () => {
         {/* Stats Grid - WK Style Cards */}
         <div className="worker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
           <StatCard 
-            icon={<span><svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M7 10h10v4H7z"></path><path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10 10-4.49 10-10S17.51 2 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8"></path></svg></span>} 
-            label="ยังไม่ผ่านเกณฑ์ภาคทฤษฎี" 
-            value={`${notPassedWorkerCount} คน`} 
-            color="#ef4444" 
+            icon={<span><svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5m0-8c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3M4 22h16c.55 0 1-.45 1-1v-1c0-3.86-3.14-7-7-7h-4c-3.86 0-7 3.14-7 7v1c0 .55.45 1 1 1m6-7h4c2.76 0 5 2.24 5 5H5c0-2.76 2.24-5 5-5"></path></svg></span>} 
+            label="จำนวนช่างทั้งหมด" 
+            value={`${statusStats.total} คน`} 
+            color="#cf2424" 
             bg="#fef2f2" 
-            subLabel="ต้องพัฒนาเร่งด่วน"
+            subLabel="รวมจำนวนช่างทั้งหมดในระบบ"
           />
           <StatCard 
             icon={<span><svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M5 2H4v2h1v1c0 2.46 1.32 4.77 3.43 6.02.35.21.57.55.57.9v.16c0 .35-.21.69-.57.9A7.01 7.01 0 0 0 5 19v1H4v2h16v-2h-1v-1c0-2.46-1.32-4.77-3.43-6.02-.36-.21-.57-.55-.57-.9v-.16c0-.35.21-.69.57-.9A7.01 7.01 0 0 0 19 5V4h1V2zm12 3c0 1.76-.94 3.41-2.45 4.3-.97.57-1.55 1.55-1.55 2.62v.16c0 1.07.58 2.05 1.55 2.62 1.51.89 2.45 2.54 2.45 4.3v1H7v-1c0-1.76.94-3.41 2.45-4.3.97-.57 1.55-1.55 1.55-2.62v-.16c0-1.07-.58-2.05-1.55-2.62A5.01 5.01 0 0 1 7 5V4h10z"></path></svg></span>} 
             label="ยังไม่ได้ทดสอบภาคปฏิบัติ" 
-            value={`${notTestedWorkerCount} คน`} 
+            value={`${notTestedPracticalCount} คน`} 
             color="#f59e0b" 
             bg="#fffbeb" 
             subLabel="ควรมอบหมายการสอบ"
@@ -453,7 +420,7 @@ const ProjectManager = () => {
           <StatCard 
             icon={<span><svg  xmlns="http://www.w3.org/2000/svg" width="24" height="24"  fill="currentColor" viewBox="0 0 24 24" ><path d="M21 15c0-.61-.06-1.22-.18-1.81-.12-.58-.29-1.15-.52-1.69a10 10 0 0 0-.83-1.53c-.32-.48-.69-.93-1.1-1.33-.41-.41-.86-.78-1.33-1.1-.48-.32-1-.6-1.53-.83-.16-.07-.34-.12-.5-.18V5.01c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v1.52c-.17.06-.34.11-.5.18-.53.23-1.05.51-1.53.83s-.92.69-1.33 1.1-.78.86-1.1 1.33c-.32.48-.6 1-.83 1.53-.23.54-.41 1.11-.53 1.69-.12.59-.18 1.2-.18 1.81v3h-1v2h20v-2h-1v-3ZM5 15c0-.47.05-.95.14-1.41.09-.45.23-.89.41-1.31s.39-.81.64-1.19a7.1 7.1 0 0 1 1.9-1.9c.29-.2.6-.36.91-.51V15h2V6h2v9h2V8.68c.32.15.62.32.91.51.37.25.72.54 1.04.86s.6.66.85 1.04c.25.37.47.77.65 1.19s.32.86.41 1.31c.09.46.14.94.14 1.41v3H5z"></path></svg></span>} 
             label="กำลังทดสอบภาคปฏิบัติ" 
-            value={`${trainingWorkerCount} คน`} 
+            value={`${practicalAssignedCount} คน`} 
             color="#3b82f6" 
             bg="#eff6ff" 
             subLabel="อยู่ระหว่างทดสอบ"
@@ -477,7 +444,8 @@ const ProjectManager = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {workerLevelStats.map((item, idx) => {
                 const maxCount = Math.max(...workerLevelStats.map(s => s.count), 1);
-                const width = (item.count / maxCount) * 100;
+                const effectiveScaleMax = Math.max(maxCount, 10);
+                const width = (item.count / effectiveScaleMax) * 100;
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                     <div style={{ width: '140px', fontSize: '14px', color: '#475569', fontWeight: '600', textAlign: 'right' }}>{item.name}</div>
@@ -558,36 +526,55 @@ const ProjectManager = () => {
               <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>รหัสช่าง</div>
               <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>สาขาทักษะ</div>
               <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>คะแนนสอบ</div>
-              <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>ข้อสอบ Lv.</div>
+              <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>ผลสอบทฤษฎี</div>
               <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>สถานะปัจจุบัน</div>
               <div style={{ textAlign: 'center', fontWeight: '600', color: '#475569' }}>การจัดการ</div>
             </div>
             <div className="tbody">
               {workerLoading ? <div className="empty" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>กำลังโหลด...</div> : 
-                workers.map((w) => (
+                workers.map((w) => {
+                  const workerId = Number(w.id);
+                  const isPracticalAssigned = Number.isFinite(workerId) && practicalAssignedWorkerIdSet.has(workerId);
+                  return (
                   <div className="tr" key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 1.2fr 1fr 1fr 1.4fr 1.2fr', borderBottom: '1px solid #f1f5f9', padding: '16px 0', alignItems: 'center', transition: 'background 0.2s' }} onMouseOver={(e) => e.currentTarget.style.background = '#f8fafc'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                     <div className="td" style={{ paddingLeft: '24px' }}><div style={{ fontWeight: '600', color: '#1e293b' }}>{w.name}</div></div>
                     <div className="td" style={{ textAlign: 'center', color: '#64748b' }}>{w.id ?? '-'}</div>
                     <div className="td" style={{ textAlign: 'center', color: '#475569' }}>{w.skill}</div>
                     <div className="td" style={{ textAlign: 'center', color: '#64748b' }}>{w.exam_score == null ? '-' : `${w.exam_score}/${w.exam_total || 60}`}</div>
                     <div className="td" style={{ textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
-                        {w.level_no >= 1 ? (
-                            <span style={{ 
-                                display: 'inline-block',
-                                padding: '4px 12px',
-                                borderRadius: '20px',
-                                fontSize: '12px',
-                                fontWeight: '700',
-                                background: w.level_no >= 3 ? '#f3e8ff' : (w.level_no === 2 ? '#eff6ff' : '#ecfdf5'),
-                                color: w.level_no >= 3 ? '#7c3aed' : (w.level_no === 2 ? '#2563eb' : '#059669')
-                            }}>
-                                Lv.{w.level_no}
-                            </span>
-                        ) : (w.level_no === 0 ? <span style={{ color: '#ef4444', fontWeight: '600' }}>ไม่ผ่าน</span> : '-')}
+                      {w.theory_completed ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          background: '#ecfdf5',
+                          color: '#059669'
+                        }}>
+                          สอบแล้ว
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          background: '#fff7ed',
+                          color: '#c2410c'
+                        }}>
+                          ยังไม่ได้สอบ
+                        </span>
+                      )}
                     </div>
-                    <div className="td" style={{ display: 'flex', justifyContent: 'center' }}>{getWorkerStatusBadge(w.status)}</div>
+                    <div className="td" style={{ display: 'flex', justifyContent: 'center' }}>
+                      {w.status === 'รอการประเมิน' && isPracticalAssigned ? (
+                        <span className="pill small" style={{background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe'}}>มอบหมายงานแล้ว</span>
+                      ) : getWorkerStatusBadge(w.status)}
+                    </div>
                     <div className="td" style={{ paddingRight: '24px', display: 'flex', justifyContent: 'center' }}>
-                      {w.status === "รอการประเมิน" ? (
+                      {w.status === "รอการประเมิน" && !isPracticalAssigned ? (
                         <button 
                           onClick={() => navigate('/project-tasks', { state: { selectedWorker: w, mode: 'assessment' } })}
                           style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}
@@ -595,6 +582,14 @@ const ProjectManager = () => {
                           onMouseOut={(e) => e.currentTarget.style.background = '#2563eb'}
                         >
                           มอบหมายงานประเมิน
+                        </button>
+                      ) : w.status === 'รอการประเมิน' && isPracticalAssigned ? (
+                        <button
+                          onClick={() => navigate('/projects')}
+                          style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }}
+                          title="ดูงานที่มอบหมายและประวัติการทำงาน"
+                        >
+                          ดูงานที่มอบหมาย
                         </button>
                       ) : (
                         <button 
@@ -609,7 +604,8 @@ const ProjectManager = () => {
                       )}
                     </div>
                   </div>
-                ))
+                  );
+                })
               }
               {workers.length === 0 && !workerLoading && <div className="empty">ไม่มีช่างที่รอการประเมินในขณะนี้</div>}
             </div>

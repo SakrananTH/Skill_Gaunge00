@@ -263,7 +263,7 @@ const AdminQuizBank = () => {
     showBreakdown: true,
     targetLevel: '',
     subcategoryQuotas: {},
-    criteria: { passThreshold: 60 },
+    criteria: { passThreshold: 70 },
     difficultyWeights: { easy: 0, medium: 0, hard: 0 }
   });
   const [roundSelectionTouched, setRoundSelectionTouched] = useState(Boolean(storedRoundId));
@@ -471,7 +471,7 @@ const AdminQuizBank = () => {
         showAnswers: matched.showAnswers ?? false,
         showBreakdown: matched.showBreakdown ?? true,
         subcategoryQuotas: matched.subcategoryQuotas || {},
-        criteria: matched.criteria || { passThreshold: 60 },
+        criteria: matched.criteria || { passThreshold: 70 },
         targetLevel: matchedTargetLevel,
         difficultyWeights: matchedWeights
       }));
@@ -658,7 +658,13 @@ const AdminQuizBank = () => {
     }
     setDeletingQuestionId(questionId);
     try {
-      await apiRequest(`/api/admin/questions/${questionId}`, { method: 'DELETE' });
+      const questionIdText = String(questionId || '');
+      const isStructural = questionIdText.startsWith('struct_');
+      const endpoint = isStructural
+        ? `/api/admin/question-structural/${questionIdText.replace('struct_', '')}`
+        : `/api/admin/questions/${questionId}`;
+
+      await apiRequest(endpoint, { method: 'DELETE' });
       setQuestions(prev => prev.filter(question => question.id !== questionId));
       setQuestionsError('');
       setQuestionMessage('ลบคำถามเรียบร้อย');
@@ -717,7 +723,7 @@ const AdminQuizBank = () => {
       show_breakdown: 1,
       subcategory_quotas: JSON.stringify({}),
       frequency_months: null,
-      criteria: JSON.stringify({ passThreshold: 60, scoreWeights: { exam: 70, practical: 30 } }),
+      criteria: JSON.stringify({ passThreshold: 70, scoreWeights: { exam: 70, practical: 30 } }),
       difficulty_weights: JSON.stringify({ easy: 0, medium: 0, hard: 0 }),
       status: 'draft',
       active: 1,
@@ -773,7 +779,7 @@ const AdminQuizBank = () => {
       showBreakdown: true,
       targetLevel: '',
       subcategoryQuotas: {},
-      criteria: { passThreshold: 60 },
+      criteria: { passThreshold: 70 },
       difficultyWeights: { easy: 0, medium: 0, hard: 0 }
     }));
 
@@ -978,7 +984,7 @@ const AdminQuizBank = () => {
       description: roundForm.description ? roundForm.description.trim() : '',
       question_count: finalQuestionCount,
       frequency_months: roundForm.frequencyMonths ? Number(roundForm.frequencyMonths) : null,
-      passing_score: Number(roundForm.scoreWeights?.exam ?? 70),
+      passing_score: Number(roundForm.criteria?.passThreshold ?? 70),
       duration_minutes: Number(roundForm.durationMinutes),
       show_score: roundForm.showScore ? 1 : 0,
       show_answers: roundForm.showAnswers ? 1 : 0,
@@ -990,7 +996,7 @@ const AdminQuizBank = () => {
       history: JSON.stringify(nextHistory),
       updated_by: userLabel,
       criteria: JSON.stringify({
-        passThreshold: Number(roundForm.criteria?.passThreshold ?? 60),
+        passThreshold: Number(roundForm.criteria?.passThreshold ?? 70),
         scoreWeights: {
           exam: examWeight,
           practical: practicalWeight
@@ -1412,7 +1418,7 @@ const AdminQuizBank = () => {
                   <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <i className='bx bx-slider-alt'></i> การตั้งค่าทั่วไป
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', alignItems: 'start' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label htmlFor="round-frequency" style={{ fontSize: '0.9rem', fontWeight: 600 }}>ความถี่การสอบ (เดือน)</label>
                       <div style={{ position: 'relative' }}>
@@ -1429,7 +1435,34 @@ const AdminQuizBank = () => {
                       {(attemptedSubmit && (roundForm.frequencyMonths === '' || roundForm.frequencyMonths === null || roundForm.frequencyMonths === undefined)) && (
                         <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '2px' }}>กรุณาระบุความถี่</div>
                       )}
-                      <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '4px' }}>ระยะเวลาเว้นช่วงก่อนสอบครั้งถัดไป</div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label htmlFor="round-duration" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เวลาทำข้อสอบ (นาที)</label>
+                      <input
+                        id="round-duration"
+                        type="number"
+                        min={1}
+                        value={roundForm.durationMinutes}
+                        onChange={(e) => setRoundForm({ ...roundForm, durationMinutes: Number(e.target.value) })}
+                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                      />
+                      {(attemptedSubmit && !roundForm.durationMinutes) && (
+                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุเวลาสอบ</div>
+                      )}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label htmlFor="round-question-count" style={{ fontSize: '0.9rem', fontWeight: 600 }}>จำนวนข้อสอบ (ข้อ)</label>
+                      <input
+                        id="round-question-count"
+                        type="number"
+                        min={1}
+                        value={roundForm.questionCount}
+                        onChange={(e) => setRoundForm({ ...roundForm, questionCount: Number(e.target.value) })}
+                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                      />
+                      {(attemptedSubmit && !roundForm.questionCount) && (
+                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุจำนวนข้อสอบ</div>
+                      )}
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label htmlFor="round-exam-weight" style={{ fontSize: '0.9rem', fontWeight: 600 }}>สัดส่วนคะแนนสอบ (%)</label>
@@ -1446,7 +1479,7 @@ const AdminQuizBank = () => {
                             scoreWeights: { ...prev.scoreWeights, exam: nextValue }
                           }));
                         }}
-                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(examWeightValue) && (examWeightValue < 0 || examWeightValue > 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
+                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(examWeightValue) && (examWeightValue < 0 || examWeightValue > 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
                       />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1464,45 +1497,11 @@ const AdminQuizBank = () => {
                             scoreWeights: { ...prev.scoreWeights, practical: nextValue }
                           }));
                         }}
-                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(practicalWeightValue) && (practicalWeightValue < 0 || practicalWeightValue > 100 || weightTotalValue !== 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
+                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(practicalWeightValue) && (practicalWeightValue < 0 || practicalWeightValue > 100 || weightTotalValue !== 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
                       />
-                      <div style={{ fontSize: '0.8rem', color: weightTotalValue === 100 ? '#38a169' : '#e53e3e', marginTop: '4px' }}>
-                        รวม {weightTotalValue}% {weightTotalValue === 100 ? '(ครบถ้วน)' : '(ต้องรวม 100%)'}
-                      </div>
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-question-count" style={{ fontSize: '0.9rem', fontWeight: 600 }}>จำนวนข้อสอบ (ข้อ)</label>
-                      <input
-                        id="round-question-count"
-                        type="number"
-                        min={1}
-                        value={roundForm.questionCount}
-                        onChange={(e) => setRoundForm({ ...roundForm, questionCount: Number(e.target.value) })}
-                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
-                      />
-                      {(attemptedSubmit && !roundForm.questionCount) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุจำนวนข้อสอบ</div>
-                      )}
-                      <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '4px' }}>
-                        มีในคลัง: <span style={{fontWeight: 600, color: '#2b6cb0'}}>{categoryStats.total}</span> (ง่าย {categoryStats.easy}, กลาง {categoryStats.medium}, ยาก {categoryStats.hard})
-                      </div>
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-duration" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เวลาทำข้อสอบ (นาที)</label>
-                      <input
-                        id="round-duration"
-                        type="number"
-                        min={1}
-                        value={roundForm.durationMinutes}
-                        onChange={(e) => setRoundForm({ ...roundForm, durationMinutes: Number(e.target.value) })}
-                        style={{ padding: '0.45rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
-                      />
-                      {(attemptedSubmit && !roundForm.durationMinutes) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุเวลาสอบ</div>
-                      )}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
-                      <label htmlFor="criteria-pass-threshold" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เกณฑ์ผ่านรวม (%) (คะแนนสอบ + ภาคปฏิบัติ)</label>
+                      <label htmlFor="criteria-pass-threshold" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เกณฑ์ผ่านรวม (%)</label>
                       <input
                         id="criteria-pass-threshold"
                         type="number"
@@ -1516,9 +1515,8 @@ const AdminQuizBank = () => {
                             criteria: { ...prev.criteria, passThreshold: nextValue }
                           }));
                         }}
-                        style={{ padding: '0.45rem', borderRadius: '6px', border: isPassThresholdError ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '140px', fontSize: '0.9rem' }}
+                        style={{ padding: '0.6rem', borderRadius: '6px', border: isPassThresholdError ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
                       />
-                      <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '4px' }}>ระบบจะเทียบคะแนนรวมกับเกณฑ์นี้เพื่อพิจารณาผ่าน</div>
                     </div>
                     <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
                       <label htmlFor="round-description" style={{ fontSize: '0.9rem', fontWeight: 600 }}>รายละเอียดเพิ่มเติม</label>
@@ -1539,7 +1537,7 @@ const AdminQuizBank = () => {
                   <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <i className='bx bx-layer'></i>เงื่อนไขความยากง่าย
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem', alignItems: 'start' }}>
                     
                     {/* Level Selector */}
                     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1554,17 +1552,18 @@ const AdminQuizBank = () => {
                             key={level.value}
                             type="button"
                             className={`level-option${roundForm.targetLevel === level.value ? ' is-active' : ''}`}
-                            onClick={() => setRoundForm(prev => ({
-                              ...prev,
-                              targetLevel: level.value,
-                              difficultyWeights: level.value === 'all'
-                                ? (prev.difficultyWeights || { easy: 40, medium: 40, hard: 20 })
-                                : {
-                                    easy: level.value === 'easy' ? 100 : 0,
-                                    medium: level.value === 'medium' ? 100 : 0,
-                                    hard: level.value === 'hard' ? 100 : 0
-                                  }
-                            }))}
+                            onClick={() => setRoundForm(prev => {
+                              const newWeights = {
+                                easy: level.value === 'easy' ? 100 : 0,
+                                medium: level.value === 'medium' ? 100 : 0,
+                                hard: level.value === 'hard' ? 100 : 0
+                              };
+                              return {
+                                ...prev,
+                                targetLevel: level.value,
+                                difficultyWeights: newWeights
+                              };
+                            })}
                             aria-pressed={roundForm.targetLevel === level.value}
                             style={{
                               padding: '0.5rem 1rem',
@@ -1595,11 +1594,18 @@ const AdminQuizBank = () => {
                       </div>
                       
                       <div style={{ padding: '1rem', background: '#ebf8ff', borderRadius: '6px', border: (attemptedSubmit && (resolvedDifficultyWeights.easy + resolvedDifficultyWeights.medium + resolvedDifficultyWeights.hard !== 100)) ? '1px solid #e53e3e' : '1px solid #bee3f8', color: '#2c5282', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <i className='bx bx-info-circle' style={{ fontSize: '1.5rem' }}></i>
+                        <i className='bx bx-info-circle' style={{ fontSize: '1.5rem', color: roundForm.targetLevel ? '#2c5282' : '#e53e3e' }}></i>
                         <div>
-                          <div style={{ fontWeight: 600 }}>โหมดสอบเลื่อนระดับ {roundForm.targetLevel === 'easy' ? '1' : roundForm.targetLevel === 'medium' ? '2' : '3'}</div>
+                          {roundForm.targetLevel ? (
+                            <div style={{ fontWeight: 600 }}>โหมดสอบเลื่อนระดับ {roundForm.targetLevel === 'easy' ? '1' : roundForm.targetLevel === 'medium' ? '2' : '3'}</div>
+                          ) : (
+                            <div style={{ fontWeight: 600, color: '#e53e3e' }}>กรุณาเลือกระดับสอบ</div>
+                          )}
                           <div style={{ fontSize: '0.9rem' }}>
-                            ระบบจะสุ่มเฉพาะข้อสอบ<strong>{DIFFICULTY_LABELS[roundForm.targetLevel] || 'ระดับที่เลือก'}</strong>เท่านั้น (100%)
+                            {roundForm.targetLevel 
+                              ? <span>ระบบจะสุ่มเฉพาะข้อสอบ<strong>{DIFFICULTY_LABELS[roundForm.targetLevel] || 'ระดับที่เลือก'}</strong>เท่านั้น (100%)</span>
+                              : <span style={{ opacity: 0.9 }}>เพื่อกำหนดน้ำหนักความยากของข้อสอบ</span>
+                            }
                           </div>
                         </div>
                       </div>
@@ -1928,7 +1934,7 @@ const AdminQuizBank = () => {
                                 aria-label="แก้ไขคำถาม"
                                 // เปิดให้แก้ไขได้แล้ว
                               >
-                                <i className="bx bx-edit" style={{ color: isExternal ? '#cbd5e0' : '#3b82f6' }} />
+                                <i className="bx bx-edit" style={{ color: '#3b82f6' }} />
                               </button>
                               <button type="button" className="btn-icon" onClick={() => handleDuplicate(question)} title="คัดลอก" aria-label="คัดลอกคำถาม">
                                 <i className="bx bx-copy" style={{ color: '#805ad5' }} />
@@ -1937,12 +1943,11 @@ const AdminQuizBank = () => {
                                 type="button"
                                 className={`btn-icon${deletingQuestionId === question.id ? ' is-busy' : ''}`}
                                 onClick={() => handleDelete(question.id)}
-                                title={isExternal ? "ไม่สามารถลบคำถามจากระบบภายนอกได้" : (deletingQuestionId === question.id ? 'กำลังลบ...' : 'ลบ')}
+                                title={deletingQuestionId === question.id ? 'กำลังลบ...' : 'ลบ'}
                                 aria-label={deletingQuestionId === question.id ? 'กำลังลบคำถาม' : 'ลบคำถาม'}
-                                disabled={deletingQuestionId === question.id || isExternal}
-                                style={isExternal ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
+                                disabled={deletingQuestionId === question.id}
                               >
-                                <i className="bx bx-trash-alt" style={isExternal ? { color: '#cbd5e0' } : {}} />
+                                <i className="bx bx-trash-alt" />
                               </button>
                             </div>
                           </td>
@@ -1968,7 +1973,7 @@ const AdminQuizBank = () => {
                   </tbody>
                 </table>
                 {totalPages > 1 && (
-                  <div className="pagination-controls">
+                  <div className="quiz-pagination-controls">
                     <button
                       type="button"
                       className="pagination-btn"
@@ -1977,16 +1982,40 @@ const AdminQuizBank = () => {
                     >
                       &lt;
                     </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                      <button
-                        key={page}
-                        type="button"
-                        className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
-                        onClick={() => setCurrentPage(page)}
-                      >
-                        {page}
-                      </button>
-                    ))}
+                    {(() => {
+                      const maxVisible = 5;
+                      let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                      let end = Math.min(totalPages, start + maxVisible - 1);
+                      if (end - start + 1 < maxVisible) {
+                        start = Math.max(1, end - maxVisible + 1);
+                      }
+                      
+                      const pages = [];
+                      if (start > 1) {
+                        pages.push(1);
+                        if (start > 2) pages.push('...');
+                      }
+                      for (let i = start; i <= end; i++) {
+                        pages.push(i);
+                      }
+                      if (end < totalPages) {
+                        if (end < totalPages - 1) pages.push('...');
+                        pages.push(totalPages);
+                      }
+                      
+                      return pages.map((page, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
+                          onClick={() => typeof page === 'number' && setCurrentPage(page)}
+                          disabled={page === '...'}
+                          style={page === '...' ? { cursor: 'default', border: 'none', background: 'transparent' } : {}}
+                        >
+                          {page}
+                        </button>
+                      ));
+                    })()}
                     <button
                       type="button"
                       className="pagination-btn"

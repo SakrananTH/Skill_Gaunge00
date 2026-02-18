@@ -19,6 +19,8 @@ const fetchAssessmentResults = async ({ page, limit, search, category, passed })
 };
 
 const AdminAssessmentResults = () => {
+  const WEIGHTED_PERCENT_MAX = 70;
+
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -122,7 +124,17 @@ const AdminAssessmentResults = () => {
                 results.map((item) => {
                   const totalQuestions = Number(item.total_questions) || 0;
                   const score = Number(item.total_score) || 0;
-                  const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
+                  const weightedPercentage = totalQuestions > 0
+                    ? ((score / totalQuestions) * WEIGHTED_PERCENT_MAX)
+                    : 0;
+                  const weightedPercentageDisplay = Number.isInteger(weightedPercentage)
+                    ? weightedPercentage
+                    : weightedPercentage.toFixed(2);
+                  const isResultReady = item?.resultReady === false
+                    ? false
+                    : (item?.practicalCompleted === false ? false : (item?.passed !== null && item?.passed !== undefined));
+                  const statusClass = !isResultReady ? 'pending' : (item.passed ? 'passed' : 'failed');
+                  const statusLabel = !isResultReady ? 'รอผล' : (item.passed ? 'ผ่าน' : 'ไม่ผ่าน');
                   const finishedAt = item.finished_at ? new Date(item.finished_at).toLocaleString('th-TH') : '-';
 
                   return (
@@ -133,12 +145,12 @@ const AdminAssessmentResults = () => {
                       <td>{item.category || '-'}</td>
                       <td>
                         <div className="score-pill">
-                          {score}/{totalQuestions} ({percentage}%)
+                          {score}/{totalQuestions} ({weightedPercentageDisplay}%)
                         </div>
                       </td>
                       <td>
-                        <span className={`status-pill ${item.passed ? 'passed' : 'failed'}`}>
-                          {item.passed ? 'ผ่าน' : 'ไม่ผ่าน'}
+                        <span className={`status-pill ${statusClass}`}>
+                          {statusLabel}
                         </span>
                       </td>
                       <td>{finishedAt}</td>

@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import './PMTheme.css';
 import LogoutModal from '../../components/LogoutModal';
 
-const PMTopNav = ({ active = 'home', user, onLogout }) => {
+const PMTopNav = ({ active = 'home', user }) => {
   const navigate = useNavigate();
 
   const items = [
     { key: 'home', label: 'หน้าหลัก', path: '/pm', icon: <i className='bx bx-home'></i> },
-    { key: 'projects', label: 'โครงการทั้งหมด', path: '/projects', icon: <i className='bx bx-buildings'></i> },
-    { key: 'tasks', label: 'มอบหมายงาน', path: '/project-tasks', icon: <i className='bx bx-task'></i> }
+    { key: 'projects', label: 'โครงการทั้งหมด', path: '/projects', icon: <i className='bx bx-buildings'></i> }
   ];
 
   const handleNavigate = (path) => {
@@ -17,10 +16,6 @@ const PMTopNav = ({ active = 'home', user, onLogout }) => {
   };
 
   const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
-      return;
-    }
     setShowLogoutModal(true);
   };
 

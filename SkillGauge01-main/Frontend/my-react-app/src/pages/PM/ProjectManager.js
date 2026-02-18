@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 import { mockUser } from '../../mock/mockData';
+import { apiRequest } from '../../utils/api';
 
 const ProjectManager = () => {
   const location = useLocation();
@@ -9,8 +10,6 @@ const ProjectManager = () => {
   const navUser = location.state?.user;
   // default to a PM user if none is passed
   const user = navUser || { ...mockUser, role: 'Project Manager' };
-
-  const API = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
   // Filters & pagination
   const [search, setSearch] = useState('');
@@ -47,12 +46,7 @@ const ProjectManager = () => {
 
   const loadCounts = async () => {
     try {
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(`${API}/api/dashboard/project-task-counts`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error('failed_counts');
-      const data = await res.json();
+      const data = await apiRequest('/api/dashboard/project-task-counts');
       setCounts(data);
     } catch (e) {
       // non-blocking
@@ -64,17 +58,12 @@ const ProjectManager = () => {
     setLoading(true);
     setErr('');
     try {
-      const url = new URL('/api/tasks', API);
-      url.searchParams.set('limit', String(limit));
-      url.searchParams.set('offset', String(offset));
-      if (search) url.searchParams.set('search', search);
-      if (status) url.searchParams.set('status', status);
-      const token = sessionStorage.getItem('auth_token');
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error('failed_items');
-      const data = await res.json();
+      const params = new URLSearchParams();
+      params.set('limit', String(limit));
+      params.set('offset', String(offset));
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      const data = await apiRequest(`/api/tasks?${params.toString()}`);
       const rawItems = Array.isArray(data.items) ? data.items : [];
       const normalizedItems = rawItems.map((item) => ({
         task_id: item.id,
@@ -159,7 +148,7 @@ const ProjectManager = () => {
                   <div className="sub">อัปเดตตัวเลขสรุป</div>
                 </div>
                 <div className="time">
-                  <button className="pill" onClick={async()=>{ const token = sessionStorage.getItem('auth_token'); await fetch(`${API}/api/dashboard/project-task-counts?refresh=true`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined }); loadCounts(); }}>Refresh</button>
+                  <button className="pill" onClick={async()=>{ await apiRequest('/api/dashboard/project-task-counts?refresh=true'); loadCounts(); }}>Refresh</button>
                 </div>
               </div>
             </div>

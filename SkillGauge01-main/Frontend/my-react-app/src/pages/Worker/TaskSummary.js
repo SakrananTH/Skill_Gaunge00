@@ -2,35 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { mockUser } from '../../mock/mockData';
 import './Dashboard.css';
+import { apiRequest } from '../../utils/api';
 
 const TaskSummary = () => {
   const navigate = useNavigate();
   const [allProjects, setAllProjects] = useState([]);
   const user = { ...mockUser, role: 'Project Manager' };
-  const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
 
   // ✅ ดึงข้อมูลงานทั้งหมด
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const res = await fetch(`${apiBase}/api/pm/projects`);
-        if (res.ok) {
-           const data = await res.json();
-           setAllProjects(data);
-        } else {
-           // Fallback to mock if API fails? Or just empty.
-           // For now, let's try to stick to API. 
-           // If we want fallback:
-           // const currentJobs = JSON.parse(localStorage.getItem('mock_jobs') || '[]');
-           // setAllProjects(currentJobs);
-           console.error("Failed to fetch projects");
-        }
+        const data = await apiRequest('/api/pm/projects');
+        setAllProjects(Array.isArray(data) ? data : []);
       } catch (err) {
          console.error("Error fetching projects:", err);
       }
     };
     fetchProjects();
-  }, [apiBase]);
+  }, []);
 
   return (
     <div className="dash-layout" style={{ background: '#f8fafc', minHeight: '100vh' }}>

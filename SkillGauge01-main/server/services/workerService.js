@@ -175,12 +175,15 @@ export const workerService = {
       const accountPasswordHash = toNullableString(
         getColumn(row, 'account_password_hash', 'password_hash')
       ) || '';
+      const tradeType = toNullableString(profile.employment.tradeType) || '';
     
       return {
         id: getColumn(row, 'id'),
         name: profile.personal.fullName || 'ไม่ระบุ',
         phone: toNullableString(getColumn(row, 'phone')) || '',
         role: roleLabel,
+        tradeType,
+        trade_type: tradeType,
         category: tradeLabel,
         level: tradeLabel, // Often level is mapped from trade or assessment
         status: toNullableString(getColumn(row, 'employment_status')) || 'active',

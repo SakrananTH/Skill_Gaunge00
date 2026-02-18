@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import '../Dashboard.css';
 import './AdminUsersTable.css';
 import { apiRequest } from '../../utils/api';
@@ -48,7 +49,19 @@ const AdminUsersTable = () => {
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [resettingId, setResettingId] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const refreshWorkersFlag = Boolean(location.state?.refreshWorkers);
+
+  // Auto-hide toast notification
+  useEffect(() => {
+    if (toast.show) {
+      const timer = setTimeout(() => {
+        setToast(prev => ({ ...prev, show: false }));
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast.show]);
 
   const loadWorkers = useCallback(async () => {
     try {
@@ -124,7 +137,18 @@ const AdminUsersTable = () => {
       return;
     }
 
-    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลพนักงานนี้?')) {
+    const confirmResult = await Swal.fire({
+      title: 'ยืนยันการลบ',
+      text: 'คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลพนักงานนี้?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ลบ',
+      cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirmResult.isConfirmed) {
       return;
     }
 
@@ -178,7 +202,19 @@ const AdminUsersTable = () => {
       setError(workerErrorMessages.assessment_not_passed);
       return;
     }
-    if (!window.confirm('ยืนยันเปลี่ยนสถานะเป็นพนักงานประจำ?')) {
+
+    const confirmResult = await Swal.fire({
+      title: 'ยืนยันการเลื่อนขั้น',
+      text: 'ยืนยันเปลี่ยนสถานะเป็นพนักงานประจำ?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirmResult.isConfirmed) {
       return;
     }
 
@@ -195,6 +231,39 @@ const AdminUsersTable = () => {
     }
   };
 
+  const handleResetAssessment = async (worker) => {
+    if (!worker?.id) return;
+
+    const confirmResult = await Swal.fire({
+      title: 'รีเซ็ตผลการสอบ',
+      text: `ยืนยันล้างผลการสอบของ ${worker.name} เพื่อให้สามารถสอบใหม่ได้?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ffc107', 
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirmResult.isConfirmed) {
+      return;
+    }
+
+    setResettingId(worker.id);
+    try {
+      await apiRequest(`/api/admin/workers/${worker.id}/reset-assessment`, {
+        method: 'POST'
+      });
+      setToast({ show: true, message: `รีเซ็ตการสอบของ ${worker.name} สำเร็จแล้ว`, type: 'success' });
+      await loadWorkers();
+    } catch (err) {
+      console.error('Failed to reset assessment', err);
+      setError(err?.message || 'ไม่สามารถล้างผลการสอบได้');
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   const handleAssessmentAccessToggle = async (worker) => {
     if (!worker?.id) return;
     const nextEnabled = !Boolean(worker.assessmentEnabled);
@@ -202,7 +271,18 @@ const AdminUsersTable = () => {
       ? 'ยืนยันเปิดให้เข้าสอบทักษะสำหรับพนักงานคนนี้?'
       : 'ยืนยันปิดการเข้าสอบทักษะสำหรับพนักงานคนนี้?';
 
-    if (!window.confirm(confirmMessage)) {
+    const confirmResult = await Swal.fire({
+      title: nextEnabled ? 'เปิดสอบทักษะ' : 'ปิดสอบทักษะ',
+      text: confirmMessage,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirmResult.isConfirmed) {
       return;
     }
 
@@ -221,7 +301,7 @@ const AdminUsersTable = () => {
   return (
     <div className="admin-users-table">
       <header className="admin-users-table__header">
-        <h2>จัดการข้อมูลและบัญชีพนักงาน</h2>
+        <h2>จัดการข้อมูลและบัญชี Project Manager & Foreman & Worker</h2>
         <p>
           แยกขั้นตอนการเก็บข้อมูลพนักงานและการสร้างบัญชีเข้าสู่ระบบ เพื่อให้ HR เลือกทำงานได้ตามความจำเป็น
         </p>
@@ -231,7 +311,7 @@ const AdminUsersTable = () => {
         <article className="admin-users-card admin-users-card--primary">
           <h3>แบบฟอร์มลงทะเบียนพนักงานละเอียด</h3>
           <p>
-            เก็บข้อมูลสำคัญครบทุกหมวด ทั้งข้อมูลส่วนตัว เอกสาร ทักษะ ความปลอดภัย และบัญชีธนาคาร เพื่อเตรียมเอกสาร HR ได้ทันที
+            เก็บข้อมูลสำคัญครบทุกหมวด ทั้งข้อมูลส่วนตัว เอกสาร ทักษะ ความปลอดภัย และ เพื่อเตรียมเอกสาร HR ได้ทันที
           </p>
           <button
             type="button"
@@ -329,6 +409,24 @@ const AdminUsersTable = () => {
                     )}
                   </div>
                   <div className="col col-actions" data-label="จัดการ">
+                    {workerRoleIsWorker && !hasPassedAssessment && (worker.score !== null && worker.score !== undefined) && (
+                      <button
+                        type="button"
+                        className={`action-btn action-btn--reset ${resettingId === worker.id ? 'is-loading' : ''}`}
+                        title="รีเซ็ตการสอบ (เพื่อให้สอบใหม่ได้)"
+                        onClick={() => handleResetAssessment(worker)}
+                        disabled={resettingId === worker.id}
+                      >
+                        {resettingId === worker.id ? (
+                          <div className="spinner-small"></div>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658a.25.25 0 0 1-.41-.192z"/>
+                          </svg>
+                        )}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="action-btn action-btn--view"
@@ -369,6 +467,24 @@ const AdminUsersTable = () => {
           </div>
         </div>
       </section>
+
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className={`toast-notification toast-notification--${toast.type}`}>
+          <div className="toast-notification__content">
+            {toast.type === 'success' ? (
+              <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+              </svg>
+            ) : (
+              <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
+              </svg>
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

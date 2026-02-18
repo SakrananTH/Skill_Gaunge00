@@ -142,6 +142,7 @@ const serverErrorMessages = {
   password_required: 'กรุณากำหนดรหัสผ่านให้ครบถ้วน',
   invalid_phone: 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง',
   invalid_national_id_length: 'เลขบัตรประชาชนต้องมี 13 หลัก',
+  missing_trade_type: 'กรุณาเลือกประเภทช่างก่อนบันทึกข้อมูล',
   workers_table_missing_id: 'ตาราง workers ไม่มีคอลัมน์ id กรุณาตรวจสอบฐานข้อมูล',
   worker_accounts_table_missing_columns: 'ตารางบัญชีผู้ใช้ยังไม่พร้อมใช้งาน'
 };

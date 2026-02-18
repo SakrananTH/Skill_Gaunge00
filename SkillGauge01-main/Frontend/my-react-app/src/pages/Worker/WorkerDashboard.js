@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import '../pm/WKDashboard.css';
 import '../pm/WorkerResponsive.css';
 import LogoutModal from '../../components/LogoutModal';
+import { apiRequest } from '../../utils/api';
 import bannerImage from './WK01.png';
 
 const WorkerDashboard = () => {
   const navigate = useNavigate();
-  const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+  const actionableStatuses = new Set(['assigned', 'todo', 'accepted', 'in-progress']);
 
   const tradeLabel = (value) => {
     const key = String(value || '').toLowerCase();
@@ -32,7 +33,12 @@ const WorkerDashboard = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [workerLevel, setWorkerLevel] = useState(0);
   const [workerLevelLabel, setWorkerLevelLabel] = useState('ต่ำ');
-  const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
+  const resolvedTrade =
+    user.fullData?.employment?.tradeType ||
+    user.technician_type ||
+    user.trade_type ||
+    user.tradeType ||
+    user.technicianType;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -61,7 +67,7 @@ const WorkerDashboard = () => {
       : null;
     loadProfile({ userId: resolvedUserId, workerId: numericWorkerId });
     fetchAssessmentSummary(numericWorkerId);
-    fetchAssignedTask(numericWorkerId ? null : resolvedUserId);
+    fetchAssignedTask({ workerId: numericWorkerId, userId: resolvedUserId });
 
     // Mock Notifications (placeholder - replace when notification API is ready)
     setNotifications([
@@ -78,9 +84,7 @@ const WorkerDashboard = () => {
       const query = workerId
         ? `workerId=${encodeURIComponent(workerId)}`
         : `userId=${encodeURIComponent(userId)}`;
-      const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiRequest(`/api/worker/profile?${query}`);
       if (data && typeof data === 'object') {
         setUser(prev => ({ ...prev, ...data }));
       }
@@ -89,11 +93,12 @@ const WorkerDashboard = () => {
     }
   };
 
-  const fetchAssignedTask = async (userId) => {
+  const fetchAssignedTask = async ({ workerId, userId }) => {
     try {
-      const target = userId ? `${apiBase}/api/worker/tasks?userId=${encodeURIComponent(userId)}` : `${apiBase}/api/worker/tasks`;
-      const res = await fetch(target);
-      const data = await res.json();
+      const target = workerId
+        ? `/api/worker/tasks?workerId=${encodeURIComponent(workerId)}`
+        : (userId ? `/api/worker/tasks?userId=${encodeURIComponent(userId)}` : '/api/worker/tasks');
+      const data = await apiRequest(target);
       if (Array.isArray(data) && data.length > 0) {
         setAssignedTask(data[0]); 
       }
@@ -109,22 +114,30 @@ const WorkerDashboard = () => {
       return;
     }
     try {
-      const res = await fetch(`${apiBase}/api/worker/assessment/summary?workerId=${encodeURIComponent(workerId)}`);
-      if (!res.ok) {
-        setWorkerLevel(0);
-        setWorkerLevelLabel('ต่ำ');
-        return;
-      }
-      const data = await res.json();
+      const data = await apiRequest(
+        `/api/worker/assessment/summary?workerId=${encodeURIComponent(workerId)}&_ts=${Date.now()}`,
+        { cache: 'no-store' }
+      );
       const summary = data?.result || null;
       const totalScore = summary?.score ?? null;
       const totalQuestions = summary?.totalQuestions ?? null;
       const passed = summary?.passed === true;
-      const percent = totalQuestions ? (Number(totalScore) / Number(totalQuestions)) * 100 : null;
+      const roundLevel = Number(summary?.roundLevel);
+      const combinedPercent = Number(summary?.combinedPercent);
+      const percent = Number.isFinite(combinedPercent)
+        ? combinedPercent
+        : (totalQuestions ? (Number(totalScore) / Number(totalQuestions)) * 100 : null);
 
       if (!passed || percent === null) {
         setWorkerLevel(0);
         setWorkerLevelLabel('ต่ำ');
+        return;
+      }
+
+      if (Number.isFinite(roundLevel) && roundLevel >= 1) {
+        const normalizedLevel = Math.min(3, Math.max(1, Math.trunc(roundLevel)));
+        setWorkerLevel(normalizedLevel);
+        setWorkerLevelLabel(normalizedLevel >= 3 ? 'สูง' : normalizedLevel === 2 ? 'กลาง' : 'พื้นฐาน');
         return;
       }
 
@@ -179,6 +192,7 @@ const WorkerDashboard = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <SidebarItem active icon={<i className='bx bx-home'></i>} label="หน้าหลัก" onClick={() => navigate('/worker')} />
           <SidebarItem icon={<i className='bx bx-book-content'></i>} label="แบบทดสอบ" onClick={() => navigate('/skill-assessment')} />
+          <SidebarItem icon={<i className='bx bx-clipboard'></i>} label="ผลภาคปฏิบัติ" onClick={() => navigate('/worker/practical-result')} />
           <SidebarItem icon={<i className='bx bx-history'></i>} label="ประวัติงาน" onClick={() => navigate('/worker/history')} />
           <SidebarItem icon={<i className='bx bx-cog'></i>} label="ตั้งค่า" onClick={() => navigate('/worker-settings')} />
           
@@ -292,7 +306,7 @@ const WorkerDashboard = () => {
              {/* Card 2: Assigned Jobs */}
              <div 
                 style={{ background: 'white', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid #e2e8f0', cursor: assignedTask && assignedTask.status !== 'submitted' ? 'pointer' : 'default' }}
-                onClick={() => assignedTask && assignedTask.status !== 'submitted' && navigate('/worker-task-detail', { state: { task: assignedTask } })}
+               onClick={() => assignedTask && assignedTask.status !== 'submitted' && navigate('/worker/task-detail', { state: { task: assignedTask } })}
              >
                 <div style={{ width: '45px', height: '45px', background: '#e0f2fe', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
                     <i className='bx bx-briefcase' style={{ color: '#0284c7' }}></i>
@@ -300,7 +314,7 @@ const WorkerDashboard = () => {
                 <div>
                     <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>งานที่ต้องทำ</h4>
                     <h3 style={{ margin: 0, fontSize: '18px', color: '#0284c7' }}>
-                        {assignedTask && (assignedTask.status === 'accepted' || assignedTask.status === 'in-progress') ? '1 งาน' : '0 งาน'}
+                    {assignedTask && actionableStatuses.has(String(assignedTask.status || '').toLowerCase()) ? '1 งาน' : '0 งาน'}
                     </h3>
                 </div>
              </div>
@@ -336,6 +350,7 @@ const WorkerDashboard = () => {
                     <h3 style={{ margin: 0, fontSize: '14px', color: '#4338ca' }}>ทำแบบทดสอบเพื่อวัดระดับความรู้</h3>
                 </div>
              </div>
+
         </div>
 
         {/* Bottom Section */}
@@ -365,7 +380,7 @@ const WorkerDashboard = () => {
                         <p style={{ color: '#64748b', margin: 0 }}>หัวหน้างาน: {assignedTask.foreman || '-'}</p>
                     </div>
                     <button 
-                        onClick={() => navigate('/worker-task-detail', { state: { task: assignedTask } })}
+                      onClick={() => navigate('/worker/task-detail', { state: { task: assignedTask } })}
                         style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px 25px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)' }}
                     >
                         ดูรายละเอียด & ส่งงาน

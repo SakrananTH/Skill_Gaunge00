@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import WorkerSidebar from '../components/WorkerSidebar';
 import './Dashboard.css';
 import './SkillAssessmentQuiz.css';
-import { mockUser } from '../mock/mockData';
-import { performLogout } from '../utils/logout';
+import { apiRequest } from '../utils/api';
 
 const SkillAssessmentQuiz = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
-
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', role: 'worker', id: '' });
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,9 +36,7 @@ const SkillAssessmentQuiz = () => {
     // ดึงข้อสอบจาก API
     const fetchQuestions = async () => {
       try {
-        const res = await fetch(`${apiBase}/api/questions/structural?difficulty_level=1`);
-        if (!res.ok) throw new Error('Failed to fetch questions');
-        const data = await res.json();
+        const data = await apiRequest('/api/questions/structural?difficulty_level=1');
         
         if (data.questions && Array.isArray(data.questions)) {
           setQuestions(data.questions);
@@ -58,7 +53,7 @@ const SkillAssessmentQuiz = () => {
     };
 
     fetchQuestions();
-  }, [apiBase, location.state]);
+  }, [location.state]);
 
   const handleSubmit = useCallback(async () => {
     if (loading) return;
@@ -66,30 +61,23 @@ const SkillAssessmentQuiz = () => {
     // ส่งคำตอบไปยัง API
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/worker/score`, {
+      const resultData = await apiRequest('/api/worker/score', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           userId: user.id || 1,
-          answers: answers,
-          sessionId: sessionId
-        })
+          answers,
+          sessionId
+        }
       });
-
-      if (res.ok) {
-        const resultData = await res.json();
-        // นำทางไปยังหน้าแสดงผลคะแนน (Result Page) พร้อมส่งข้อมูลคะแนนไปด้วย
-        navigate('/skill-assessment/result', { state: { user, result: resultData } });
-      } else {
-        alert('เกิดข้อผิดพลาดในการส่งคำตอบ');
-      }
+      // นำทางไปยังหน้าแสดงผลคะแนน (Result Page) พร้อมส่งข้อมูลคะแนนไปด้วย
+      navigate('/skill-assessment/result', { state: { user, result: resultData } });
     } catch (err) {
       console.error(err);
       alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
     } finally {
       setLoading(false);
     }
-  }, [apiBase, user, answers, sessionId, navigate, loading]);
+  }, [user, answers, sessionId, navigate, loading]);
 
   // ใช้ Ref เพื่อให้ Timer เรียกใช้ handleSubmit ล่าสุดได้โดยไม่ต้อง restart timer เมื่อ answers เปลี่ยน
   const submitRef = useRef(handleSubmit);

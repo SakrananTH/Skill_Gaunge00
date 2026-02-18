@@ -98,33 +98,15 @@ const ForemanReportSystem = () => {
   };
 
   return (
-    <div className="dash-layout">
-      {/* Sidebar */}
-      <aside className="dash-sidebar">
-        <nav className="menu">
-            <div style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#1e293b' }}>
-                Foreman Panel
-            </div>
-            <button className="menu-item" onClick={() => navigate('/foreman')}>Dashboard</button>
-            <button className="menu-item active">รายงานสรุปงาน</button>
-            <button className="menu-item" onClick={() => navigate('/foreman-settings')}>ตั้งค่า</button>
-            
-            <button className="menu-item" onClick={() => navigate('/foreman')} style={{ marginTop: 'auto', background: '#f1f5f9', color: '#64748b' }}>
-                &larr; ยกเลิก / ย้อนกลับ
-            </button>
-        </nav>
-      </aside>
-
-      {/* Main Content */}
-      <main className="dash-main">
-        <header className="dash-header">
-           <div className="header-info">
-             <h1>ระบบรายงานผลการปฏิบัติงาน</h1>
-             <p>บันทึกความคืบหน้า ปัญหา และส่งมอบงานประจำงวด</p>
-           </div>
+    <div className="dash-window" style={{ background: '#f8fafc', minHeight: '100vh' }}>
+      <main className="worker-main" style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 20px' }}>
+        
+        <header style={{ marginBottom: '30px' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', margin: '0 0 8px 0' }}>ระบบรายงานผลการปฏิบัติงาน</h1>
+          <p style={{ color: '#64748b', margin: 0 }}>บันทึกความคืบหน้า ปัญหา และส่งมอบงานประจำงวด</p>
         </header>
 
-        <section className="dash-content" style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '50px' }}>
+        <section className="dash-content" style={{ paddingBottom: '50px' }}>
           
           <form onSubmit={handleSubmit} style={{ background: 'white', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
             

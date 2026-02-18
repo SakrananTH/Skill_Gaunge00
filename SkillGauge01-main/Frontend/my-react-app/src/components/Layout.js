@@ -21,7 +21,8 @@ const Layout = () => {
     '/skill-assessment',
     '/submit-work',
     '/worker-profile',
-    '/admin'
+    '/admin',
+    '/foreman'
   ];
   
   const shouldHideHeader = hideHeaderRoutes.some(path => location.pathname.startsWith(path));

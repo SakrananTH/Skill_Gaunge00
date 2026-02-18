@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiRequest } from '../../utils/api';
 
 const WorkHistory = () => {
     const navigate = useNavigate();
 
-    const apiBase = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
     const [isScrolled, setIsScrolled] = useState(false);
-    const resolvedTrade = user.technician_type || user.trade_type || user.tradeType || user.technicianType;
+    const resolvedTrade =
+        user.fullData?.employment?.tradeType ||
+        user.technician_type ||
+        user.trade_type ||
+        user.tradeType ||
+        user.technicianType;
 
     const tradeLabel = (value) => {
         const key = String(value || '').toLowerCase();
@@ -53,9 +58,7 @@ const WorkHistory = () => {
                 const query = workerId
                     ? `workerId=${encodeURIComponent(workerId)}`
                     : `userId=${encodeURIComponent(userId)}`;
-                const res = await fetch(`${apiBase}/api/worker/profile?${query}`);
-                if (!res.ok) return;
-                const data = await res.json();
+                const data = await apiRequest(`/api/worker/profile?${query}`);
                 if (data && typeof data === 'object') {
                     setUser(prev => ({ ...prev, ...data }));
                 }
@@ -69,8 +72,7 @@ const WorkHistory = () => {
         const loadHistory = async () => {
             setLoading(true);
             try {
-                    const res = await fetch(`${apiBase}/api/worker/history?userId=${encodeURIComponent(resolvedUserId)}`);
-                const data = await res.json();
+                    const data = await apiRequest(`/api/worker/history?userId=${encodeURIComponent(resolvedUserId)}`);
                 if (Array.isArray(data)) {
                     setHistory(data);
                 }
@@ -82,7 +84,7 @@ const WorkHistory = () => {
         };
 
         loadHistory();
-    }, [apiBase]);
+    }, []);
 
     const handleLogout = () => {
         if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {

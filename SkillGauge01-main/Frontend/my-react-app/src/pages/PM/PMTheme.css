@@ -245,6 +245,45 @@
 .pm-tag--warn { background: #fef3c7; color: #b45309; }
 .pm-tag--success { background: #dcfce7; color: #15803d; }
 
+/* Modern Status Badges */
+.status-badge-modern {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.status-badge-pending {
+  background-color: #fff7ed;
+  color: #c2410c;
+  border-color: #ffedd5;
+}
+
+.status-badge-success {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border-color: #dcfce7;
+}
+
+.status-badge-info {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #dbeafe;
+}
+
+.status-badge-error {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
 @media (max-width: 1100px) {
   .pm-topbar {
     grid-template-columns: 1fr;

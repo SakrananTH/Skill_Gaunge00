@@ -707,12 +707,15 @@ function mapWorkerRowToResponse(row, profilePayload, assessmentSummary, foremanA
   const accountPasswordHash = toNullableString(
     getColumn(row, 'account_password_hash', 'password_hash')
   ) || '';
+  const tradeType = toNullableString(profile.employment.tradeType) || '';
 
   return {
     id: getColumn(row, 'id'),
     name: profile.personal.fullName || 'ไม่ระบุ',
     phone: toNullableString(getColumn(row, 'phone')) || '',
     role: roleLabel,
+    tradeType,
+    trade_type: tradeType,
     category: tradeLabel,
     level: tradeLabel,
     status: toNullableString(getColumn(row, 'employment_status')) || 'active',
@@ -904,6 +907,28 @@ async function ensureForemanAssessmentSchema(connection) {
   );
 }
 
+async function ensureForemanReportSchema(connection) {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS foreman_reports (
+      id CHAR(36) NOT NULL,
+      foreman_user_id CHAR(36) NULL,
+      project_id CHAR(36) NOT NULL,
+      project_name VARCHAR(255) NULL,
+      report_type VARCHAR(20) NOT NULL,
+      report_date DATE NOT NULL,
+      work_done TEXT NOT NULL,
+      problems TEXT NULL,
+      attachment_name VARCHAR(255) NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id),
+      KEY idx_foreman_reports_project (project_id),
+      KEY idx_foreman_reports_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    [],
+    connection
+  );
+}
+
 function canAccessUser(req, userId) {
   if (!userId) return false;
   if (req.user?.id === userId) return true;
@@ -920,6 +945,91 @@ app.get('/api/health', async (_req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ ok: false, error: 'db_unreachable' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Admin quizzes
+// ---------------------------------------------------------------------------
+const quizListQuerySchema = z.object({
+  status: z.string().max(30).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  search: z.string().max(120).trim().optional()
+});
+
+app.get('/api/admin/quizzes', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const params = quizListQuerySchema.parse(req.query ?? {});
+    const filters = [];
+    const values = [];
+
+    if (params.status) {
+      filters.push('status = ?');
+      values.push(params.status);
+    }
+    if (params.search) {
+      const like = `%${params.search}%`;
+      filters.push('(title LIKE ? OR category LIKE ?)');
+      values.push(like, like);
+    }
+
+    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const countRows = await query(
+      `SELECT COUNT(*) AS total FROM quizzes ${whereClause}`,
+      values
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const items = await query(
+      `SELECT * FROM quizzes ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ${params.limit} OFFSET ${params.offset}`,
+      values
+    );
+
+    res.json({ items, total, limit: params.limit, offset: params.offset });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid query', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/admin/quizzes/:id/approve', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const quizId = String(req.params.id || '').trim();
+    if (!quizId) return res.status(400).json({ message: 'invalid_id' });
+    const result = await execute(
+      `UPDATE quizzes SET status = 'approved', approved_by = ?, approved_at = NOW(6), rejected_reason = NULL
+       WHERE id = ?`,
+      [req.user?.id || null, quizId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
+    const updated = await queryOne('SELECT * FROM quizzes WHERE id = ? LIMIT 1', [quizId]);
+    res.json(updated || { message: 'approved' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/admin/quizzes/:id/reject', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const quizId = String(req.params.id || '').trim();
+    if (!quizId) return res.status(400).json({ message: 'invalid_id' });
+    const reason = toNullableString(req.body?.reason) || null;
+    const result = await execute(
+      `UPDATE quizzes SET status = 'rejected', rejected_reason = ?
+       WHERE id = ?`,
+      [reason, quizId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
+    const updated = await queryOne('SELECT * FROM quizzes WHERE id = ? LIMIT 1', [quizId]);
+    res.json(updated || { message: 'rejected' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -1011,6 +1121,82 @@ const loginSchema = z
     }
   });
 
+async function writeAuditLogEntry({ req, actorUserId = null, action, details, username, role, status = 'success' }) {
+  try {
+    const columnRows = await query('SHOW COLUMNS FROM audit_logs');
+    const auditColumns = new Set(
+      (Array.isArray(columnRows) ? columnRows : [])
+        .map(row => String(row?.Field || '').toLowerCase())
+        .filter(Boolean)
+    );
+
+    if (!auditColumns.size) {
+      return;
+    }
+
+    const ipAddress = req ? (req.ip || req.connection?.remoteAddress || null) : null;
+    const insertColumns = [];
+    const insertValues = [];
+
+    if (auditColumns.has('actor_user_id')) {
+      let validActorUserId = null;
+      if (actorUserId !== null && actorUserId !== undefined) {
+        const matchedUser = await queryOne('SELECT id FROM users WHERE id = ? LIMIT 1', [actorUserId]);
+        if (matchedUser?.id) {
+          validActorUserId = matchedUser.id;
+        }
+      }
+      insertColumns.push('actor_user_id');
+      insertValues.push(validActorUserId);
+    }
+
+    if (auditColumns.has('action')) {
+      insertColumns.push('action');
+      insertValues.push(action || 'UNKNOWN_ACTION');
+    }
+
+    if (auditColumns.has('details')) {
+      insertColumns.push('details');
+      insertValues.push(details === undefined ? null : JSON.stringify(details));
+    }
+
+    if (auditColumns.has('ip_address')) {
+      insertColumns.push('ip_address');
+      insertValues.push(ipAddress);
+    }
+
+    if (auditColumns.has('username')) {
+      insertColumns.push('username');
+      insertValues.push(username || null);
+    }
+
+    if (auditColumns.has('role')) {
+      insertColumns.push('role');
+      insertValues.push(role || null);
+    }
+
+    if (auditColumns.has('status')) {
+      insertColumns.push('status');
+      insertValues.push(status || 'success');
+    }
+
+    if (!insertColumns.length) {
+      return;
+    }
+
+    const placeholders = insertColumns.map(() => '?').join(', ');
+    await execute(
+      `INSERT INTO audit_logs (${insertColumns.join(', ')}) VALUES (${placeholders})`,
+      insertValues
+    );
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_TABLE_ERROR') {
+      return;
+    }
+    console.warn('[audit-log] write failed', error?.message || error);
+  }
+}
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const parsed = loginSchema.parse(req.body ?? {});
@@ -1029,6 +1215,22 @@ app.post('/api/auth/login', async (req, res) => {
         expiresIn: JWT_EXPIRES_IN,
         issuer: 'skillgauge-api',
         audience: 'skillgauge-spa'
+      });
+
+      await writeAuditLogEntry({
+        req,
+        actorUserId: ADMIN_BYPASS.id,
+        action: 'LOGIN_SUCCESS',
+        details: {
+          event: 'login',
+          source: 'admin_bypass',
+          user_name: ADMIN_BYPASS.fullName,
+          identifier,
+          roles
+        },
+        username: ADMIN_BYPASS.fullName,
+        role: 'admin',
+        status: 'success'
       });
 
       return res.json({
@@ -1152,6 +1354,22 @@ app.post('/api/auth/login', async (req, res) => {
       expiresIn: JWT_EXPIRES_IN,
       issuer: 'skillgauge-api',
       audience: 'skillgauge-spa'
+    });
+
+    await writeAuditLogEntry({
+      req,
+      actorUserId: user.id,
+      action: 'LOGIN_SUCCESS',
+      details: {
+        event: 'login',
+        source: userSource,
+        user_name: user.full_name || identifier,
+        identifier,
+        roles
+      },
+      username: user.full_name || identifier,
+      role: Array.isArray(roles) && roles.length ? roles.join(',') : 'worker',
+      status: 'success'
     });
 
     res.json({
@@ -1528,32 +1746,68 @@ app.get('/api/admin/audit-logs', requireAuth, authorizeRoles('admin'), async (re
     const limitValue = Number.isFinite(params.limit) ? params.limit : 10;
     const pageValue = Number.isFinite(params.page) ? params.page : 1;
     const offset = (pageValue - 1) * limitValue;
+    const columnRows = await query('SHOW COLUMNS FROM audit_logs');
+    const auditColumns = new Set(
+      (Array.isArray(columnRows) ? columnRows : [])
+        .map(row => String(row?.Field || '').toLowerCase())
+        .filter(Boolean)
+    );
+
+    const hasActorUserId = auditColumns.has('actor_user_id');
+    const hasUsername = auditColumns.has('username');
+    const hasRole = auditColumns.has('role');
+    const hasStatus = auditColumns.has('status');
+    const hasIpAddress = auditColumns.has('ip_address');
+    const hasDetails = auditColumns.has('details');
+
+    const fromClause = hasActorUserId
+      ? 'FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id'
+      : 'FROM audit_logs a';
+
+    const selectUsername = hasUsername ? 'a.username' : 'NULL';
+    const selectRole = hasRole ? 'a.role' : 'NULL';
+    const selectStatus = hasStatus ? 'a.status' : `'success'`;
+    const selectDetails = hasDetails ? 'a.details' : 'NULL';
+    const selectIpAddress = hasIpAddress ? 'a.ip_address' : 'NULL';
+
     const filters = [];
     const values = [];
 
     if (params.search) {
       const like = `%${params.search}%`;
-      filters.push('(username LIKE ? OR action LIKE ? OR details LIKE ?)');
-      values.push(like, like, like);
+      const searchParts = [];
+      if (hasUsername) searchParts.push('a.username LIKE ?');
+      searchParts.push('a.action LIKE ?');
+      if (hasDetails) searchParts.push('CAST(a.details AS CHAR) LIKE ?');
+      if (hasActorUserId) {
+        searchParts.push('u.full_name LIKE ?');
+        searchParts.push('u.phone LIKE ?');
+        searchParts.push('u.email LIKE ?');
+      }
+
+      if (searchParts.length) {
+        filters.push(`(${searchParts.join(' OR ')})`);
+        searchParts.forEach(() => values.push(like));
+      }
     }
 
-    if (params.status && params.status !== 'all') {
-      filters.push('status = ?');
+    if (params.status && params.status !== 'all' && hasStatus) {
+      filters.push('a.status = ?');
       values.push(params.status);
     }
 
     if (params.startDate) {
-      filters.push('DATE(created_at) >= ?');
+      filters.push('DATE(a.created_at) >= ?');
       values.push(params.startDate);
     }
 
     if (params.endDate) {
-      filters.push('DATE(created_at) <= ?');
+      filters.push('DATE(a.created_at) <= ?');
       values.push(params.endDate);
     }
 
     const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-    const countRows = await query(`SELECT COUNT(*) AS total FROM audit_logs ${whereClause}`, values);
+    const countRows = await query(`SELECT COUNT(*) AS total ${fromClause} ${whereClause}`, values);
     const total = Number(countRows[0]?.total ?? 0);
 
     if (!Number.isFinite(limitValue) || !Number.isFinite(offset)) {
@@ -1562,24 +1816,53 @@ app.get('/api/admin/audit-logs', requireAuth, authorizeRoles('admin'), async (re
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limitValue)));
     const safeOffset = Math.max(0, Math.floor(offset));
     const rows = await query(
-      `SELECT id, created_at, username, role, action, details, ip_address, status
-       FROM audit_logs
+      `SELECT a.id,
+              a.created_at,
+              ${selectUsername} AS username,
+              ${selectRole} AS role,
+              a.action,
+              ${selectDetails} AS details,
+              ${selectIpAddress} AS ip_address,
+              ${selectStatus} AS status,
+              ${hasActorUserId ? 'u.full_name' : 'NULL'} AS full_name,
+              ${hasActorUserId ? 'u.phone' : 'NULL'} AS phone,
+              ${hasActorUserId ? 'u.email' : 'NULL'} AS email
+       ${fromClause}
        ${whereClause}
-       ORDER BY created_at DESC
+       ORDER BY a.created_at DESC
        LIMIT ${safeLimit} OFFSET ${safeOffset}`,
       values
     );
 
-    const items = rows.map(row => ({
-      id: row.id,
-      timestamp: row.created_at,
-      user: row.username || 'Unknown',
-      role: row.role || '-',
-      action: row.action,
-      details: row.details,
-      ip: row.ip_address,
-      status: row.status || 'success'
-    }));
+    const items = rows.map(row => {
+      let parsedDetails = null;
+      if (row.details !== null && row.details !== undefined) {
+        if (typeof row.details !== 'string') {
+          parsedDetails = row.details;
+        } else {
+          try {
+            parsedDetails = JSON.parse(row.details);
+          } catch {
+            parsedDetails = row.details;
+          }
+        }
+      }
+
+      const detailsUserName = parsedDetails && typeof parsedDetails === 'object'
+        ? (parsedDetails.user_name || parsedDetails.full_name || parsedDetails.username || null)
+        : null;
+
+      return {
+        id: row.id,
+        timestamp: row.created_at,
+        user: row.username || row.full_name || row.phone || row.email || detailsUserName || 'Unknown',
+        role: row.role || '-',
+        action: row.action,
+        details: parsedDetails,
+        ip: row.ip_address || '-',
+        status: row.status || 'success'
+      };
+    });
 
     res.json({ items, total });
   } catch (error) {
@@ -1628,7 +1911,7 @@ const taskListQuerySchema = z.object({
   search: z.string().max(120).trim().optional()
 });
 
-app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const params = taskListQuerySchema.parse(req.query ?? {});
     const filters = [];
@@ -1654,6 +1937,10 @@ app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), a
       `SELECT
          t.id,
          t.title,
+         t.description,
+         t.category,
+         t.required_level,
+         t.required_workers,
          t.status,
          t.priority,
          t.due_date,
@@ -1725,38 +2012,67 @@ const createTaskSchema = z.object({
   priority: taskPriorityEnum.default('medium'),
   status: taskStatusEnum.default('todo'),
   assignee_user_id: uuidSchema.optional(),
-  due_date: z.coerce.date().optional()
+  due_date: z.coerce.date().optional(),
+  worker_ids: z.array(z.coerce.number().int().positive()).optional(),
+  assignment_type: z.string().max(50).optional(),
+  description: z.string().optional(),
+  category: z.string().max(120).optional(),
+  required_level: z.coerce.number().int().min(0).optional(),
+  required_workers: z.coerce.number().int().min(0).optional()
 });
 
-app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const payload = createTaskSchema.parse(req.body ?? {});
     const taskId = randomUUID();
-    await execute(
-      `INSERT INTO tasks(id, project_id, site_id, title, priority, status, assignee_user_id, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        taskId,
-        payload.project_id,
-        payload.site_id || null,
-        payload.title,
-        payload.priority,
-        payload.status,
-        payload.assignee_user_id || null,
-        payload.due_date ? payload.due_date.toISOString().slice(0, 10) : null
-      ]
-    );
+    const workerIds = Array.isArray(payload.worker_ids) ? payload.worker_ids : [];
+    const assignmentType = payload.assignment_type || 'general';
 
-    const task = await queryOne(
-      `SELECT t.id, t.title, t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
-              t.site_id, s.name AS site_name, t.assignee_user_id, u.full_name AS assignee_name
-       FROM tasks t
-       JOIN projects p ON p.id = t.project_id
-       LEFT JOIN sites s ON s.id = t.site_id
-       LEFT JOIN users u ON u.id = t.assignee_user_id
-       WHERE t.id = ?`,
-      [taskId]
-    );
+    const task = await withTransaction(async (connection) => {
+      await execute(
+        `INSERT INTO tasks
+          (id, project_id, site_id, title, description, category, required_level, required_workers,
+           priority, status, assignee_user_id, due_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          taskId,
+          payload.project_id,
+          payload.site_id || null,
+          payload.title,
+          payload.description || null,
+          payload.category || null,
+          payload.required_level ?? null,
+          payload.required_workers ?? null,
+          payload.priority,
+          payload.status,
+          payload.assignee_user_id || null,
+          payload.due_date ? payload.due_date.toISOString().slice(0, 10) : null
+        ],
+        connection
+      );
+
+      for (const workerId of workerIds) {
+        await execute(
+          `INSERT INTO task_worker_assignments (id, task_id, worker_id, assignment_type, assigned_by_user_id)
+           VALUES (?, ?, ?, ?, ?)`,
+          [randomUUID(), taskId, workerId, assignmentType, req.user?.id || null],
+          connection
+        );
+      }
+
+      return queryOne(
+        `SELECT t.id, t.title, t.description, t.category, t.required_level, t.required_workers,
+          t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
+          t.site_id, s.name AS site_name, t.assignee_user_id, u.full_name AS assignee_name
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         LEFT JOIN sites s ON s.id = t.site_id
+         LEFT JOIN users u ON u.id = t.assignee_user_id
+         WHERE t.id = ?`,
+        [taskId],
+        connection
+      );
+    });
 
     res.status(201).json(task);
   } catch (error) {
@@ -1766,12 +2082,13 @@ app.post('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager'), 
   }
 });
 
-app.get('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.get('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const taskId = req.params.id;
     if (!uuidSchema.safeParse(taskId).success) return res.status(400).json({ message: 'invalid id' });
     const task = await queryOne(
-      `SELECT t.id, t.title, t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
+      `SELECT t.id, t.title, t.description, t.category, t.required_level, t.required_workers,
+              t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
               t.site_id, s.name AS site_name, t.assignee_user_id, u.full_name AS assignee_name
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
@@ -1792,13 +2109,17 @@ const updateTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   project_id: uuidSchema.optional(),
   site_id: uuidSchema.optional().nullable(),
+  description: z.string().optional().nullable(),
+  category: z.string().max(120).optional().nullable(),
+  required_level: z.coerce.number().int().min(0).optional().nullable(),
+  required_workers: z.coerce.number().int().min(0).optional().nullable(),
   priority: taskPriorityEnum.optional(),
   status: taskStatusEnum.optional(),
   assignee_user_id: uuidSchema.optional().nullable(),
   due_date: z.coerce.date().optional().nullable()
 }).refine(data => Object.keys(data).length > 0, { message: 'No fields to update' });
 
-app.put('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.put('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const taskId = req.params.id;
     if (!uuidSchema.safeParse(taskId).success) return res.status(400).json({ message: 'invalid id' });
@@ -1808,6 +2129,10 @@ app.put('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'
       title: payload.title,
       project_id: payload.project_id,
       site_id: payload.site_id === undefined ? undefined : (payload.site_id || null),
+      description: payload.description === undefined ? undefined : (payload.description || null),
+      category: payload.category === undefined ? undefined : (payload.category || null),
+      required_level: payload.required_level === undefined ? undefined : payload.required_level,
+      required_workers: payload.required_workers === undefined ? undefined : payload.required_workers,
       priority: payload.priority,
       status: payload.status,
       assignee_user_id: payload.assignee_user_id === undefined ? undefined : (payload.assignee_user_id || null),
@@ -1822,8 +2147,9 @@ app.put('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'
     if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
 
     const task = await queryOne(
-      `SELECT t.id, t.title, t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
-              t.site_id, s.name AS site_name, t.assignee_user_id, u.full_name AS assignee_name
+          `SELECT t.id, t.title, t.description, t.category, t.required_level, t.required_workers,
+            t.status, t.priority, t.due_date, t.project_id, p.name AS project_name,
+            t.site_id, s.name AS site_name, t.assignee_user_id, u.full_name AS assignee_name
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN sites s ON s.id = t.site_id
@@ -1840,7 +2166,7 @@ app.put('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'
   }
 });
 
-app.delete('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const taskId = req.params.id;
     if (!uuidSchema.safeParse(taskId).success) return res.status(400).json({ message: 'invalid id' });
@@ -2067,6 +2393,22 @@ app.get('/api/admin/workers/:id', async (req, res) => {
 
     await requireWorkerTables();
     const worker = await getWorkerResponseById(params.data.id);
+    if (!worker) return res.status(404).json({ message: 'not_found' });
+    res.json(worker);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/profile', requireAuth, authorizeRoles('worker', 'foreman', 'project_manager', 'admin'), async (req, res) => {
+  try {
+    const rawId = req.query.workerId || req.query.userId || req.user?.id;
+    const workerId = Number(rawId);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+
+    await requireWorkerTables();
+    const worker = await getWorkerResponseById(workerId);
     if (!worker) return res.status(404).json({ message: 'not_found' });
     res.json(worker);
   } catch (error) {
@@ -3208,6 +3550,24 @@ function mapQuestionStructuralRow(row) {
   };
 }
 
+const questionStructuralListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional()
+});
+
+const questionStructuralIdSchema = z.coerce.number().int().positive();
+
+const updateQuestionStructuralSchema = z.object({
+  question_text: z.string().min(1).optional(),
+  choice_a: z.string().min(1).optional(),
+  choice_b: z.string().min(1).optional(),
+  choice_c: z.string().min(1).optional(),
+  choice_d: z.string().min(1).optional(),
+  answer: z.enum(['A', 'B', 'C', 'D']).optional(),
+  difficulty_level: z.coerce.number().int().min(1).max(3).nullable().optional(),
+  skill_type: z.string().max(200).nullable().optional()
+}).refine(data => Object.keys(data).length > 0, { message: 'No fields to update' });
+
 async function fetchQuestionStructuralById(questionId, connection) {
   const row = await queryOne(
     `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d, answer, difficulty_level, skill_type
@@ -3239,6 +3599,109 @@ app.get('/api/question-structural/all', requireAuth, authorizeRoles('admin'), as
     console.log(`[question-structural] Fetched ${items.length} items`); // Debug log
     res.json(items);
   } catch (error) {
+    console.error('[question-structural] Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/admin/question-structural', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const params = questionStructuralListQuerySchema.parse(req.query ?? {});
+    const limitValue = Number.isFinite(params.limit) ? params.limit : 500;
+    const offsetValue = Number.isFinite(params.offset) ? params.offset : 0;
+
+    const countRows = await query('SELECT COUNT(*) AS total FROM question_Structural');
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const rows = await query(
+      `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d, answer, difficulty_level, skill_type, created_at, updated_at
+       FROM question_Structural
+       ORDER BY id ASC
+       LIMIT ? OFFSET ?`,
+      [limitValue, offsetValue]
+    );
+
+    const data = rows.map(mapQuestionStructuralRow).filter(Boolean);
+    res.json({ total, limit: limitValue, offset: offsetValue, data });
+  } catch (error) {
+    if (error?.issues) {
+      return res.status(400).json({ message: 'Invalid query', errors: error.issues });
+    }
+    console.error('[question-structural] Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/admin/question-structural/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const questionId = questionStructuralIdSchema.parse(req.params.id);
+    const item = await fetchQuestionStructuralById(questionId);
+    if (!item) {
+      return res.status(404).json({ message: 'not_found' });
+    }
+    res.json(item);
+  } catch (error) {
+    if (error?.issues) {
+      return res.status(400).json({ message: 'invalid id', errors: error.issues });
+    }
+    console.error('[question-structural] Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/admin/question-structural/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const questionId = questionStructuralIdSchema.parse(req.params.id);
+    const payload = updateQuestionStructuralSchema.parse(req.body ?? {});
+
+    const updateData = {
+      question_text: payload.question_text,
+      choice_a: payload.choice_a,
+      choice_b: payload.choice_b,
+      choice_c: payload.choice_c,
+      choice_d: payload.choice_d,
+      answer: payload.answer,
+      difficulty_level: payload.difficulty_level,
+      skill_type: payload.skill_type
+    };
+
+    const clause = buildUpdateClause(updateData);
+    if (!clause.sets.length) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    const result = await execute(
+      `UPDATE question_Structural SET ${clause.sets.join(', ')} WHERE id = ?`,
+      [...clause.values, questionId]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'not_found' });
+    }
+
+    const updated = await fetchQuestionStructuralById(questionId);
+    res.json(updated);
+  } catch (error) {
+    if (error?.issues) {
+      return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    }
+    console.error('[question-structural] Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.delete('/api/admin/question-structural/:id', requireAuth, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const questionId = questionStructuralIdSchema.parse(req.params.id);
+    const result = await execute('DELETE FROM question_Structural WHERE id = ?', [questionId]);
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'not_found' });
+    }
+    res.status(204).send();
+  } catch (error) {
+    if (error?.issues) {
+      return res.status(400).json({ message: 'invalid id', errors: error.issues });
+    }
     console.error('[question-structural] Error:', error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -3691,6 +4154,49 @@ const foremanAssessmentSchema = z.object({
   grade: z.string().max(50)
 });
 
+const foremanReportSchema = z.object({
+  date: z.string().min(1),
+  reportType: z.string().max(20),
+  projectId: z.string().min(1),
+  projectName: z.string().max(255).optional().nullable(),
+  workDone: z.string().min(1),
+  problems: z.string().optional().nullable(),
+  attachment: z.string().max(255).optional().nullable()
+});
+
+app.get('/api/foreman/pending-workers', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (_req, res) => {
+  try {
+    await requireWorkerTables();
+    await ensureForemanAssessmentSchema();
+
+    const rows = await query(
+      `SELECT w.id, w.full_name, w.trade_type, r.finished_at
+       FROM workers w
+       JOIN (
+         SELECT worker_id, MAX(finished_at) AS finished_at
+         FROM worker_assessment_results
+         WHERE passed = 1
+         GROUP BY worker_id
+       ) r ON r.worker_id = w.id
+       LEFT JOIN foreman_assessments fa ON fa.worker_id = w.id
+       WHERE fa.worker_id IS NULL
+       ORDER BY r.finished_at DESC`
+    );
+
+    const items = rows.map(row => ({
+      id: row.id,
+      name: row.full_name || 'ไม่ระบุ',
+      roleName: getTradeLabel(row.trade_type) || row.trade_type || 'ช่างทั่วไป',
+      date: row.finished_at ? String(row.finished_at).slice(0, 10) : ''
+    }));
+
+    res.json({ items });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (req, res) => {
   try {
     const payload = foremanAssessmentSchema.parse(req.body ?? {});
@@ -3724,6 +4230,60 @@ app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'adm
     });
 
     res.status(201).json({ id: assessmentId });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/foreman/projects', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (_req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, name
+       FROM projects
+       ORDER BY created_at DESC
+       LIMIT 200`
+    );
+    res.json({ items: rows.map(row => ({ id: row.id, name: row.name })) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/foreman/reports', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (req, res) => {
+  try {
+    const payload = foremanReportSchema.parse(req.body ?? {});
+
+    const projectRow = await queryOne('SELECT id, name FROM projects WHERE id = ? LIMIT 1', [payload.projectId]);
+    if (!projectRow) return res.status(404).json({ message: 'project_not_found' });
+
+    const reportId = randomUUID();
+    const projectName = payload.projectName || projectRow.name || null;
+
+    await withTransaction(async (connection) => {
+      await ensureForemanReportSchema(connection);
+      await execute(
+        `INSERT INTO foreman_reports
+          (id, foreman_user_id, project_id, project_name, report_type, report_date, work_done, problems, attachment_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          reportId,
+          req.user?.id || null,
+          payload.projectId,
+          projectName,
+          payload.reportType,
+          payload.date,
+          payload.workDone,
+          payload.problems ?? null,
+          payload.attachment ?? null
+        ],
+        connection
+      );
+    });
+
+    res.status(201).json({ id: reportId });
   } catch (error) {
     if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
     console.error(error);
@@ -3960,20 +4520,45 @@ app.delete('/api/assessments/:id', requireAuth, authorizeRoles('admin'), async (
 // ---------------------------------------------------------------------------
 
 const createProjectSchema = z.object({
-  name: z.string().min(1).max(255),
+  name: z.string().min(1).max(255).optional(),
+  project_name: z.string().min(1).max(255).optional(),
+  projectName: z.string().min(1).max(255).optional(),
   status: z.enum(['active', 'completed', 'archived']).optional(),
   owner_user_id: uuidSchema.optional(),
-  description: z.string().optional()
-});
+  description: z.string().optional(),
+  project_description: z.string().optional(),
+  project_type: z.string().max(120).optional(),
+  site_address: z.string().max(255).optional(),
+  latitude: z.coerce.number().optional(),
+  longitude: z.coerce.number().optional(),
+  start_date: z.string().optional(),
+  end_date: z.string().optional()
+}).refine(data => data.name || data.project_name || data.projectName, { message: 'name_required' });
 
-app.post('/api/projects', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.post('/api/projects', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const payload = createProjectSchema.parse(req.body ?? {});
     const projectId = randomUUID();
+    const name = payload.name || payload.project_name || payload.projectName;
+    const description = payload.description || payload.project_description || null;
     
     await execute(
-      'INSERT INTO projects (id, name, owner_user_id, status) VALUES (?, ?, ?, ?)',
-      [projectId, payload.name, req.user?.id || null, payload.status || 'active']
+      `INSERT INTO projects
+        (id, name, owner_user_id, status, project_type, site_address, latitude, longitude, start_date, end_date, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        name,
+        req.user?.id || null,
+        payload.status || 'active',
+        payload.project_type || null,
+        payload.site_address || null,
+        Number.isFinite(payload.latitude) ? payload.latitude : null,
+        Number.isFinite(payload.longitude) ? payload.longitude : null,
+        payload.start_date || null,
+        payload.end_date || null,
+        description
+      ]
     );
 
     res.status(201).json({ id: projectId, message: 'Project created' });
@@ -3984,7 +4569,7 @@ app.post('/api/projects', requireAuth, authorizeRoles('admin', 'project_manager'
   }
 });
 
-app.delete('/api/projects/:id', requireAuth, authorizeRoles('admin', 'project_manager'), async (req, res) => {
+app.delete('/api/projects/:id', requireAuth, authorizeRoles('admin', 'project_manager', 'pm'), async (req, res) => {
   try {
     const { id } = req.params;
     const result = await execute('DELETE FROM projects WHERE id = ?', [id]);
@@ -4005,18 +4590,20 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
       `SELECT
          p.id AS project_id,
          p.name AS project_name,
+         p.project_type,
          COUNT(t.id) AS tasks_total,
          SUM(t.status = 'todo') AS tasks_todo,
          SUM(t.status = 'in-progress') AS tasks_in_progress,
          SUM(t.status = 'done') AS tasks_done
        FROM projects p
        LEFT JOIN tasks t ON t.project_id = p.id
-       GROUP BY p.id, p.name
+       GROUP BY p.id, p.name, p.project_type
        ORDER BY p.name`
     );
     res.json(rows.map(row => ({
       project_id: row.project_id,
       project_name: row.project_name,
+      project_type: row.project_type,
       tasks_total: Number(row.tasks_total ?? 0),
       tasks_todo: Number(row.tasks_todo ?? 0),
       tasks_in_progress: Number(row.tasks_in_progress ?? 0),
@@ -4028,85 +4615,1125 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
   }
 });
 
+app.get('/api/dashboard/practical-testing-count', requireAuth, authorizeRoles('project_manager', 'admin', 'pm'), async (_req, res) => {
+  try {
+    const rows = await query(
+      `SELECT COUNT(*) AS count
+       FROM task_worker_assignments
+       WHERE status IN ('accepted', 'in-progress', 'submitted')`
+    );
+    res.json({ count: Number(rows[0]?.count ?? 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // ---------------------------------------------------------------------------
-// Worker API Endpoints (Mock Implementation for Frontend Integration)
+// Worker API Endpoints
 // ---------------------------------------------------------------------------
+app.get('/api/worker/tasks', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
+    const workerId = Number(rawWorkerId);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
-// In-memory store for demo
-let workerTasks = [
-  {
-    id: 'T-1024',
-    project: 'โครงการหมู่บ้านจัดสรร The Zenith',
-    location: 'โซน B - งานเทคานชั้น 2',
-    foreman: 'หัวหน้าวิชัย',
-    date: '08/01/2026',
-    status: 'pending_acceptance',
-    description: '',
-    description_detail: 'งานเทคานคอนกรีตเสริมเหล็ก ชั้น 2 อาคาร A'
-  }
-];
+    const rows = await query(
+      `SELECT
+         t.id AS task_id,
+         t.title,
+         t.due_date,
+         p.name AS project_name,
+         s.name AS site_name,
+         twa.status AS assignment_status
+       FROM task_worker_assignments twa
+       JOIN tasks t ON t.id = twa.task_id
+       JOIN projects p ON p.id = t.project_id
+       LEFT JOIN sites s ON s.id = t.site_id
+       WHERE twa.worker_id = ?
+       ORDER BY twa.assigned_at DESC`,
+      [workerId]
+    );
 
-app.get('/api/worker/tasks', (req, res) => {
-  // In a real app, filtering by req.user.id
-  res.json(workerTasks);
-});
+    const items = rows.map(row => ({
+      id: row.task_id,
+      project: row.project_name || '',
+      location: row.site_name || row.title || '',
+      date: row.due_date ? String(row.due_date).slice(0, 10) : '',
+      status: row.assignment_status || 'assigned'
+    }));
 
-app.post('/api/worker/tasks/:id/accept', (req, res) => {
-  const task = workerTasks.find(t => t.id === req.params.id);
-  if (task) {
-    task.status = 'accepted';
-    res.json(task);
-  } else {
-    res.status(404).json({ message: 'Task not found' });
-  }
-});
-
-app.post('/api/worker/tasks/:id/submit', (req, res) => {
-  const task = workerTasks.find(t => t.id === req.params.id);
-  if (task) {
-    task.status = 'submitted';
-    task.submitted_at = new Date();
-    task.submission_data = req.body; // { description, photo }
-    res.json(task);
-  } else {
-    res.status(404).json({ message: 'Task not found' });
+    res.json(items);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-app.get('/api/worker/assessment/questions', (req, res) => {
-    // Return mock questions for the skill test
-    const questions = [
-        { id: 1, question: "ข้อใดคืออัตราส่วนผสมคอนกรีตโครงสร้างทั่วไป (ปูน:ทราย:หิน)?", options: ["1:2:4", "1:3:5", "1:1:2", "1:4:8"], answer: "1:2:4" },
-        { id: 2, question: "ระยะหุ้มคอนกรีต (Covering) สำหรับเสาเข็มควรอยู่ที่เท่าไหร่?", options: ["3 ซม.", "5 ซม.", "7.5 ซม.", "10 ซม."], answer: "7.5 ซม." },
-        { id: 3, question: "หากต้องการตัดเหล็กเส้น DB12 ต้องใช้เครื่องมืออะไรเหมาะสมที่สุด?", options: ["เลื่อยตัดเหล็ก", "กรรไกรตัดเหล็ก", "ไฟเบอร์ตัดเหล็ก", "คีมตัดสายไฟ"], answer: "ไฟเบอร์ตัดเหล็ก" },
-        { id: 4, question: "มาตรฐานความปลอดภัยในการทำงานบนที่สูงคือกี่เมตรขึ้นไป?", options: ["1 เมตร", "2 เมตร", "4 เมตร", "5 เมตร"], answer: "2 เมตร" },
-        { id: 5, question: "ชนิดของปูนซีเมนต์ปอร์ตแลนด์ประเภทใดที่แข็งตัวเร็ว?", options: ["ประเภท 1", "ประเภท 2", "ประเภท 3", "ประเภท 5"], answer: "ประเภท 3" }
-    ];
-    res.json(questions);
+app.post('/api/worker/tasks/:id/accept', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const workerId = Number(req.user?.id);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+
+    const result = await execute(
+      `UPDATE task_worker_assignments SET status = 'accepted', started_at = NOW(6)
+       WHERE task_id = ? AND worker_id = ?`,
+      [taskId, workerId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
+    res.json({ message: 'accepted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
-app.post('/api/worker/score', async (req, res) => {
-    try {
-        const { userId, sessionId, answers } = req.body;
-        console.log(`Worker ${userId} Score for session ${sessionId}`);
-        
-        // Mock calculation or just return success
-        const result = {
-            id: randomUUID(),
-            workerId: userId,
-            sessionId: sessionId,
-            score: 0,
-            totalQuestions: Object.keys(answers || {}).length,
-            passed: true,
-            finishedAt: new Date().toISOString(),
-            breakdown: []
-        };
-        
-        res.json({ success: true, result, message: 'Score saved (Mock)' });
-    } catch (error) {
-        console.error('Mock score error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+app.post('/api/worker/tasks/:id/submit', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const workerId = Number(req.user?.id);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+
+    const result = await execute(
+      `UPDATE task_worker_assignments SET status = 'submitted', completed_at = NOW(6)
+       WHERE task_id = ? AND worker_id = ?`,
+      [taskId, workerId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'not_found' });
+    res.json({ message: 'submitted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/history', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
+    const workerId = Number(rawWorkerId);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+
+    const rows = await query(
+      `SELECT
+         t.id AS task_id,
+         t.title,
+         t.due_date,
+         p.name AS project_name,
+         s.name AS site_name,
+         twa.status AS assignment_status,
+         twa.completed_at
+       FROM task_worker_assignments twa
+       JOIN tasks t ON t.id = twa.task_id
+       JOIN projects p ON p.id = t.project_id
+       LEFT JOIN sites s ON s.id = t.site_id
+       WHERE twa.worker_id = ?
+       ORDER BY COALESCE(twa.completed_at, t.due_date) DESC`,
+      [workerId]
+    );
+
+    const items = rows.map(row => ({
+      id: row.task_id,
+      project: row.project_name || '',
+      location: row.site_name || row.title || '',
+      date: (row.completed_at || row.due_date) ? String(row.completed_at || row.due_date).slice(0, 10) : '',
+      status: row.assignment_status || 'submitted'
+    }));
+
+    res.json(items);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/assessment/summary', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
+    const workerId = Number(rawWorkerId);
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+
+    const row = await queryOne(
+      `SELECT id, round_id, session_id, total_score, total_questions, passed, finished_at, category, breakdown
+       FROM worker_assessment_results
+       WHERE worker_id = ?
+       ORDER BY finished_at DESC
+       LIMIT 1`,
+      [workerId]
+    );
+    if (!row) return res.status(404).json({ message: 'not_found' });
+
+    const practicalRow = await queryOne(
+      `SELECT percent
+       FROM foreman_assessments
+       WHERE worker_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [workerId]
+    );
+
+    let roundRow = null;
+    if (row.round_id) {
+      roundRow = await queryOne(
+        `SELECT id, passing_score, question_count, criteria
+         FROM assessment_rounds
+         WHERE id = ?
+         LIMIT 1`,
+        [row.round_id]
+      );
     }
+
+    const { scoreWeights, passThreshold } = resolveScoringConfig(roundRow);
+    const score = Number(row.total_score ?? 0);
+    const totalQuestions = Number(row.total_questions ?? 0);
+    const practicalPercent = Number(practicalRow?.percent ?? 0);
+    const hasPracticalAssessment = practicalRow?.percent !== null && practicalRow?.percent !== undefined;
+
+    let rawBreakdown = [];
+    if (row.breakdown) {
+      if (typeof row.breakdown === 'object') rawBreakdown = row.breakdown;
+      else if (typeof row.breakdown === 'string') {
+        try { rawBreakdown = JSON.parse(row.breakdown); } catch (e) {}
+      }
+    }
+
+    const breakdown = Array.isArray(rawBreakdown)
+      ? rawBreakdown
+      : (Array.isArray(rawBreakdown?.items) ? rawBreakdown.items : []);
+    const details = Array.isArray(rawBreakdown?.details) ? rawBreakdown.details : [];
+    const wrongAnswers = Array.isArray(rawBreakdown?.wrongAnswers)
+      ? rawBreakdown.wrongAnswers
+      : details.filter(item => item?.isCorrect === false);
+
+    const normalizeText = (value) => String(value ?? '').trim().toLowerCase();
+    const indexToAnswer = ['a', 'b', 'c', 'd'];
+    const answerToIndex = { a: 0, b: 1, c: 2, d: 3, ก: 0, ข: 1, ค: 2, ง: 3 };
+
+    const parseAnswerIndex = (answerRaw, choices) => {
+      const normalizedAnswer = normalizeText(answerRaw);
+      if (Object.prototype.hasOwnProperty.call(answerToIndex, normalizedAnswer)) {
+        return answerToIndex[normalizedAnswer];
+      }
+
+      const asNumber = Number(normalizedAnswer);
+      if (Number.isFinite(asNumber)) {
+        if (asNumber >= 1 && asNumber <= 4) return Math.trunc(asNumber - 1);
+        if (asNumber >= 0 && asNumber <= 3) return Math.trunc(asNumber);
+      }
+
+      const normalizedChoices = Array.isArray(choices) ? choices.map(choice => normalizeText(choice)) : [];
+      const byText = normalizedChoices.findIndex(choice => choice && choice === normalizedAnswer);
+      return byText >= 0 ? byText : null;
+    };
+
+    const sourceItems = [...details, ...wrongAnswers].filter(Boolean);
+    const allQuestionIds = Array.from(new Set(sourceItems
+      .map(item => String(item?.questionId ?? '').trim())
+      .filter(Boolean)));
+
+    const numericIds = allQuestionIds
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value));
+    const stringIds = allQuestionIds.filter(value => !Number.isFinite(Number(value)));
+
+    const questionMeta = new Map();
+
+    if (numericIds.length) {
+      const structuralRows = await query(
+        `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d, answer
+         FROM question_Structural
+         WHERE id IN (?)`,
+        [numericIds]
+      );
+
+      for (const item of structuralRows) {
+        const choices = [item.choice_a, item.choice_b, item.choice_c, item.choice_d];
+        questionMeta.set(String(item.id), {
+          questionText: item.question_text || '',
+          choices,
+          correctIndex: parseAnswerIndex(item.answer, choices)
+        });
+      }
+    }
+
+    const unresolvedStringIds = stringIds.filter(id => !questionMeta.has(String(id)));
+    if (unresolvedStringIds.length) {
+      const optionRows = await query(
+        `SELECT q.id AS question_id, q.text AS question_text, qo.id AS option_id, qo.text AS option_text, qo.is_correct
+         FROM questions q
+         LEFT JOIN question_options qo ON qo.question_id = q.id
+         WHERE q.id IN (?)
+         ORDER BY q.id, qo.id`,
+        [unresolvedStringIds]
+      );
+
+      const grouped = new Map();
+      for (const row of optionRows) {
+        const key = String(row.question_id);
+        const entry = grouped.get(key) || {
+          questionText: row.question_text || '',
+          choices: [],
+          correctIndex: null
+        };
+        if (row.option_id) {
+          const optionIndex = entry.choices.length;
+          entry.choices.push(row.option_text);
+          if (Boolean(row.is_correct) && !Number.isFinite(entry.correctIndex)) {
+            entry.correctIndex = optionIndex;
+          }
+        }
+        grouped.set(key, entry);
+      }
+
+      for (const [key, value] of grouped.entries()) {
+        questionMeta.set(String(key), value);
+      }
+    }
+
+    const enrichItem = (item, fallbackQuestionNo) => {
+      const questionId = String(item?.questionId ?? '').trim();
+      const meta = questionMeta.get(questionId);
+
+      const existingChoices = Array.isArray(item?.choices) && item.choices.some(choice => choice !== null && choice !== undefined && String(choice).trim() !== '')
+        ? item.choices
+        : [];
+      const choices = existingChoices.length ? existingChoices : (Array.isArray(meta?.choices) ? meta.choices : []);
+
+      let selectedIndex = Number(item?.selectedIndex);
+      if (!Number.isFinite(selectedIndex)) {
+        selectedIndex = parseAnswerIndex(item?.selectedAnswer, choices);
+      }
+      if (!Number.isFinite(selectedIndex) && item?.selectedText) {
+        selectedIndex = parseAnswerIndex(item.selectedText, choices);
+      }
+
+      let correctIndex = Number(item?.correctIndex);
+      if (!Number.isFinite(correctIndex)) {
+        correctIndex = parseAnswerIndex(item?.correctAnswer, choices);
+      }
+      if (!Number.isFinite(correctIndex) && item?.correctText) {
+        correctIndex = parseAnswerIndex(item.correctText, choices);
+      }
+      if (!Number.isFinite(correctIndex) && Number.isFinite(meta?.correctIndex)) {
+        correctIndex = Number(meta.correctIndex);
+      }
+
+      const selectedAnswer = item?.selectedAnswer || (Number.isFinite(selectedIndex) ? (indexToAnswer[selectedIndex] || null) : null);
+      const correctAnswer = item?.correctAnswer || (Number.isFinite(correctIndex) ? (indexToAnswer[correctIndex] || null) : null);
+      const selectedText = item?.selectedText || (Number.isFinite(selectedIndex) && Array.isArray(choices)
+        ? (choices[selectedIndex] ?? null)
+        : null);
+      const correctText = item?.correctText || (Number.isFinite(correctIndex) && Array.isArray(choices)
+        ? (choices[correctIndex] ?? null)
+        : null);
+
+      const passedQuestionNo = Number(item?.questionNo);
+      const questionNo = Number.isFinite(passedQuestionNo) && passedQuestionNo > 0
+        ? Math.trunc(passedQuestionNo)
+        : fallbackQuestionNo;
+
+      const isCorrect = typeof item?.isCorrect === 'boolean'
+        ? item.isCorrect
+        : (Number.isFinite(selectedIndex) && Number.isFinite(correctIndex) ? selectedIndex === correctIndex : false);
+
+      return {
+        ...item,
+        questionId: item?.questionId,
+        questionNo,
+        questionText: item?.questionText || meta?.questionText || '',
+        choices,
+        selectedIndex: Number.isFinite(selectedIndex) ? selectedIndex : null,
+        selectedAnswer,
+        selectedText,
+        correctIndex: Number.isFinite(correctIndex) ? correctIndex : null,
+        correctAnswer,
+        correctText,
+        isCorrect
+      };
+    };
+
+    const enrichedDetails = details.map((item, index) => enrichItem(item, index + 1));
+    const detailNumberMap = new Map(
+      enrichedDetails
+        .map(item => [String(item?.questionId ?? ''), item?.questionNo])
+        .filter(([id, number]) => id && Number.isFinite(number))
+    );
+
+    const enrichedWrongAnswers = wrongAnswers.map((item, index) => {
+      const key = String(item?.questionId ?? '').trim();
+      const mappedNo = detailNumberMap.get(key);
+      const fallbackQuestionNo = Number.isFinite(mappedNo) ? mappedNo : index + 1;
+      return enrichItem(item, fallbackQuestionNo);
+    });
+
+    let resolvedDetails = enrichedDetails;
+    if (row.session_id && enrichedDetails.length) {
+      try {
+        const sessionQuestionRows = await query(
+          `SELECT question_id
+           FROM assessment_session_questions
+           WHERE session_id = ?`,
+          [row.session_id]
+        );
+        const allowedQuestionIds = new Set(
+          (sessionQuestionRows || [])
+            .map((sessionRow) => String(sessionRow?.question_id ?? '').trim())
+            .filter(Boolean)
+        );
+
+        if (allowedQuestionIds.size > 0) {
+          const filteredDetails = enrichedDetails.filter((item) => {
+            const key = String(item?.questionId ?? '').trim();
+            if (!key) return false;
+            if (allowedQuestionIds.has(key)) return true;
+            const numericKey = Number(key);
+            return Number.isFinite(numericKey) && allowedQuestionIds.has(String(numericKey));
+          });
+          if (filteredDetails.length > 0) {
+            resolvedDetails = filteredDetails;
+          }
+        }
+      } catch (sessionFilterError) {
+        if (sessionFilterError?.code !== 'ER_NO_SUCH_TABLE' && sessionFilterError?.code !== 'ER_BAD_TABLE_ERROR') {
+          throw sessionFilterError;
+        }
+      }
+    }
+
+    const resolvedWrongAnswers = resolvedDetails.filter((item) => item?.isCorrect === false);
+    const roundQuestionCount = Number(roundRow?.question_count ?? 0);
+    const fallbackTotalQuestions = roundQuestionCount > 0 ? roundQuestionCount : totalQuestions;
+    const resolvedDetailsCorrectCount = resolvedDetails.filter((item) => item?.isCorrect === true).length;
+    const resolvedTotalQuestions = fallbackTotalQuestions > 0
+      ? fallbackTotalQuestions
+      : (resolvedDetails.length ? resolvedDetails.length : totalQuestions);
+    const resolvedScore = (resolvedWrongAnswers.length > 0 && resolvedTotalQuestions > 0)
+      ? Math.max(0, resolvedTotalQuestions - resolvedWrongAnswers.length)
+      : (resolvedTotalQuestions > 0
+          ? Math.min(resolvedDetailsCorrectCount, resolvedTotalQuestions)
+          : score);
+    const resolvedTheoryPercent = resolvedTotalQuestions > 0
+      ? (resolvedScore / resolvedTotalQuestions) * 100
+      : 0;
+    const resolvedWeighted = computeWeightedAssessment({
+      theoryPercent: resolvedTheoryPercent,
+      practicalPercent,
+      scoreWeights,
+      passThreshold
+    });
+
+    const shouldSyncSummary =
+      Number(row.total_score ?? 0) !== resolvedScore ||
+      Number(row.total_questions ?? 0) !== resolvedTotalQuestions ||
+      (hasPracticalAssessment && Boolean(row.passed) !== resolvedWeighted.passed);
+
+    if (shouldSyncSummary) {
+      await execute(
+        `UPDATE worker_assessment_results
+         SET total_score = ?, total_questions = ?, passed = ?, breakdown = ?, updated_at = NOW(6)
+         WHERE id = ?`,
+        [
+          resolvedScore,
+          resolvedTotalQuestions,
+          hasPracticalAssessment ? (resolvedWeighted.passed ? 1 : 0) : Number(row.passed ?? 0),
+          JSON.stringify({
+            items: breakdown,
+            details: resolvedDetails,
+            wrongAnswers: resolvedWrongAnswers
+          }),
+          row.id
+        ]
+      );
+    }
+
+    res.json({
+      result: {
+        score: resolvedScore,
+        totalQuestions: resolvedTotalQuestions,
+        passed: hasPracticalAssessment ? resolvedWeighted.passed : null,
+        theoryPercent: resolvedWeighted.theoryPercent,
+        practicalPercent: hasPracticalAssessment ? resolvedWeighted.practicalPercent : null,
+        combinedPercent: hasPracticalAssessment ? resolvedWeighted.combinedPercent : null,
+        passingScorePct: passThreshold,
+        scoreWeights,
+        roundQuestionCount: roundQuestionCount > 0 ? roundQuestionCount : null,
+        practicalCompleted: hasPracticalAssessment,
+        resultReady: hasPracticalAssessment,
+        category: row.category || null,
+        breakdown,
+        details: resolvedDetails,
+        wrongAnswers: resolvedWrongAnswers
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6)
+});
+
+app.post('/api/foreman/change-password', requireAuth, authorizeRoles('foreman', 'fm'), async (req, res) => {
+  try {
+    const payload = changePasswordSchema.parse(req.body ?? {});
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'unauthorized' });
+
+    const user = await queryOne(
+      'SELECT id, password_hash FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+    if (!user || !user.password_hash) return res.status(404).json({ message: 'not_found' });
+
+    const match = await bcrypt.compare(payload.currentPassword, user.password_hash);
+    if (!match) return res.status(400).json({ message: 'invalid_current_password' });
+
+    const newHash = await bcrypt.hash(payload.newPassword, 10);
+    await execute(
+      'UPDATE users SET password_hash = ?, updated_at = NOW(6) WHERE id = ?',
+      [newHash, userId]
+    );
+
+    res.json({ message: 'password_updated' });
+  } catch (error) {
+    if (error?.issues) return res.status(400).json({ message: 'Invalid input', errors: error.issues });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+const DEFAULT_SCORE_WEIGHTS = Object.freeze({ exam: 70, practical: 30 });
+const DEFAULT_PASS_THRESHOLD = 70;
+
+const normalizeScoreWeights = (rawWeights) => {
+  const examRaw = Number(rawWeights?.exam);
+  const practicalRaw = Number(rawWeights?.practical);
+
+  let exam = Number.isFinite(examRaw)
+    ? Math.max(0, Math.min(100, examRaw))
+    : DEFAULT_SCORE_WEIGHTS.exam;
+  let practical = Number.isFinite(practicalRaw)
+    ? Math.max(0, Math.min(100, practicalRaw))
+    : DEFAULT_SCORE_WEIGHTS.practical;
+
+  const sum = exam + practical;
+  if (sum <= 0) {
+    exam = DEFAULT_SCORE_WEIGHTS.exam;
+    practical = DEFAULT_SCORE_WEIGHTS.practical;
+  } else if (sum !== 100) {
+    exam = Math.round((exam / sum) * 10000) / 100;
+    practical = Math.round((practical / sum) * 10000) / 100;
+    const normalizedSum = exam + practical;
+    if (normalizedSum !== 100) {
+      practical = Math.round((100 - exam) * 100) / 100;
+    }
+  }
+
+  return {
+    exam: Math.round(exam * 100) / 100,
+    practical: Math.round(practical * 100) / 100
+  };
+};
+
+const resolveScoringConfig = (roundRow) => {
+  const criteria = parseJsonField(roundRow?.criteria);
+  const scoreWeights = normalizeScoreWeights(criteria?.scoreWeights);
+
+  const criteriaThreshold = Number(criteria?.passThreshold);
+  const passingScore = Number(roundRow?.passing_score);
+  let passThreshold = Number.isFinite(criteriaThreshold)
+    ? criteriaThreshold
+    : (Number.isFinite(passingScore) ? passingScore : DEFAULT_PASS_THRESHOLD);
+
+  passThreshold = Math.max(0, Math.min(100, passThreshold));
+
+  return {
+    scoreWeights,
+    passThreshold: Math.round(passThreshold * 100) / 100
+  };
+};
+
+const computeWeightedAssessment = ({ theoryPercent, practicalPercent, scoreWeights, passThreshold }) => {
+  const safeTheoryPercent = Number.isFinite(Number(theoryPercent)) ? Number(theoryPercent) : 0;
+  const safePracticalPercent = Number.isFinite(Number(practicalPercent)) ? Number(practicalPercent) : 0;
+  const normalizedWeights = normalizeScoreWeights(scoreWeights);
+  const examWeight = normalizedWeights.exam;
+  const practicalWeight = normalizedWeights.practical;
+  const safePassThreshold = Number.isFinite(Number(passThreshold))
+    ? Math.max(0, Math.min(100, Number(passThreshold)))
+    : DEFAULT_PASS_THRESHOLD;
+
+  const combinedPercent = (safeTheoryPercent * examWeight / 100) + (safePracticalPercent * practicalWeight / 100);
+
+  return {
+    theoryPercent: Math.round(safeTheoryPercent * 100) / 100,
+    practicalPercent: Math.round(safePracticalPercent * 100) / 100,
+    combinedPercent: Math.round(combinedPercent * 100) / 100,
+    passed: combinedPercent >= safePassThreshold
+  };
+};
+
+app.get('/api/assessments/rounds/active', requireAuth, authorizeRoles('worker', 'wk', 'project_manager', 'pm', 'admin'), async (req, res) => {
+  try {
+    const category = String(req.query.category || '').trim().toLowerCase();
+    const hasCategory = category.length > 0;
+    const rows = await query(
+      `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+              start_at, end_at, frequency_months, show_score, show_answers, show_breakdown,
+              subcategory_quotas, difficulty_weights, criteria, status, active
+       FROM assessment_rounds
+       WHERE (${hasCategory ? 'LOWER(category) = ? AND' : ''} (status = 'active' OR status IS NULL OR active = 1))
+       ORDER BY (status = 'active') DESC, active DESC, created_at DESC`,
+      hasCategory ? [category] : []
+    );
+    const parsedRows = rows.map(row => ({
+      ...row,
+      subcategory_quotas: parseJsonField(row.subcategory_quotas),
+      difficulty_weights: parseJsonField(row.difficulty_weights),
+      criteria: parseJsonField(row.criteria)
+    }));
+    res.json({ items: parsedRows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/assessments/rounds', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const category = String(req.query.category || '').trim().toLowerCase();
+    const hasCategory = category.length > 0;
+    const rows = await query(
+      `SELECT id, title, category, description, question_count, passing_score, duration_minutes,
+              start_at, end_at, frequency_months, show_score, show_answers, show_breakdown,
+              subcategory_quotas, difficulty_weights, criteria, status, active
+       FROM assessment_rounds
+       WHERE (${hasCategory ? 'LOWER(category) = ? AND' : ''} (status = 'active' OR status IS NULL OR active = 1))
+       ORDER BY (status = 'active') DESC, active DESC, created_at DESC`,
+      hasCategory ? [category] : []
+    );
+    const parsedRows = rows.map(row => ({
+      ...row,
+      subcategory_quotas: parseJsonField(row.subcategory_quotas),
+      difficulty_weights: parseJsonField(row.difficulty_weights),
+      criteria: parseJsonField(row.criteria)
+    }));
+    res.json({ items: parsedRows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/questions/structural', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const setNo = Number(req.query.set_no || 1);
+    const requestedLimit = Number(req.query.limit || 0);
+    const sessionId = String(req.query.sessionId || '').trim();
+
+    const round = await queryOne(
+      `SELECT id, title, question_count, passing_score, duration_minutes, start_at, end_at,
+              frequency_months, show_score, show_answers, show_breakdown,
+              subcategory_quotas, difficulty_weights, criteria, status, active
+       FROM assessment_rounds
+       WHERE LOWER(category) = 'structure' AND (status = 'active' OR status IS NULL OR active = 1)
+       ORDER BY (status = 'active') DESC, active DESC, created_at DESC
+       LIMIT 1`
+    );
+
+    const roundQuestionCount = Number(round?.question_count ?? 0);
+    const resolvedLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? requestedLimit
+      : (roundQuestionCount > 0 ? roundQuestionCount : 60);
+    const limit = Math.min(200, Math.max(1, Number.isFinite(resolvedLimit) ? Math.trunc(resolvedLimit) : 60));
+
+    let activeSessionId = sessionId || randomUUID();
+    if (!sessionId && round?.id) {
+      const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id || null;
+      const workerId = Number(rawWorkerId);
+      try {
+        await execute(
+          `INSERT INTO assessment_sessions (id, round_id, worker_id, status, question_count, source)
+           VALUES (?, ?, ?, 'in_progress', ?, 'question_Structural')`,
+          [activeSessionId, round.id, Number.isFinite(workerId) ? workerId : null, limit]
+        );
+      } catch (sessionInsertError) {
+        if (sessionInsertError?.code === 'ER_BAD_FIELD_ERROR' || sessionInsertError?.code === 'ER_NO_SUCH_TABLE') {
+          try {
+            await execute(
+              `INSERT INTO assessment_sessions (id, round_id, worker_id, status, question_count)
+               VALUES (?, ?, ?, 'in_progress', ?)`,
+              [activeSessionId, round.id, Number.isFinite(workerId) ? workerId : null, limit]
+            );
+          } catch (fallbackInsertError) {
+            console.warn('assessment_sessions insert fallback failed', fallbackInsertError?.code || fallbackInsertError?.message || fallbackInsertError);
+          }
+        } else {
+          throw sessionInsertError;
+        }
+      }
+    }
+
+    let questions = [];
+    try {
+      const safeSetNo = Number.isFinite(setNo) ? Math.trunc(setNo) : 1;
+      let rows = await query(
+        `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+         FROM question_Structural
+         WHERE set_no = ?
+         ORDER BY RAND()
+         LIMIT ${limit}`,
+        [safeSetNo]
+      );
+
+      if (rows.length < limit) {
+        const missing = Math.max(0, Math.trunc(limit - rows.length));
+        const ids = rows.map(row => row.id).filter(id => id !== null && id !== undefined);
+        const extraRows = ids.length
+          ? await query(
+              `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+               FROM question_Structural
+               WHERE id NOT IN (${ids.map(() => '?').join(',')})
+               ORDER BY RAND()
+               LIMIT ${missing}`,
+              ids
+            )
+          : await query(
+              `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+               FROM question_Structural
+               ORDER BY RAND()
+               LIMIT ${missing}`
+            );
+        rows = rows.concat(extraRows);
+      }
+
+      questions = rows.map(row => ({
+        id: row.id,
+        text: row.question_text,
+        choices: [row.choice_a, row.choice_b, row.choice_c, row.choice_d]
+      }));
+    } catch (error) {
+      if (error?.code === 'ER_BAD_FIELD_ERROR') {
+        const rows = await query(
+          `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+           FROM question_Structural
+           ORDER BY RAND()
+           LIMIT ?`,
+          [limit]
+        );
+        questions = rows.map(row => ({
+          id: row.id,
+          text: row.question_text,
+          choices: [row.choice_a, row.choice_b, row.choice_c, row.choice_d]
+        }));
+      } else if (error?.code !== 'ER_NO_SUCH_TABLE') {
+        throw error;
+      }
+    }
+
+    if (!questions.length) {
+      let fallbackRows = await query(
+        `SELECT q.id,
+                q.text,
+                JSON_ARRAYAGG(qo.text ORDER BY qo.id) AS choices
+         FROM questions q
+         LEFT JOIN question_options qo ON qo.question_id = q.id
+         WHERE q.category = 'structure'
+         GROUP BY q.id
+         ORDER BY RAND()
+         LIMIT ?`,
+        [limit]
+      );
+      if (!fallbackRows.length) {
+        fallbackRows = await query(
+          `SELECT q.id,
+                  q.text,
+                  JSON_ARRAYAGG(qo.text ORDER BY qo.id) AS choices
+           FROM questions q
+           LEFT JOIN question_options qo ON qo.question_id = q.id
+           GROUP BY q.id
+           ORDER BY RAND()
+           LIMIT ?`,
+          [limit]
+        );
+      }
+      questions = fallbackRows.map(row => {
+        let choices = row.choices;
+        if (typeof choices === 'string') {
+          try {
+            choices = JSON.parse(choices);
+          } catch {
+            choices = [];
+          }
+        }
+        return {
+          id: row.id,
+          text: row.text,
+          choices: Array.isArray(choices) ? choices.filter(item => item !== null) : []
+        };
+      });
+    }
+
+    res.json({
+      questions,
+      total: questions.length,
+      round: round ? {
+        id: round.id,
+        title: round.title,
+        questionCount: round.question_count,
+        durationMinutes: round.duration_minutes,
+        passingScore: round.passing_score,
+        subcategoryQuotas: parseJsonField(round.subcategory_quotas),
+        difficultyWeights: parseJsonField(round.difficulty_weights),
+        criteria: parseJsonField(round.criteria)
+      } : null,
+      sessionId: activeSessionId
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/worker/assessment/questions', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const setNo = Number(req.query.set_no || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 60)));
+    const rows = await query(
+      `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d
+       FROM question_Structural
+       WHERE set_no = ?
+       ORDER BY RAND()
+       LIMIT ?`,
+      [Number.isFinite(setNo) ? setNo : 1, limit]
+    );
+    const questions = rows.map(row => ({
+      id: row.id,
+      question: row.question_text,
+      options: [row.choice_a, row.choice_b, row.choice_c, row.choice_d]
+    }));
+    res.json(questions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/worker/score', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+  try {
+    const workerId = Number(req.body?.userId || req.user?.id);
+    const sessionId = String(req.body?.sessionId || '').trim();
+    const answers = req.body?.answers || {};
+    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+    if (!sessionId) return res.status(400).json({ message: 'missing_session' });
+
+    const sessionRound = await queryOne(
+      `SELECT s.round_id, ar.passing_score, ar.criteria
+       FROM assessment_sessions s
+       LEFT JOIN assessment_rounds ar ON ar.id = s.round_id
+       WHERE s.id = ?
+       LIMIT 1`,
+      [sessionId]
+    );
+    const roundId = sessionRound?.round_id || null;
+    const { scoreWeights, passThreshold } = resolveScoringConfig(sessionRound);
+
+    const existing = await queryOne(
+      `SELECT id, total_score, total_questions, passed, finished_at
+       FROM worker_assessment_results
+       WHERE worker_id = ? AND category = 'structure'
+       LIMIT 1`,
+      [workerId]
+    );
+
+    const rawAnswerEntries = Object.entries(answers || {});
+    let answerEntries = rawAnswerEntries;
+
+    try {
+      const sessionQuestions = await query(
+        `SELECT question_id
+         FROM assessment_session_questions
+         WHERE session_id = ?`,
+        [sessionId]
+      );
+
+      const allowedQuestionIds = new Set(
+        (sessionQuestions || [])
+          .map((row) => String(row?.question_id ?? '').trim())
+          .filter(Boolean)
+      );
+
+      if (allowedQuestionIds.size > 0) {
+        answerEntries = rawAnswerEntries.filter(([key]) => {
+          const normalizedKey = String(key || '').trim();
+          if (!normalizedKey) return false;
+          if (allowedQuestionIds.has(normalizedKey)) return true;
+          const numericKey = Number(normalizedKey);
+          return Number.isFinite(numericKey) && allowedQuestionIds.has(String(numericKey));
+        });
+      }
+    } catch (sessionQuestionError) {
+      if (sessionQuestionError?.code !== 'ER_NO_SUCH_TABLE' && sessionQuestionError?.code !== 'ER_BAD_TABLE_ERROR') {
+        throw sessionQuestionError;
+      }
+    }
+
+    const numericIds = [];
+    const stringIds = [];
+    for (const [key] of answerEntries) {
+      const numeric = Number(key);
+      if (Number.isFinite(numeric)) {
+        numericIds.push(numeric);
+      } else {
+        stringIds.push(String(key));
+      }
+    }
+    if (!numericIds.length && !stringIds.length) return res.status(400).json({ message: 'no_answers' });
+
+    const normalizeText = (value) => String(value ?? '').trim().toLowerCase();
+    const parseCorrectIndex = (answerRaw, choices) => {
+      const normalizedAnswer = normalizeText(answerRaw);
+      const letterMap = { a: 0, b: 1, c: 2, d: 3, ก: 0, ข: 1, ค: 2, ง: 3 };
+      if (Object.prototype.hasOwnProperty.call(letterMap, normalizedAnswer)) {
+        return letterMap[normalizedAnswer];
+      }
+
+      const asNumber = Number(normalizedAnswer);
+      if (Number.isFinite(asNumber)) {
+        if (asNumber >= 1 && asNumber <= 4) return Math.trunc(asNumber - 1);
+        if (asNumber >= 0 && asNumber <= 3) return Math.trunc(asNumber);
+      }
+
+      const normalizedChoices = Array.isArray(choices) ? choices.map(choice => normalizeText(choice)) : [];
+      const byText = normalizedChoices.findIndex(choice => choice && choice === normalizedAnswer);
+      return byText >= 0 ? byText : null;
+    };
+
+    let questionMetaById = new Map();
+    let useOptionFallback = false;
+
+    if (numericIds.length) {
+      try {
+        const questionRows = await query(
+          `SELECT id, question_text, choice_a, choice_b, choice_c, choice_d, answer
+           FROM question_Structural
+           WHERE id IN (?)`,
+          [numericIds]
+        );
+
+        questionMetaById = new Map(
+          questionRows.map((row) => {
+            const choices = [row.choice_a, row.choice_b, row.choice_c, row.choice_d];
+            const correctIndex = parseCorrectIndex(row.answer, choices);
+            return [Number(row.id), {
+              questionText: row.question_text || '',
+              choices,
+              correctIndex
+            }];
+          })
+        );
+
+        if (!questionMetaById.size) useOptionFallback = true;
+      } catch (error) {
+        if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_FIELD_ERROR') {
+          useOptionFallback = true;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const optionCorrectIndex = new Map();
+    if (useOptionFallback || stringIds.length) {
+      const optionIds = stringIds.length ? stringIds : numericIds.map(String);
+      if (optionIds.length) {
+        const optionRows = await query(
+          `SELECT question_id, id, is_correct
+           FROM question_options
+           WHERE question_id IN (?)
+           ORDER BY question_id, id`,
+          [optionIds]
+        );
+        const grouped = new Map();
+        for (const row of optionRows) {
+          const key = String(row.question_id);
+          const entry = grouped.get(key) || [];
+          entry.push({ id: row.id, isCorrect: Boolean(row.is_correct) });
+          grouped.set(key, entry);
+        }
+        for (const [key, options] of grouped.entries()) {
+          const correctIndex = options.findIndex(option => option.isCorrect);
+          if (correctIndex >= 0) {
+            optionCorrectIndex.set(key, correctIndex);
+          }
+        }
+      }
+    }
+
+    const indexToAnswer = ['a', 'b', 'c', 'd'];
+    let correct = 0;
+    const details = [];
+
+    for (const [index, entry] of answerEntries.entries()) {
+      const [key, value] = entry;
+      const selectedIndex = Number(value);
+      if (!Number.isFinite(selectedIndex)) continue;
+
+      const numericKey = Number(key);
+      const isNumericKey = Number.isFinite(numericKey);
+
+      let questionText = '';
+      let choices = [];
+      let correctIndex = null;
+
+      if (isNumericKey) {
+        const meta = questionMetaById.get(numericKey);
+        if (meta) {
+          questionText = meta.questionText || '';
+          choices = Array.isArray(meta.choices) ? meta.choices : [];
+          if (Number.isFinite(meta.correctIndex)) {
+            correctIndex = meta.correctIndex;
+          }
+        }
+      }
+
+      if (!Number.isFinite(correctIndex)) {
+        const fallbackCorrectIndex = optionCorrectIndex.get(String(key));
+        if (Number.isFinite(fallbackCorrectIndex)) {
+          correctIndex = fallbackCorrectIndex;
+        }
+      }
+
+      const isCorrect = Number.isFinite(correctIndex) && Number(correctIndex) === selectedIndex;
+      if (isCorrect) {
+        correct += 1;
+      }
+
+      details.push({
+        questionId: key,
+        questionNo: index + 1,
+        questionText,
+        choices,
+        selectedIndex,
+        selectedAnswer: indexToAnswer[selectedIndex] || null,
+        selectedText: Array.isArray(choices) ? (choices[selectedIndex] ?? null) : null,
+        correctIndex: Number.isFinite(correctIndex) ? Number(correctIndex) : null,
+        correctAnswer: Number.isFinite(correctIndex) ? (indexToAnswer[Number(correctIndex)] || null) : null,
+        correctText: (Array.isArray(choices) && Number.isFinite(correctIndex))
+          ? (choices[Number(correctIndex)] ?? null)
+          : null,
+        isCorrect
+      });
+    }
+
+    const totalQuestions = answerEntries.length;
+    const theoryPercent = totalQuestions ? (correct / totalQuestions) * 100 : 0;
+
+    const practicalRow = await queryOne(
+      `SELECT percent
+       FROM foreman_assessments
+       WHERE worker_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [workerId]
+    );
+
+    const weighted = computeWeightedAssessment({
+      theoryPercent,
+      practicalPercent: Number(practicalRow?.percent ?? 0),
+      scoreWeights,
+      passThreshold
+    });
+
+    const passed = weighted.passed;
+    const resultId = existing?.id || randomUUID();
+
+    const breakdownItems = [
+      {
+        label: 'structure',
+        total: totalQuestions,
+        correct,
+        percentage: Math.round(theoryPercent)
+      }
+    ];
+
+    const wrongAnswers = details
+      .filter(item => item?.isCorrect === false)
+      .map(item => ({
+        questionId: item.questionId,
+        questionNo: item.questionNo,
+        questionText: item.questionText,
+        choices: item.choices,
+        selectedIndex: item.selectedIndex,
+        selectedText: item.selectedText,
+        selectedAnswer: item.selectedAnswer,
+        correctIndex: item.correctIndex,
+        correctText: item.correctText,
+        correctAnswer: item.correctAnswer
+      }));
+
+    const breakdownPayload = {
+      items: breakdownItems,
+      details,
+      wrongAnswers
+    };
+
+    if (existing?.id) {
+      await execute(
+        `UPDATE worker_assessment_results
+         SET round_id = COALESCE(?, round_id),
+             session_id = ?,
+             total_score = ?,
+             total_questions = ?,
+             passed = ?,
+             breakdown = ?,
+             finished_at = NOW(6),
+             updated_at = NOW(6)
+         WHERE id = ?`,
+        [roundId, sessionId, correct, totalQuestions, passed ? 1 : 0, JSON.stringify(breakdownPayload), existing.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO worker_assessment_results
+         (id, worker_id, round_id, session_id, category, total_score, total_questions, passed, breakdown, finished_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'structure', ?, ?, ?, ?, NOW(6), NOW(6), NOW(6))`,
+        [resultId, workerId, roundId, sessionId, correct, totalQuestions, passed ? 1 : 0, JSON.stringify(breakdownPayload)]
+      );
+    }
+
+    await execute(
+      `UPDATE assessment_sessions SET status = 'finished', finished_at = NOW(6)
+       WHERE id = ?`,
+      [sessionId]
+    );
+
+    res.json({
+      success: true,
+      result: {
+        id: resultId,
+        workerId,
+        sessionId,
+        score: correct,
+        totalQuestions,
+        passed,
+        theoryPercent: weighted.theoryPercent,
+        practicalPercent: weighted.practicalPercent,
+        combinedPercent: weighted.combinedPercent,
+        passingScorePct: passThreshold,
+        scoreWeights,
+        breakdown: breakdownItems,
+        details,
+        wrongAnswers,
+        finishedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 
