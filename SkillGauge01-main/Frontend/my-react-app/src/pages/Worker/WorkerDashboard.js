@@ -9,6 +9,7 @@ import bannerImage from './WK01.png';
 const WorkerDashboard = () => {
   const navigate = useNavigate();
   const actionableStatuses = new Set(['assigned', 'todo', 'accepted', 'in-progress']);
+  const visibleTaskStatuses = new Set(['assigned', 'todo', 'accepted', 'in-progress', 'submitted', 'rejected']);
 
   const tradeLabel = (value) => {
     const key = String(value || '').toLowerCase();
@@ -33,6 +34,7 @@ const WorkerDashboard = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [workerLevel, setWorkerLevel] = useState(0);
   const [workerLevelLabel, setWorkerLevelLabel] = useState('ต่ำ');
+  const [skillStatusText, setSkillStatusText] = useState('รอการประเมิน');
   const resolvedTrade =
     user.fullData?.employment?.tradeType ||
     user.technician_type ||
@@ -61,13 +63,15 @@ const WorkerDashboard = () => {
     }
 
     const storedUserId = sessionStorage.getItem('user_id');
-    const resolvedUserId = storedUser?.id ?? storedUserId;
+    const resolvedUserId = storedUser?.worker_id ?? storedUser?.id ?? storedUserId;
     const numericWorkerId = resolvedUserId && !Number.isNaN(Number(resolvedUserId))
       ? Number(resolvedUserId)
       : null;
     loadProfile({ userId: resolvedUserId, workerId: numericWorkerId });
-    fetchAssessmentSummary(numericWorkerId);
-    fetchAssignedTask({ workerId: numericWorkerId, userId: resolvedUserId });
+    if (numericWorkerId) {
+      fetchAssessmentSummary(numericWorkerId);
+      fetchAssignedTask({ workerId: numericWorkerId, userId: resolvedUserId });
+    }
 
     // Mock Notifications (placeholder - replace when notification API is ready)
     setNotifications([
@@ -87,9 +91,24 @@ const WorkerDashboard = () => {
       const data = await apiRequest(`/api/worker/profile?${query}`);
       if (data && typeof data === 'object') {
         setUser(prev => ({ ...prev, ...data }));
+
+        const resolvedWorkerId = Number(
+          data?.id ?? data?.workerId ?? data?.worker_id ?? workerId ?? userId
+        );
+
+        if (Number.isFinite(resolvedWorkerId)) {
+          fetchAssessmentSummary(resolvedWorkerId);
+          fetchAssignedTask({ workerId: resolvedWorkerId, userId });
+        }
       }
     } catch (err) {
       console.error('Error fetching worker profile:', err);
+
+      const fallbackWorkerId = Number(workerId ?? userId);
+      if (Number.isFinite(fallbackWorkerId)) {
+        fetchAssessmentSummary(fallbackWorkerId);
+        fetchAssignedTask({ workerId: fallbackWorkerId, userId });
+      }
     }
   };
 
@@ -99,11 +118,23 @@ const WorkerDashboard = () => {
         ? `/api/worker/tasks?workerId=${encodeURIComponent(workerId)}`
         : (userId ? `/api/worker/tasks?userId=${encodeURIComponent(userId)}` : '/api/worker/tasks');
       const data = await apiRequest(target);
-      if (Array.isArray(data) && data.length > 0) {
-        setAssignedTask(data[0]); 
+      const items = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.items) ? data.items : []);
+
+      if (items.length === 0) {
+        setAssignedTask(null);
+        return;
       }
+
+      const activeTask = items.find((task) =>
+        visibleTaskStatuses.has(String(task?.status || '').toLowerCase())
+      );
+
+      setAssignedTask(activeTask || null);
     } catch (err) {
       console.error("Error fetching tasks:", err);
+      setAssignedTask(null);
     }
   };
 
@@ -111,6 +142,7 @@ const WorkerDashboard = () => {
     if (!workerId) {
       setWorkerLevel(0);
       setWorkerLevelLabel('ต่ำ');
+      setSkillStatusText('ยังไม่ทดสอบ');
       return;
     }
     try {
@@ -119,16 +151,32 @@ const WorkerDashboard = () => {
         { cache: 'no-store' }
       );
       const summary = data?.result || null;
+      if (!summary) {
+        setWorkerLevel(0);
+        setWorkerLevelLabel('ต่ำ');
+        setSkillStatusText('ยังไม่ทดสอบ');
+        return;
+      }
+
       const totalScore = summary?.score ?? null;
       const totalQuestions = summary?.totalQuestions ?? null;
       const passed = summary?.passed === true;
       const roundLevel = Number(summary?.roundLevel);
-      const combinedPercent = Number(summary?.combinedPercent);
-      const percent = Number.isFinite(combinedPercent)
-        ? combinedPercent
-        : (totalQuestions ? (Number(totalScore) / Number(totalQuestions)) * 100 : null);
+      const practicalCompleted = summary?.practicalCompleted === true;
 
-      if (!passed || percent === null) {
+      if (summary?.passed === false) {
+        setSkillStatusText('ไม่ผ่านเกณฑ์');
+      } else if (summary?.passed === true) {
+        setSkillStatusText('ผ่านการประเมิน');
+      } else if (practicalCompleted) {
+        setSkillStatusText('ประเมินแล้ว');
+      } else if (totalQuestions && Number(totalQuestions) > 0) {
+        setSkillStatusText('รอการประเมิน');
+      } else {
+        setSkillStatusText('ยังไม่ทดสอบ');
+      }
+
+      if (!passed) {
         setWorkerLevel(0);
         setWorkerLevelLabel('ต่ำ');
         return;
@@ -141,22 +189,23 @@ const WorkerDashboard = () => {
         return;
       }
 
-      if (percent >= 90) {
-        setWorkerLevel(3);
-        setWorkerLevelLabel('สูง');
-      } else if (percent >= 80) {
-        setWorkerLevel(2);
-        setWorkerLevelLabel('กลาง');
-      } else {
-        setWorkerLevel(1);
-        setWorkerLevelLabel('พื้นฐาน');
-      }
+      setWorkerLevel(1);
+      setWorkerLevelLabel('พื้นฐาน');
+      return;
     } catch (err) {
       console.error('Error fetching assessment summary:', err);
       setWorkerLevel(0);
       setWorkerLevelLabel('ต่ำ');
+      setSkillStatusText('รอการประเมิน');
     }
   };
+
+  const skillStatusColor =
+    skillStatusText === 'ผ่านการประเมิน' || skillStatusText === 'ประเมินแล้ว'
+      ? '#16a34a'
+      : skillStatusText === 'ไม่ผ่านเกณฑ์'
+        ? '#dc2626'
+        : '#d97706';
 
   const handleLogout = () => setShowLogoutModal(true);
 
@@ -299,7 +348,7 @@ const WorkerDashboard = () => {
                 </div>
                 <div>
                     <h4 style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>สถานะทักษะ</h4>
-                    <h3 style={{ margin: 0, fontSize: '18px', color: '#d97706' }}>รอการประเมิน</h3>
+                  <h3 style={{ margin: 0, fontSize: '18px', color: skillStatusColor }}>{skillStatusText}</h3>
                 </div>
              </div>
 
@@ -391,6 +440,22 @@ const WorkerDashboard = () => {
                     <div style={{ fontSize: '40px', marginBottom: '15px' }}>📭</div>
                     <h3 style={{ color: '#64748b', margin: '0 0 5px 0' }}>ยังไม่มีงานที่ได้รับมอบหมาย</h3>
                     <p style={{ color: '#94a3b8', fontSize: '14px', margin: 0 }}>เมื่อหัวหน้างานมอบหมายงานให้คุณ ข้อมูลจะปรากฏที่นี่</p>
+                    <button
+                      onClick={() => navigate('/worker/history')}
+                      style={{
+                        marginTop: '16px',
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        padding: '10px 18px',
+                        borderRadius: '10px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      ดูประวัติที่ส่งงาน
+                    </button>
                 </div>
             )}
         </div>

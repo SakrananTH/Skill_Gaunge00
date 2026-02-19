@@ -2,6 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import multer from 'multer';
+import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import { env } from './config/env.js';
 import authRoutes from './routes/authRoutes.js';
@@ -24,6 +28,29 @@ import {
 } from './services/thaiAddressService.js';
 
 const app = express();
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.join(serverDir, 'uploads');
+const workerSubmissionUploadsDir = path.join(uploadsDir, 'worker-submissions');
+
+fs.mkdirSync(workerSubmissionUploadsDir, { recursive: true });
+
+const workerSubmissionStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, workerSubmissionUploadsDir),
+  filename: (_req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `${randomUUID()}${extension}`);
+  }
+});
+
+const workerSubmissionUpload = multer({
+  storage: workerSubmissionStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (mime.startsWith('image/')) return cb(null, true);
+    cb(new Error('invalid_file_type'));
+  }
+});
 
 app.use(cors({
   origin: env.CORS_ORIGIN,
@@ -31,6 +58,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/uploads', express.static(uploadsDir));
 
 loadThaiAddressDataset().catch((error) => {
   console.warn('[addresses] Initial dataset load failed', error?.message || error);
@@ -264,6 +292,21 @@ async function requireWorkerTables() {
   }
 }
 
+async function promoteWorkerIfPassed(workerId, passed, connection) {
+  if (!passed) return;
+  const normalizedWorkerId = Number(workerId);
+  if (!Number.isFinite(normalizedWorkerId)) return;
+
+  await execute(
+    `UPDATE workers
+     SET employment_status = 'permanent'
+     WHERE id = ?
+       AND (employment_status IS NULL OR employment_status = '' OR employment_status = 'active' OR employment_status = 'probation')`,
+    [normalizedWorkerId],
+    connection
+  );
+}
+
 function filterObjectByColumns(payload, columnsSet) {
   const output = {};
   if (!payload || !columnsSet) return output;
@@ -301,6 +344,106 @@ function inferAssessmentLevelFromTitle(title) {
   if (!match) return null;
   const level = Number(match[1]);
   return Number.isFinite(level) ? level : null;
+}
+
+function resolveNumericWorkerId(req) {
+  const candidates = [req.query?.workerId, req.user?.worker_id, req.query?.userId, req.user?.id];
+  for (const candidate of candidates) {
+    const workerId = Number(candidate);
+    if (Number.isFinite(workerId)) {
+      return workerId;
+    }
+  }
+  return null;
+}
+
+async function resolveWorkerIdFromRequest(req) {
+  const directWorkerId = resolveNumericWorkerId(req);
+  if (Number.isFinite(directWorkerId)) return directWorkerId;
+
+  const userIdCandidates = [req.query?.userId, req.user?.id]
+    .map((value) => (value == null ? '' : String(value).trim()))
+    .filter(Boolean);
+
+  for (const userId of userIdCandidates) {
+    try {
+      const userRow = await queryOne(
+        `SELECT id, full_name, email, phone
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [userId]
+      );
+      if (!userRow) continue;
+
+      if (userRow.email) {
+        const accountRow = await queryOne(
+          `SELECT worker_id
+           FROM worker_accounts
+           WHERE LOWER(email) = LOWER(?)
+           LIMIT 1`,
+          [userRow.email]
+        );
+        const mappedFromEmail = Number(accountRow?.worker_id);
+        if (Number.isFinite(mappedFromEmail)) return mappedFromEmail;
+      }
+
+      if (userRow.phone) {
+        const workerRow = await queryOne(
+          `SELECT id
+           FROM workers
+           WHERE phone = ?
+           LIMIT 1`,
+          [userRow.phone]
+        );
+        const mappedFromPhone = Number(workerRow?.id);
+        if (Number.isFinite(mappedFromPhone)) return mappedFromPhone;
+      }
+
+      if (userRow.full_name) {
+        const workerRow = await queryOne(
+          `SELECT id
+           FROM workers
+           WHERE full_name = ?
+           ORDER BY id DESC
+           LIMIT 1`,
+          [userRow.full_name]
+        );
+        const mappedFromName = Number(workerRow?.id);
+        if (Number.isFinite(mappedFromName)) return mappedFromName;
+      }
+    } catch (error) {
+      if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_FIELD_ERROR') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  const jwtFullName = String(req.user?.full_name || '').trim();
+  if (jwtFullName) {
+    try {
+      const workerRow = await queryOne(
+        `SELECT w.id
+         FROM workers w
+         LEFT JOIN task_worker_assignments twa ON twa.worker_id = w.id
+         WHERE w.full_name = ?
+         GROUP BY w.id
+         ORDER BY COUNT(twa.id) DESC, w.id DESC
+         LIMIT 1`,
+        [jwtFullName]
+      );
+      const mappedFromJwtName = Number(workerRow?.id);
+      if (Number.isFinite(mappedFromJwtName)) return mappedFromJwtName;
+    } catch (error) {
+      if (error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_FIELD_ERROR') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  return null;
 }
 
 function inferAssessmentLevelFromRound(round) {
@@ -417,6 +560,27 @@ async function ensureForemanReportSchema(connection) {
   );
 }
 
+async function ensureWorkerTaskSubmissionSchema(connection) {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS worker_task_submissions (
+      id CHAR(36) NOT NULL,
+      task_id CHAR(36) NOT NULL,
+      worker_id INT UNSIGNED NOT NULL,
+      description TEXT NULL,
+      photo VARCHAR(255) NULL,
+      submitted_at DATETIME(6) NOT NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_worker_task_submissions_task_worker (task_id, worker_id),
+      KEY idx_worker_task_submissions_worker (worker_id),
+      KEY idx_worker_task_submissions_submitted (submitted_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    [],
+    connection
+  );
+}
+
 async function fetchLatestAssessmentSummary(workerId, connection) {
   try {
     const row = await queryOne(
@@ -431,17 +595,6 @@ async function fetchLatestAssessmentSummary(workerId, connection) {
       connection
     );
     if (!row) return null;
-    const practicalRow = await queryOne(
-      `SELECT percent
-       FROM foreman_assessments
-       WHERE worker_id = ?
-         AND percent IS NOT NULL
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [workerId],
-      connection
-    );
-    const hasPracticalAssessment = practicalRow?.percent !== null && practicalRow?.percent !== undefined;
     const scoreValue = row.total_score ?? null;
     const score = scoreValue === null || scoreValue === undefined ? null : Number(scoreValue);
     const totalQuestionsValue = row.total_questions ?? null;
@@ -449,7 +602,7 @@ async function fetchLatestAssessmentSummary(workerId, connection) {
       ? null
       : Number(totalQuestionsValue);
     const passedValue = row.passed;
-    const passed = hasPracticalAssessment && passedValue !== null && passedValue !== undefined
+    const passed = passedValue !== null && passedValue !== undefined
       ? Boolean(Number(passedValue))
       : null;
     const sessionLevel = await inferAssessmentLevelFromSession(row.session_id, connection);
@@ -557,8 +710,7 @@ app.get('/api/admin/workers/:id', requireAuth, authorizeRoles('admin', 'project_
 
 app.get('/api/worker/profile', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
-    const rawId = req.query.workerId || req.query.userId || req.user?.id;
-    const workerId = Number(rawId);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
     await requireWorkerTables();
@@ -1178,11 +1330,21 @@ app.get('/api/tasks', requireAuth, authorizeRoles('admin', 'project_manager', 'p
          t.site_id,
          s.name AS site_name,
          t.assignee_user_id,
-         u.full_name AS assignee_name
+         COALESCE(u.full_name, twa_summary.assigned_worker_names) AS assignee_name,
+         twa_summary.first_assigned_at AS assigned_at
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN sites s ON s.id = t.site_id
        LEFT JOIN users u ON u.id = t.assignee_user_id
+       LEFT JOIN (
+         SELECT
+           twa.task_id,
+           GROUP_CONCAT(DISTINCT COALESCE(w.full_name, CONCAT('Worker#', twa.worker_id)) SEPARATOR ', ') AS assigned_worker_names,
+           MIN(twa.assigned_at) AS first_assigned_at
+         FROM task_worker_assignments twa
+         LEFT JOIN workers w ON w.id = twa.worker_id
+         GROUP BY twa.task_id
+       ) twa_summary ON twa_summary.task_id = t.id
        ${whereClause}
        ORDER BY t.due_date ASC, t.title ASC
        LIMIT ${params.limit} OFFSET ${params.offset}`,
@@ -1381,24 +1543,39 @@ app.get('/api/dashboard/project-task-counts', requireAuth, authorizeRoles('proje
          p.id AS project_id,
          p.name AS project_name,
          p.project_type,
-         COUNT(t.id) AS tasks_total,
-         SUM(t.status = 'todo') AS tasks_todo,
-         SUM(t.status = 'in-progress') AS tasks_in_progress,
-         SUM(t.status = 'done') AS tasks_done
+         COUNT(DISTINCT t.id) AS tasks_total,
+         COUNT(DISTINCT CASE WHEN (t.status = 'todo' AND (twa.status IS NULL OR twa.status != 'completed') AND fa.id IS NULL) THEN t.id END) AS tasks_todo,
+         COUNT(DISTINCT CASE WHEN (t.status = 'in-progress' AND (twa.status IS NULL OR twa.status != 'completed') AND fa.id IS NULL) THEN t.id END) AS tasks_in_progress,
+         COUNT(DISTINCT CASE WHEN (t.status = 'done' OR twa.status = 'completed' OR fa.id IS NOT NULL) THEN t.id END) AS tasks_done
        FROM projects p
        LEFT JOIN tasks t ON t.project_id = p.id
+       LEFT JOIN task_worker_assignments twa ON twa.task_id = t.id AND twa.assignment_type = 'practical_assessment'
+       LEFT JOIN foreman_assessments fa ON twa.worker_id = fa.worker_id AND fa.percent IS NOT NULL
        GROUP BY p.id, p.name, p.project_type
        ORDER BY p.name`
     );
-    res.json(rows.map(row => ({
-      project_id: row.project_id,
-      project_name: row.project_name,
-      project_type: row.project_type,
-      tasks_total: Number(row.tasks_total ?? 0),
-      tasks_todo: Number(row.tasks_todo ?? 0),
-      tasks_in_progress: Number(row.tasks_in_progress ?? 0),
-      tasks_done: Number(row.tasks_done ?? 0)
-    })));
+    res.json(rows.map(row => {
+        // Fallback calculation in JS if needed, but SQL should handle it
+        const done = Number(row.tasks_done ?? 0);
+        const total = Number(row.tasks_total ?? 0);
+        // If done > total (due to multiple workers/assessments per task?), clamp it?
+        // Actually, with COUNT(DISTINCT t.id), we are counting TASKS.
+        // But the conditions inside COUNT need to be careful.
+        // Logic: A task is done if:
+        // 1. It is marked done in tasks table
+        // 2. OR it has a practical assessment assignment that is completed
+        // 3. OR it has a practical assessment assignment assigned to a worker who has been assessed (fa.id IS NOT NULL)
+        
+        return {
+          project_id: row.project_id,
+          project_name: row.project_name,
+          project_type: row.project_type,
+          tasks_total: total,
+          tasks_todo: Number(row.tasks_todo ?? 0),
+          tasks_in_progress: Number(row.tasks_in_progress ?? 0),
+          tasks_done: done
+        };
+    }));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -1450,9 +1627,29 @@ app.get('/api/dashboard/practical-testing-count', requireAuth, authorizeRoles('p
 // ---------------------------------------------------------------------------
 app.get('/api/worker/tasks', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
-    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
-    const workerId = Number(rawWorkerId);
-    if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
+    let workerId = await resolveWorkerIdFromRequest(req);
+    await ensureForemanAssessmentSchema();
+
+    if (!Number.isFinite(workerId)) {
+      const jwtFullName = String(req.user?.full_name || '').trim();
+      if (jwtFullName) {
+        const fallbackWorker = await queryOne(
+          `SELECT w.id
+           FROM workers w
+           LEFT JOIN task_worker_assignments twa ON twa.worker_id = w.id
+           WHERE REPLACE(TRIM(w.full_name), ' ', '') = REPLACE(TRIM(?), ' ', '')
+              OR w.full_name LIKE ?
+           GROUP BY w.id
+           ORDER BY COUNT(twa.id) DESC, w.id DESC
+           LIMIT 1`,
+          [jwtFullName, `%${jwtFullName}%`]
+        );
+        const mappedId = Number(fallbackWorker?.id);
+        if (Number.isFinite(mappedId)) workerId = mappedId;
+      }
+    }
+
+    if (!Number.isFinite(workerId)) return res.json([]);
 
     const rows = await query(
       `SELECT
@@ -1466,13 +1663,26 @@ app.get('/api/worker/tasks', requireAuth, authorizeRoles('worker', 'wk'), async 
          s.name AS site_name,
          twa.assignment_type,
          twa.assigned_by_user_id,
+         twa.assigned_at,
          u.full_name AS assigned_by_name,
-         twa.status AS assignment_status
+         wf.full_name AS assigned_by_worker_name,
+         CASE
+           WHEN twa.status = 'submitted'
+                AND EXISTS (
+                  SELECT 1
+                  FROM foreman_assessments fa
+                  WHERE fa.worker_id = twa.worker_id
+                )
+             THEN 'completed'
+           ELSE twa.status
+         END AS assignment_status
        FROM task_worker_assignments twa
        JOIN tasks t ON t.id = twa.task_id
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN sites s ON s.id = t.site_id
        LEFT JOIN users u ON u.id = twa.assigned_by_user_id
+       LEFT JOIN workers wf ON twa.assigned_by_user_id REGEXP '^[0-9]+$'
+                           AND wf.id = CAST(twa.assigned_by_user_id AS UNSIGNED)
        WHERE twa.worker_id = ?
        ORDER BY twa.assigned_at DESC`,
       [workerId]
@@ -1487,8 +1697,10 @@ app.get('/api/worker/tasks', requireAuth, authorizeRoles('worker', 'wk'), async 
       description_detail: row.description || '',
       category: row.category || '',
       assignment_type: row.assignment_type || 'general',
-      foreman: row.assigned_by_name || '-',
-      date: row.due_date ? String(row.due_date).slice(0, 10) : '',
+      foreman: row.assigned_by_name || row.assigned_by_worker_name || '-',
+      date: row.due_date
+        ? String(row.due_date).slice(0, 10)
+        : (row.assigned_at ? String(row.assigned_at).slice(0, 10) : ''),
       status: row.assignment_status || 'assigned'
     }));
 
@@ -1502,7 +1714,7 @@ app.get('/api/worker/tasks', requireAuth, authorizeRoles('worker', 'wk'), async 
 app.post('/api/worker/tasks/:id/accept', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
     const taskId = req.params.id;
-    const workerId = Number(req.user?.id);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
     const result = await execute(
@@ -1518,25 +1730,69 @@ app.post('/api/worker/tasks/:id/accept', requireAuth, authorizeRoles('worker', '
   }
 });
 
-app.post('/api/worker/tasks/:id/submit', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
+app.post('/api/worker/tasks/:id/submit', requireAuth, authorizeRoles('worker', 'wk'), workerSubmissionUpload.single('photo'), async (req, res) => {
   try {
     const taskId = req.params.id;
-    const workerId = Number(req.user?.id);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
-    const result = await execute(
-      `UPDATE task_worker_assignments SET status = 'submitted', completed_at = NOW(6)
-       WHERE task_id = ? AND worker_id = ? AND status IN ('accepted', 'in-progress', 'rejected')`,
+    const descriptionText = typeof req.body?.description === 'string'
+      ? req.body.description.trim().slice(0, 4000)
+      : null;
+    const uploadedPhotoPath = req.file?.filename
+      ? `/uploads/worker-submissions/${req.file.filename}`
+      : null;
+    const photoName = uploadedPhotoPath || (typeof req.body?.photo === 'string'
+      ? req.body.photo.trim().slice(0, 255)
+      : null);
+    const submittedAtInput = req.body?.submittedAt ? new Date(req.body.submittedAt) : new Date();
+    const submittedAt = Number.isNaN(submittedAtInput.getTime()) ? new Date() : submittedAtInput;
+
+    const currentAssignment = await queryOne(
+      `SELECT status FROM task_worker_assignments WHERE task_id = ? AND worker_id = ? LIMIT 1`,
       [taskId, workerId]
     );
-    if (!result.affectedRows) {
-      const current = await queryOne(
-        `SELECT status FROM task_worker_assignments WHERE task_id = ? AND worker_id = ? LIMIT 1`,
-        [taskId, workerId]
-      );
-      if (!current) return res.status(404).json({ message: 'not_found' });
-      return res.status(409).json({ message: 'state_not_submittable', status: current.status });
+    if (!currentAssignment) return res.status(404).json({ message: 'not_found' });
+
+    const currentStatus = String(currentAssignment.status || '').toLowerCase();
+    if (currentStatus === 'approved' || currentStatus === 'completed') {
+      return res.status(409).json({ message: 'state_locked', status: currentAssignment.status });
     }
+
+    let updateResult = null;
+
+    await withTransaction(async (connection) => {
+      await ensureWorkerTaskSubmissionSchema(connection);
+
+      updateResult = await execute(
+        `UPDATE task_worker_assignments SET status = 'submitted', completed_at = NOW(6)
+         WHERE task_id = ? AND worker_id = ?`,
+        [taskId, workerId],
+        connection
+      );
+
+      await execute(
+        `INSERT INTO worker_task_submissions
+           (id, task_id, worker_id, description, photo, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           description = VALUES(description),
+           photo = COALESCE(VALUES(photo), photo),
+           submitted_at = VALUES(submitted_at),
+           updated_at = CURRENT_TIMESTAMP(6)`,
+        [
+          randomUUID(),
+          taskId,
+          workerId,
+          descriptionText || null,
+          photoName || null,
+          submittedAt
+        ],
+        connection
+      );
+    });
+
+    if (!updateResult?.affectedRows) return res.status(404).json({ message: 'not_found' });
     res.json({ message: 'submitted' });
   } catch (error) {
     console.error(error);
@@ -1546,8 +1802,7 @@ app.post('/api/worker/tasks/:id/submit', requireAuth, authorizeRoles('worker', '
 
 app.get('/api/worker/history', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
-    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
-    const workerId = Number(rawWorkerId);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
     const rows = await query(
@@ -1585,8 +1840,7 @@ app.get('/api/worker/history', requireAuth, authorizeRoles('worker', 'wk'), asyn
 
 app.get('/api/worker/assessment/summary', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
-    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
-    const workerId = Number(rawWorkerId);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
     const row = await queryOne(
@@ -1620,7 +1874,10 @@ app.get('/api/worker/assessment/summary', requireAuth, authorizeRoles('worker', 
     }
     const { scoreWeights, passThreshold } = resolveScoringConfig(roundRow);
     const sessionLevel = await inferAssessmentLevelFromSession(row.session_id);
-    const roundLevel = sessionLevel ?? inferAssessmentLevelFromRound(roundRow);
+    const inferredRoundLevel = sessionLevel ?? inferAssessmentLevelFromRound(roundRow);
+    const roundLevel = row.round_id
+      ? inferredRoundLevel
+      : (Boolean(row.passed) ? 1 : null);
 
     let breakdown = [];
     let details = [];
@@ -1869,6 +2126,8 @@ app.get('/api/worker/assessment/summary', requireAuth, authorizeRoles('worker', 
       }
     }
 
+    await promoteWorkerIfPassed(workerId, hasPracticalAssessment && resolvedWeighted.passed);
+
     res.json({
       result: {
         score: resolvedScore,
@@ -1897,8 +2156,7 @@ app.get('/api/worker/assessment/summary', requireAuth, authorizeRoles('worker', 
 
 app.get('/api/worker/practical-result', requireAuth, authorizeRoles('worker', 'wk'), async (req, res) => {
   try {
-    const rawWorkerId = req.query.workerId || req.query.userId || req.user?.id;
-    const workerId = Number(rawWorkerId);
+    const workerId = await resolveWorkerIdFromRequest(req);
     if (!Number.isFinite(workerId)) return res.status(400).json({ message: 'invalid_id' });
 
     const latestTheoryRow = await queryOne(
@@ -1931,6 +2189,8 @@ app.get('/api/worker/practical-result', requireAuth, authorizeRoles('worker', 'w
               fa.grade,
               fa.comment,
               fa.created_at,
+              fa.foreman_user_id,
+              fa.criteria_json,
               u.full_name AS assessor_name
        FROM foreman_assessments fa
        LEFT JOIN users u ON u.id = fa.foreman_user_id
@@ -1950,6 +2210,36 @@ app.get('/api/worker/practical-result', requireAuth, authorizeRoles('worker', 'w
 
     const practicalPercent = Number(practicalRow.percent || 0);
     const weightedContributionPercent = Number(((practicalPercent * practicalWeight) / 100).toFixed(2));
+    let criteriaScores = {};
+    if (practicalRow.criteria_json && typeof practicalRow.criteria_json === 'object') {
+      criteriaScores = practicalRow.criteria_json;
+    } else if (typeof practicalRow.criteria_json === 'string' && practicalRow.criteria_json.trim()) {
+      try {
+        const parsedCriteria = JSON.parse(practicalRow.criteria_json);
+        if (parsedCriteria && typeof parsedCriteria === 'object') {
+          criteriaScores = parsedCriteria;
+        }
+      } catch (error) {
+        criteriaScores = {};
+      }
+    }
+    let assessorName = practicalRow.assessor_name || null;
+    if (!assessorName && practicalRow.foreman_user_id) {
+      const numericForemanId = Number(practicalRow.foreman_user_id);
+      if (Number.isFinite(numericForemanId)) {
+        const foremanWorkerRow = await queryOne(
+          `SELECT full_name
+           FROM workers
+           WHERE id = ?
+           LIMIT 1`,
+          [numericForemanId]
+        );
+        assessorName = foremanWorkerRow?.full_name || null;
+      }
+    }
+    if (!assessorName) {
+      assessorName = practicalRow.foreman_user_id ? `รหัส ${practicalRow.foreman_user_id}` : 'ไม่ระบุ';
+    }
 
     res.json({
       hasResult: true,
@@ -1960,7 +2250,9 @@ app.get('/api/worker/practical-result', requireAuth, authorizeRoles('worker', 'w
         grade: practicalRow.grade || null,
         comment: practicalRow.comment || null,
         assessedAt: practicalRow.created_at || null,
-        assessorName: practicalRow.assessor_name || 'ไม่ระบุ'
+        assessorName,
+        assessorId: practicalRow.foreman_user_id || null,
+        criteriaScores
       }
     });
   } catch (error) {
@@ -2027,30 +2319,98 @@ app.get('/api/foreman/pending-workers', requireAuth, authorizeRoles('foreman', '
   try {
     await requireWorkerTables();
     await ensureForemanAssessmentSchema();
+    await ensureWorkerTaskSubmissionSchema();
 
     const rows = await query(
-      `SELECT w.id, w.full_name, w.trade_type, r.finished_at
-       FROM workers w
-       JOIN (
-         SELECT worker_id, MAX(finished_at) AS finished_at
-         FROM worker_assessment_results
-         WHERE category = 'structure'
-         GROUP BY worker_id
-       ) r ON r.worker_id = w.id
-       LEFT JOIN foreman_assessments fa ON fa.worker_id = w.id
-       WHERE fa.worker_id IS NULL
-       ORDER BY r.finished_at DESC`
+      `SELECT
+         p.worker_id AS id,
+         w.full_name,
+         w.trade_type,
+         p.pending_at,
+         p.task_id,
+         t.title AS task_title,
+         wts.description AS submission_description,
+         wts.photo AS submission_photo,
+         wts.submitted_at AS submission_submitted_at,
+         war.total_score AS theory_total_score,
+         war.total_questions AS theory_total_questions,
+         war.session_id AS session_id
+       FROM (
+         SELECT x.worker_id, x.task_id, x.pending_at
+         FROM (
+           SELECT
+             twa.worker_id,
+             twa.task_id,
+             COALESCE(wts.submitted_at, twa.completed_at, twa.assigned_at) AS pending_at,
+             ROW_NUMBER() OVER (
+               PARTITION BY twa.worker_id
+               ORDER BY COALESCE(wts.submitted_at, twa.completed_at, twa.assigned_at) DESC, twa.assigned_at DESC
+             ) AS rn
+           FROM task_worker_assignments twa
+           LEFT JOIN worker_task_submissions wts
+             ON wts.task_id = twa.task_id AND wts.worker_id = twa.worker_id
+           WHERE twa.assignment_type = 'practical_assessment'
+             AND twa.status = 'submitted'
+             AND twa.worker_id NOT IN (SELECT worker_id FROM foreman_assessments)
+         ) x
+         WHERE x.rn = 1
+       ) p
+       JOIN workers w ON w.id = p.worker_id
+       JOIN tasks t ON t.id = p.task_id
+       LEFT JOIN worker_task_submissions wts
+         ON wts.task_id = p.task_id AND wts.worker_id = p.worker_id
+       LEFT JOIN (
+         SELECT latest.worker_id, latest.total_score, latest.total_questions, latest.session_id
+         FROM (
+           SELECT
+             r.worker_id,
+             r.total_score,
+             r.total_questions,
+             r.session_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY r.worker_id
+               ORDER BY COALESCE(r.finished_at, r.updated_at, r.created_at) DESC
+             ) AS rn
+           FROM worker_assessment_results r
+           WHERE r.category = 'structure'
+         ) latest
+         WHERE latest.rn = 1
+       ) war ON war.worker_id = p.worker_id
+       ORDER BY p.pending_at DESC`
     );
 
-    const items = rows.map(row => ({
+    const items = await Promise.all(rows.map(async (row) => {
+      let theoryLevel = null;
+      if (row.session_id) {
+         theoryLevel = await inferAssessmentLevelFromSession(row.session_id);
+      }
+
+      return {
       id: row.id,
       name: row.full_name || 'ไม่ระบุ',
       roleName: getTradeLabel(row.trade_type) || row.trade_type || 'ช่างทั่วไป',
-      date: row.finished_at ? String(row.finished_at).slice(0, 10) : ''
+      role_name: getTradeLabel(row.trade_type) || row.trade_type || 'ช่างทั่วไป',
+      date: row.pending_at ? String(row.pending_at).slice(0, 10) : '',
+      taskId: row.task_id || null,
+      taskTitle: row.task_title || null,
+      theory: {
+        score: row.theory_total_score ?? null,
+        totalQuestions: row.theory_total_questions ?? null,
+        level: theoryLevel
+      },
+      submission: {
+        description: row.submission_description || null,
+        photo: row.submission_photo || null,
+        submittedAt: row.submission_submitted_at || row.pending_at || null
+      }
+    };
     }));
 
     res.json({ items });
   } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      return res.json({ items: [] });
+    }
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -2086,6 +2446,75 @@ app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'adm
         ],
         connection
       );
+
+      // Mark practical submitted tasks as completed so they disappear from pending list
+      
+      // First, get the task_ids that will be completed
+      const tasksToComplete = await query(
+        `SELECT task_id FROM task_worker_assignments 
+         WHERE worker_id = ? 
+           AND assignment_type = 'practical_assessment' 
+           AND status = 'submitted'`,
+        [payload.worker_id],
+        connection
+      );
+
+      const practicalUpdateResult = await execute(
+        `UPDATE task_worker_assignments
+         SET status = 'completed', completed_at = NOW(6)
+         WHERE worker_id = ?
+           AND assignment_type = 'practical_assessment'
+           AND status = 'submitted'`,
+        [payload.worker_id],
+        connection
+      );
+      
+      // Update parent tasks status to 'done'
+      if (tasksToComplete.length > 0) {
+        const taskIds = tasksToComplete.map(t => t.task_id);
+        if (taskIds.length > 0) {
+           // Construct placeholders like (?,?,?)
+           const placeholders = taskIds.map(() => '?').join(',');
+           await execute(
+             `UPDATE tasks SET status = 'done' WHERE id IN (${placeholders})`,
+             taskIds,
+             connection
+           );
+        }
+      }
+
+      // Fallback for legacy rows that were submitted but assignment_type is not practical_assessment
+      if (!Number(practicalUpdateResult?.affectedRows || 0)) {
+        // Get fallback task ids
+        const fallbackTasks = await query(
+           `SELECT task_id FROM task_worker_assignments 
+            WHERE worker_id = ? AND status = 'submitted'`,
+           [payload.worker_id],
+           connection
+        );
+        
+        await execute(
+          `UPDATE task_worker_assignments
+           SET status = 'completed', completed_at = NOW(6)
+           WHERE worker_id = ?
+             AND status = 'submitted'`,
+          [payload.worker_id],
+          connection
+        );
+        
+        // Update parent tasks for fallback
+        if (fallbackTasks.length > 0) {
+            const fbTaskIds = fallbackTasks.map(t => t.task_id);
+            if (fbTaskIds.length > 0) {
+               const placeholders = fbTaskIds.map(() => '?').join(',');
+               await execute(
+                 `UPDATE tasks SET status = 'done' WHERE id IN (${placeholders})`,
+                 fbTaskIds,
+                 connection
+               );
+            }
+        }
+      }
     });
 
     const latestTheoryRow = await queryOne(
@@ -2124,6 +2553,7 @@ app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'adm
          WHERE id = ?`,
         [weighted.passed ? 1 : 0, latestTheoryRow.id]
       );
+      await promoteWorkerIfPassed(payload.worker_id, weighted.passed);
     }
 
     res.status(201).json({ id: assessmentId });
@@ -2134,15 +2564,105 @@ app.post('/api/foreman/assessments', requireAuth, authorizeRoles('foreman', 'adm
   }
 });
 
-app.get('/api/foreman/projects', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager', 'pm'), async (_req, res) => {
+app.get('/api/foreman/projects', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager', 'pm'), async (req, res) => {
   try {
-    const rows = await query(
-      `SELECT id, name
-       FROM projects
-       ORDER BY created_at DESC
-       LIMIT 200`
-    );
+    // If user is foreman, get projects they are member of
+    let querySql = `SELECT id, name FROM projects ORDER BY created_at DESC LIMIT 200`;
+    let params = [];
+    
+    if (req.user && (req.user.role === 'foreman' || req.user.roles?.includes('foreman'))) {
+       querySql = `
+         SELECT p.id, p.name 
+         FROM projects p
+         JOIN project_members pm ON p.id = pm.project_id
+         WHERE pm.user_id = ?
+         ORDER BY p.created_at DESC
+       `;
+       params = [req.user.id];
+    }
+    
+    // Fallback: If no projects found for foreman, maybe return all? user requested "projects overseen"
+    // Ideally only assigned projects. Let's return empty if none.
+    
+    const rows = await query(querySql, params);
+    
+    // If no rows and it's a foreman, try to get projects where they are owner too (just in case)
+    if (rows.length === 0 && params.length > 0) {
+        const ownerRows = await query(`SELECT id, name FROM projects WHERE owner_user_id = ?`, params);
+        res.json({ items: ownerRows.map(row => ({ id: row.id, name: row.name })) });
+        return;
+    }
+
     res.json({ items: rows.map(row => ({ id: row.id, name: row.name })) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/foreman/assessed-workers', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager', 'pm'), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    try {
+      await query('SELECT 1 FROM foreman_assessments LIMIT 1');
+    } catch (e) {
+       return res.json({ items: [] });
+    }
+
+    const rows = await query(
+      `SELECT fa.id, fa.worker_id, fa.percent, fa.grade, fa.created_at, w.full_name, w.trade_type
+       FROM foreman_assessments fa
+       JOIN workers w ON fa.worker_id = w.id
+       WHERE fa.foreman_user_id = ?
+       ORDER BY fa.created_at DESC`,
+      [userId]
+    );
+
+    const items = rows.map(row => ({
+      id: row.id,
+      workerId: row.worker_id,
+      name: row.full_name,
+      roleName: getTradeLabel(row.trade_type) || row.trade_type || 'ช่างทั่วไป',
+      score: row.percent,
+      grade: row.grade,
+      date: row.created_at
+    }));
+
+    res.json({ items });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.delete('/api/foreman/assessments/:id', requireAuth, authorizeRoles('foreman', 'admin', 'project_manager'), async (req, res) => {
+  try {
+    const assessmentId = req.params.id;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Verify ownership or admin
+    const assessment = await queryOne('SELECT id, worker_id, foreman_user_id FROM foreman_assessments WHERE id = ?', [assessmentId]);
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Assessment not found' });
+    }
+
+    if (userRole === 'foreman' && assessment.foreman_user_id !== userId) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+    
+    await withTransaction(async (connection) => {
+        await execute('DELETE FROM foreman_assessments WHERE id = ?', [assessmentId], connection);
+        // Reset passed status if needed? 
+        // Logic: If foreman assessment is gone, they are not "passed" in the combined sense.
+        // But we won't touch worker_assessment_results 'passed' column here blindly, 
+        // although setting it to 0 is safer than leaving it 1 if they passed practical.
+        // Let's set it to 0.
+        await execute('UPDATE worker_assessment_results SET passed = 0 WHERE worker_id = ? AND category = "structure"', [assessment.worker_id], connection);
+    });
+
+    res.json({ message: 'Assessment deleted' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -2727,6 +3247,8 @@ app.post('/api/worker/score', requireAuth, authorizeRoles('worker', 'wk'), async
        WHERE id = ?`,
       [sessionId]
     );
+
+    await promoteWorkerIfPassed(workerId, passed);
 
     res.json({
       success: true,

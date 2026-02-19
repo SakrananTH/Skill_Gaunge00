@@ -1,5 +1,9 @@
-.stat-card {
+.stat-card--clickable {
   cursor: pointer;
+}
+
+.stat-card--disabled {
+  cursor: default;
 }
 
 .stat-card__insight {

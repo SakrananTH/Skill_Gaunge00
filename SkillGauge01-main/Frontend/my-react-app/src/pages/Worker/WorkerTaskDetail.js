@@ -19,6 +19,7 @@ const WorkerTaskDetail = () => {
     photo: null
   });
   const [previewUrl, setPreviewUrl] = useState(null);
+    const [allowResubmitEdit, setAllowResubmitEdit] = useState(false);
 
     useEffect(() => {
         const loadTask = async () => {
@@ -70,22 +71,25 @@ const WorkerTaskDetail = () => {
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setSubmission({ ...submission, photo: file.name });
+            setSubmission({ ...submission, photo: file });
       setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+        const isResubmit = task.status === 'submitted' || allowResubmitEdit;
     
     const result = await Swal.fire({
-      title: 'ยืนยันการส่งงาน?',
-      text: "คุณตรวจสอบความถูกต้องของรายละเอียดและรูปภาพเรียบร้อยแล้วใช่หรือไม่?",
+            title: isResubmit ? 'ยืนยันการรีส่งงาน?' : 'ยืนยันการส่งงาน?',
+            text: isResubmit
+                ? 'ระบบจะอัปเดตผลงานล่าสุดแทนข้อมูลเดิมของคุณ'
+                : 'คุณตรวจสอบความถูกต้องของรายละเอียดและรูปภาพเรียบร้อยแล้วใช่หรือไม่?',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#2563eb',
       cancelButtonColor: '#64748b',
-      confirmButtonText: 'ใช่, ยืนยันส่งงาน',
+            confirmButtonText: isResubmit ? 'ใช่, รีส่งงาน' : 'ใช่, ยืนยันส่งงาน',
       cancelButtonText: 'ยกเลิก'
     });
 
@@ -93,23 +97,32 @@ const WorkerTaskDetail = () => {
 
     // Call API to submit task
     try {
+        const formData = new FormData();
+        formData.append('description', submission.description || '');
+        formData.append('submittedAt', new Date().toISOString());
+        if (submission.photo) {
+          formData.append('photo', submission.photo);
+        }
+
         await apiRequest(`/api/worker/tasks/${task.id}/submit`, {
             method: 'POST',
-            body: {
-                description: submission.description,
-                photo: submission.photo,
-                submittedAt: new Date().toISOString()
-            }
+            body: formData
         });
 
         await Swal.fire({
           icon: 'success',
-          title: 'ส่งงานสำเร็จ!',
-          text: 'หัวหน้างานจะทำการตรวจสอบต่อไป',
-          timer: 2000,
-          showConfirmButton: false
+                    title: isResubmit ? 'รีส่งงานสำเร็จ!' : 'ส่งงานสำเร็จ!',
+                    text: isResubmit
+                        ? 'ผลงานล่าสุดถูกอัปเดตเรียบร้อยแล้ว'
+                        : 'หัวหน้างานจะทำการตรวจสอบต่อไป',
+                    timer: 2200,
+                    showConfirmButton: false,
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    iconColor: '#22c55e'
         });
 
+                setAllowResubmitEdit(false);
         navigate('/worker');
     } catch (err) {
         console.error("Submit Error:", err);
@@ -147,9 +160,40 @@ const WorkerTaskDetail = () => {
   };
 
   const statusUI = getStatusUI(task.status);
+    const isSubmittedTask = task.status === 'submitted';
 
   // ตรวจสอบสถานะเพื่อปิดการแก้ไข (Read Only) เมื่อส่งงานแล้ว หรือ ผ่านแล้ว
-  const isReadOnly = ['submitted', 'approved', 'completed'].includes(task.status);
+    const isReadOnly = ['approved', 'completed'].includes(task.status) || (isSubmittedTask && !allowResubmitEdit);
+
+    const handleEnableResubmit = async () => {
+        const result = await Swal.fire({
+            title: 'รีส่งงานใหม่',
+            html: '<div style="font-size:14px;line-height:1.6">คุณสามารถแก้ไขรายละเอียดหรือเปลี่ยนรูปภาพ แล้วกด <b>ยืนยันส่งงาน</b> อีกครั้งได้ทันที</div>',
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'เริ่มแก้ไขและรีส่ง',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#0ea5e9',
+            cancelButtonColor: '#64748b',
+            background: '#f8fafc'
+        });
+
+        if (!result.isConfirmed) return;
+
+        setAllowResubmitEdit(true);
+        await Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'เปิดโหมดรีส่งงานแล้ว',
+            text: 'แก้ไขข้อมูลให้เรียบร้อยแล้วกด “ยืนยันส่งงาน”',
+            showConfirmButton: false,
+            timer: 2200,
+            timerProgressBar: true,
+            background: '#0f172a',
+            color: '#ffffff'
+        });
+    };
 
   return (
     <div className="dash-layout" style={{ display: 'block', background: '#f8fafc', minHeight: '100vh' }}>
@@ -227,6 +271,21 @@ const WorkerTaskDetail = () => {
                 <h2 style={{ marginBottom: '25px', color: '#2563eb', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <i className='bx bx-rocket' style={{ fontSize: '24px' }}></i> ส่งมอบงาน (Submit Work)
                 </h2>
+
+                {isSubmittedTask && !allowResubmitEdit && (
+                    <div style={{ marginBottom: '20px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ color: '#1e3a8a', fontSize: '14px', fontWeight: '600' }}>
+                            งานนี้ส่งแล้ว หากต้องการแก้ไขให้กด “รีส่งงานใหม่”
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleEnableResubmit}
+                            style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 10px rgba(37,99,235,0.25)' }}
+                        >
+                            รีส่งงานใหม่
+                        </button>
+                    </div>
+                )}
                 
                 <div style={{ marginBottom: '25px' }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>รายละเอียดการทำงาน (Description)</label>
@@ -259,7 +318,7 @@ const WorkerTaskDetail = () => {
                                         alt="Preview" 
                                         style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '2px solid #fff' }} 
                                     />
-                                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '14px' }}>{submission.photo}</span>
+                                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '14px' }}>{submission.photo?.name || '-'}</span>
                                     {!isReadOnly && (
                                         <button 
                                             type="button"
@@ -277,7 +336,7 @@ const WorkerTaskDetail = () => {
                             ) : submission.photo ? (
                                 <div style={{ color: '#2563eb', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                                     <i className='bx bx-image-add' style={{ fontSize: '40px' }}></i>
-                                    {submission.photo}
+                                    {submission.photo?.name || '-'}
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
@@ -305,7 +364,7 @@ const WorkerTaskDetail = () => {
                         disabled={isReadOnly}
                         style={{ flex: 2, padding: '16px', background: isReadOnly ? '#94a3b8' : 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: isReadOnly ? 'not-allowed' : 'pointer', boxShadow: isReadOnly ? 'none' : '0 4px 15px rgba(37, 99, 235, 0.3)', transition: 'all 0.3s ease' }}
                     >
-                        {isReadOnly ? (task.status === 'submitted' ? '⏳ รอการตรวจสอบ' : '✅ งานเสร็จสิ้นแล้ว') : 'ยืนยันส่งงาน'}
+                        {isReadOnly ? (task.status === 'submitted' ? '⏳ รอการตรวจสอบ' : '✅ งานเสร็จสิ้นแล้ว') : (isSubmittedTask ? 'ยืนยันรีส่งงาน' : 'ยืนยันส่งงาน')}
                     </button>
                 </div>
                 

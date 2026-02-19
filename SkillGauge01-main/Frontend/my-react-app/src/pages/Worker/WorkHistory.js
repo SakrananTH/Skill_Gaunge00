@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../utils/api';
+import LogoutModal from '../../components/LogoutModal';
 
 const WorkHistory = () => {
     const navigate = useNavigate();
 
     const [history, setHistory] = useState([]);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
     const [isScrolled, setIsScrolled] = useState(false);
@@ -87,10 +89,7 @@ const WorkHistory = () => {
     }, []);
 
     const handleLogout = () => {
-        if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
-            sessionStorage.clear();
-            navigate('/login');
-        }
+        setShowLogoutModal(true);
     };
 
     return (
@@ -155,6 +154,7 @@ const WorkHistory = () => {
                                     <th style={{ padding: '15px 20px', textAlign: 'left', color: '#475569', fontWeight: '600' }}>สถานที่</th>
                                     <th style={{ padding: '15px 20px', textAlign: 'left', color: '#475569', fontWeight: '600' }}>วันที่</th>
                                     <th style={{ padding: '15px 20px', textAlign: 'center', color: '#475569', fontWeight: '600' }}>สถานะ</th>
+                                    <th style={{ padding: '15px 20px', textAlign: 'center', color: '#475569', fontWeight: '600' }}>ดูงาน</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -168,6 +168,33 @@ const WorkHistory = () => {
                                                 {item.status === 'submitted' ? 'ส่งงานแล้ว' : 'เสร็จสิ้น'}
                                             </span>
                                         </td>
+                                        <td style={{ padding: '20px', textAlign: 'center' }}>
+                                            <button
+                                                onClick={() => navigate('/worker/task-detail', {
+                                                    state: {
+                                                        task: {
+                                                            id: item.id,
+                                                            project: item.project,
+                                                            location: item.location,
+                                                            date: item.date,
+                                                            status: item.status
+                                                        }
+                                                    }
+                                                })}
+                                                style={{
+                                                    border: '1px solid #bfdbfe',
+                                                    background: '#eff6ff',
+                                                    color: '#1d4ed8',
+                                                    borderRadius: '10px',
+                                                    padding: '7px 12px',
+                                                    fontSize: '13px',
+                                                    fontWeight: '600',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                ดูงาน
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -180,6 +207,7 @@ const WorkHistory = () => {
                     )}
                 </div>
             </main>
+            <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
         </div>
     );
 };

@@ -164,10 +164,11 @@ const ProjectManager = () => {
     const hasTheoryAttempt = scorePercent != null;
     const hasFinalResult = item?.assessmentPassed === true || item?.assessmentPassed === false;
     const hasFinalPass = item?.assessmentPassed === true;
+    const isFailed = item?.assessmentPassed === false;
 
     if (hasTheoryAttempt) {
-      status = hasFinalPass ? 'ประเมินแล้ว' : 'รอการประเมิน';
-      if (!hasFinalResult || item?.assessmentPassed === false) {
+      status = hasFinalPass ? 'ประเมินแล้ว' : isFailed ? 'ไม่ผ่านเกณฑ์' : 'รอการประเมิน';
+      if (!hasFinalResult || isFailed) {
         level_no = 0;
         level_label = 'ต่ำ';
       } else if (hasFinalPass) {
@@ -195,7 +196,9 @@ const ProjectManager = () => {
       theory_completed: hasTheoryAttempt,
       status,
       level_no,
-      level_label
+      level_label,
+      isPassed: hasFinalPass || status === 'ประเมินแล้ว',
+      isFailed
     };
   };
 
@@ -218,8 +221,8 @@ const ProjectManager = () => {
         .filter(w => isWorkerRole(w.role));
       setAllWorkers(mapped);
       setApiError(prev => ({ ...prev, workers: '' }));
-      // 🎯 แสดงเฉพาะคนที่ยังไม่มีระดับ (รอประเมิน / ยังไม่ทำข้อสอบ)
-      setWorkers(mapped.filter(w => w.status !== "ประเมินแล้ว"));
+      // 🎯 แสดงเฉพาะคนที่ยังไม่มีระดับ (รอประเมิน / ยังไม่ทำข้อสอบ) และยังไม่รู้ผล (ไม่เอาคนที่สอบตกแล้ว)
+      setWorkers(mapped.filter(w => w.status !== "ประเมินแล้ว" && w.status !== "ไม่ผ่านเกณฑ์"));
     } catch (e) { 
       console.error(e); 
       setApiError(prev => ({ ...prev, workers: 'เชื่อมต่อข้อมูลช่างไม่สำเร็จ (Network Error)' }));
@@ -282,7 +285,7 @@ const ProjectManager = () => {
   };
 
   return (
-    <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc', fontFamily: "'Kanit', sans-serif" }}>
+    <div className="dash-window" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#ffffff', fontFamily: "'Kanit', sans-serif" }}>
       <PMTopNav active="home" user={currentUser} />
 
       <main className="worker-main" style={{ flex: 1, padding: '40px 20px', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
@@ -315,29 +318,29 @@ const ProjectManager = () => {
           `}
         </style>
         <div style={{ 
-          background: 'linear-gradient(135deg, #e0f2fe 0%, #0ea5e9 100%)', // Blue Sky Tone
+          background: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
           borderRadius: '24px', 
           padding: '24px 40px', 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center',
           marginBottom: '24px',
-          boxShadow: '0 10px 20px -5px rgba(14, 165, 233, 0.3)', // Sky blue shadow
-          border: '1px solid rgba(255,255,255,0.6)',
+          boxShadow: '0 12px 24px -6px rgba(0, 0, 0, 0.45)',
+          border: '1px solid #374151',
           position: 'relative',
           overflow: 'hidden'
         }}>
             {/* Background Decoration */}
-            <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.8), transparent 70%)', pointerEvents: 'none' }}></div>
-            <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%', pointerEvents: 'none', animation: 'blob 15s infinite alternate ease-in-out' }}></div>
-            <div style={{ position: 'absolute', bottom: '-30%', left: '30%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%', pointerEvents: 'none', animation: 'blob 20s infinite alternate-reverse ease-in-out' }}></div>
-            <div style={{ position: 'absolute', top: 0, left: '-100%', width: '50%', height: '100%', background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.3), transparent)', transform: 'skewX(-25deg)', animation: 'shine 8s infinite ease-in-out', pointerEvents: 'none' }}></div>
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.28, background: 'radial-gradient(circle at 20% 50%, rgba(148,163,184,0.35), transparent 70%)', pointerEvents: 'none' }}></div>
+            <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(71,85,105,0.35) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%', pointerEvents: 'none', animation: 'blob 15s infinite alternate ease-in-out' }}></div>
+            <div style={{ position: 'absolute', bottom: '-30%', left: '30%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(100,116,139,0.25) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%', pointerEvents: 'none', animation: 'blob 20s infinite alternate-reverse ease-in-out' }}></div>
+            <div style={{ position: 'absolute', top: 0, left: '-100%', width: '50%', height: '100%', background: 'linear-gradient(to right, transparent, rgba(148,163,184,0.2), transparent)', transform: 'skewX(-25deg)', animation: 'shine 8s infinite ease-in-out', pointerEvents: 'none' }}></div>
 
             <div style={{ position: 'relative', zIndex: 1 }}>
-                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#0f172a', marginBottom: '8px', letterSpacing: '-0.5px', fontFamily: "'Kanit', sans-serif" }}>
-                  สวัสดี <span style={{ color: '#000000' }}>"{currentUser.full_name || currentUser.name || 'ผู้จัดการ'}"</span> <span style={{ display: 'inline-block', animation: 'wave 2.5s infinite', transformOrigin: '70% 70%' }}>👋</span>
+                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#f9fafb', marginBottom: '8px', letterSpacing: '-0.5px', fontFamily: "'Kanit', sans-serif" }}>
+                  สวัสดี <span style={{ color: '#e2e8f0' }}>&quot;{currentUser.full_name || currentUser.name || 'ผู้จัดการ'}&quot;</span> <span style={{ display: 'inline-block', animation: 'wave 2.5s infinite', transformOrigin: '70% 70%' }}>👋</span>
                 </h1>
-                <p style={{ fontSize: '16px', color: '#475569', margin: '0 0 16px 0', fontWeight: '500' }}>
+                <p style={{ fontSize: '16px', color: '#cbd5e1', margin: '0 0 16px 0', fontWeight: '500' }}>
                   พร้อมสำหรับการบริหารโครงการในวันนี้หรือยัง?
                 </p>
                 
@@ -345,56 +348,75 @@ const ProjectManager = () => {
                   display: 'inline-flex', 
                   alignItems: 'center', 
                   gap: '12px', 
-                  background: 'rgba(255, 255, 255, 0.9)', 
+                  background: 'rgba(15, 23, 42, 0.75)', 
                   padding: '10px 20px', 
                   borderRadius: '14px', 
-                  boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
-                  border: '1px solid #bae6fd',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.25)',
+                  border: '1px solid #475569',
                   backdropFilter: 'blur(5px)'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '600', fontSize: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e2e8f0', fontWeight: '600', fontSize: '14px' }}>
                       <span style={{ fontSize: '18px' }}>📅</span> 
                       {currentDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                     </div>
-                    <div style={{ height: '18px', width: '2px', background: '#cbd5e1' }}></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', fontWeight: '700', fontSize: '14px' }}>
+                    <div style={{ height: '18px', width: '2px', background: '#64748b' }}></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fda4af', fontWeight: '700', fontSize: '14px' }}>
                       <span style={{ fontSize: '18px' }}>⏰</span> 
                       {currentDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </div>
                 </div>
             </div>
             
-            {/* 3D Illustration Area */}
+            {/* PM Icon Area */}
             <div style={{ position: 'relative', width: '200px', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ 
-                  fontSize: '100px', 
-                  filter: 'drop-shadow(0 20px 30px rgba(2, 132, 199, 0.3))', 
+                <div style={{
+                  width: '96px',
+                  height: '96px',
+                  borderRadius: '24px',
+                  background: 'linear-gradient(135deg, #334155 0%, #1e293b 100%)',
+                  border: '1px solid #64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 20px 30px rgba(2, 6, 23, 0.45)',
                   animation: 'float 6s ease-in-out infinite',
                   zIndex: 2
                 }}>
-                  📊
+                  <i className='bx bxs-dashboard' style={{ fontSize: '52px', color: '#93c5fd' }}></i>
                 </div>
-                 <div style={{ 
-                   position: 'absolute', 
-                   bottom: '0px', 
-                   right: '10px', 
-                   fontSize: '60px', 
-                   filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.15))', 
-                   transform: 'rotate(15deg)',
-                   zIndex: 1
-                 }}>
-                  📁
+                <div style={{
+                  position: 'absolute',
+                  bottom: '6px',
+                  right: '18px',
+                  width: '50px',
+                  height: '50px',
+                  borderRadius: '14px',
+                  background: '#0f172a',
+                  border: '1px solid #475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transform: 'rotate(12deg)',
+                  zIndex: 1
+                }}>
+                  <i className='bx bx-folder' style={{ fontSize: '28px', color: '#fbbf24' }}></i>
                 </div>
-                 <div style={{ 
-                   position: 'absolute', 
-                   top: '5px', 
-                   left: '0px', 
-                   fontSize: '40px', 
-                   filter: 'drop-shadow(0 10px 15px rgba(0,0,0,0.1))', 
-                   transform: 'rotate(-20deg)',
-                   zIndex: 0
-                 }}>
-                  👷🏻‍♀️
+                <div style={{
+                  position: 'absolute',
+                  top: '8px',
+                  left: '8px',
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  background: '#1e293b',
+                  border: '1px solid #475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transform: 'rotate(-14deg)',
+                  zIndex: 0
+                }}>
+                  <i className='bx bx-group' style={{ fontSize: '24px', color: '#34d399' }}></i>
                 </div>
             </div>
         </div>
@@ -611,6 +633,77 @@ const ProjectManager = () => {
             </div>
           </div>
         </section>
+
+        {/* ✅ Section: Assessment History (Passed & Failed) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '30px' }}>
+          
+          {/* Passed Workers */}
+          <section style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#166534', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className='bx bx-check-circle'></i> ประวัติช่างที่ผ่านการประเมิน
+            </h3>
+            <div className="table" style={{ border: 'none' }}>
+              <div className="thead" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr', background: '#f0fdf4', borderRadius: '12px', padding: '10px 0', fontSize: '13px' }}>
+                <div style={{ paddingLeft: '16px', fontWeight: '600', color: '#166534' }}>ชื่อช่าง</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#166534' }}>ทักษะ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#166534' }}>คะแนนสอบ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#166534' }}>ระดับ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#166534' }}>สถานะ</div>
+              </div>
+              <div className="tbody" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {allWorkers.filter(w => w.status === 'ประเมินแล้ว').length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '13px' }}>ไม่มีข้อมูล</div>
+                ) : (
+                  allWorkers.filter(w => w.status === 'ประเมินแล้ว').map(w => (
+                    <div className="tr" key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr', borderBottom: '1px solid #f0fdf4', padding: '12px 0', fontSize: '13px', alignItems: 'center' }}>
+                      <div className="td" style={{ paddingLeft: '16px', fontWeight: '500', color: '#1e293b' }}>{w.name}</div>
+                      <div className="td" style={{ textAlign: 'center', color: '#64748b' }}>{w.skill}</div>
+                      <div className="td" style={{ textAlign: 'center', fontWeight: '600', color: '#1e293b' }}>{w.exam_score != null ? `${w.exam_score}/${w.exam_total || '-'}` : '-'}</div>
+                      <div className="td" style={{ textAlign: 'center' }}>
+                        <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700' }}>LV.{w.level_no}</span>
+                      </div>
+                      <div className="td" style={{ textAlign: 'center' }}>
+                        <span style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>ผ่าน</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Failed Workers */}
+          <section style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#b91c1c', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className='bx bx-x-circle'></i> ประวัติช่างที่ไม่ผ่านการประเมิน
+            </h3>
+            <div className="table" style={{ border: 'none' }}>
+              <div className="thead" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', background: '#fef2f2', borderRadius: '12px', padding: '10px 0', fontSize: '13px' }}>
+                <div style={{ paddingLeft: '16px', fontWeight: '600', color: '#b91c1c' }}>ชื่อช่าง</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#b91c1c' }}>ทักษะ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#b91c1c' }}>คะแนนสอบ</div>
+                <div style={{ textAlign: 'center', fontWeight: '600', color: '#b91c1c' }}>ผลการเมิน</div>
+              </div>
+              <div className="tbody" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {allWorkers.filter(w => w.status === 'ไม่ผ่านเกณฑ์').length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '13px' }}>ไม่มีข้อมูล</div>
+                ) : (
+                  allWorkers.filter(w => w.status === 'ไม่ผ่านเกณฑ์').map(w => (
+                    <div className="tr" key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', borderBottom: '1px solid #fef2f2', padding: '12px 0', fontSize: '13px', alignItems: 'center' }}>
+                      <div className="td" style={{ paddingLeft: '16px', fontWeight: '500', color: '#1e293b' }}>{w.name}</div>
+                      <div className="td" style={{ textAlign: 'center', color: '#64748b' }}>{w.skill}</div>
+                      <div className="td" style={{ textAlign: 'center', fontWeight: '600', color: '#1e293b' }}>{w.exam_score != null ? `${w.exam_score}/${w.exam_total || '-'}` : '-'}</div>
+                      <div className="td" style={{ textAlign: 'center' }}>
+                        <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700' }}>ไม่ผ่าน</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+        </div>
       </main>
     </div>
   );

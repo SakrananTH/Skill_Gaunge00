@@ -26,6 +26,20 @@ const CATEGORY_OPTIONS = [
 
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS;
 
+const getCategoryIcon = (category) => {
+  switch (category) {
+    case 'structure': return 'bx-building';
+    case 'plumbing': return 'bx-droplet'; 
+    case 'roofing': return 'bx-home';
+    case 'masonry': return 'bx-layer';
+    case 'aluminum': return 'bx-window';
+    case 'ceiling': return 'bx-arrow-from-bottom';
+    case 'electric': return 'bx-bulb';
+    case 'tiling': return 'bx-grid-alt';
+    default: return 'bx-category-alt';
+  }
+};
+
 const CATEGORY_LABELS = CATEGORY_OPTIONS.reduce((accumulator, option) => {
   accumulator[option.value] = option.label;
   return accumulator;
@@ -926,6 +940,18 @@ const AdminQuizBank = () => {
       return;
     }
 
+    const questionCountValue = Number(roundForm.questionCount ?? NaN);
+    if (!Number.isFinite(questionCountValue) || questionCountValue < 1) {
+      setRoundError('จำนวนข้อสอบต้องมากกว่าหรือเท่ากับ 1 ข้อ');
+      return;
+    }
+
+    const durationMinutesValue = Number(roundForm.durationMinutes ?? NaN);
+    if (!Number.isFinite(durationMinutesValue) || durationMinutesValue < 1) {
+      setRoundError('เวลาทำข้อสอบต้องมากกว่าหรือเท่ากับ 1 นาที');
+      return;
+    }
+
     const difficultyWeights = resolvedDifficultyWeights;
     const diffEasy = Number(difficultyWeights.easy || 0);
     const diffMedium = Number(difficultyWeights.medium || 0);
@@ -940,7 +966,7 @@ const AdminQuizBank = () => {
       return;
     }
 
-    let finalQuestionCount = Number(roundForm.questionCount);
+    let finalQuestionCount = questionCountValue;
     let calculatedTotal = 0;
     const quotas = roundForm.subcategoryQuotas || {};
     Object.values(quotas).forEach(q => {
@@ -985,7 +1011,7 @@ const AdminQuizBank = () => {
       question_count: finalQuestionCount,
       frequency_months: roundForm.frequencyMonths ? Number(roundForm.frequencyMonths) : null,
       passing_score: Number(roundForm.criteria?.passThreshold ?? 70),
-      duration_minutes: Number(roundForm.durationMinutes),
+      duration_minutes: durationMinutesValue,
       show_score: roundForm.showScore ? 1 : 0,
       show_answers: roundForm.showAnswers ? 1 : 0,
       show_breakdown: roundForm.showBreakdown ? 1 : 0,
@@ -1387,343 +1413,412 @@ const AdminQuizBank = () => {
         <div className="quiz-form-card quiz-round-card">
           <h3>โครงสร้างข้อสอบ</h3>
           <form onSubmit={handleRoundSubmit} className="quiz-form quiz-form--round">
-            <div className="form-grid form-grid--round">
-              <div className="form-group">
-                <label>ประเภทช่าง</label>
-                <div className="category-button-group" role="group" aria-label="ประเภทช่าง">
-                  {CATEGORY_BUTTON_OPTIONS.map(option => {
-                    const isActive = roundForm.category === option.value;
-                    const isDisabled = roundsLoading || roundSaving;
-                    return (
-                      <button
-                        type="button"
-                        key={option.value}
-                        className={`category-button${isActive ? ' is-active' : ''}`}
-                        onClick={() => handleRoundCategorySelect(option.value)}
-                        aria-pressed={isActive}
-                        aria-disabled={isDisabled}
-                        disabled={isDisabled}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
+            <div className="form-grid form-grid--round" style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) minmax(350px, 1fr)', gap: '2rem', alignItems: 'start' }}>
+              
+              {/* Column 1: Category & Settings */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {/* 1. Category Selection */}
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                   <h4 style={{ margin: '0 0 1.5rem 0', fontSize: '1.1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700 }}>
+                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', background: '#e0f2fe', color: '#0369a1' }}>
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                           <path d="M21 15c0-.61-.06-1.22-.18-1.81-.12-.58-.29-1.15-.52-1.69a10 10 0 0 0-.83-1.53c-.32-.48-.69-.93-1.1-1.33-.41-.41-.86-.78-1.33-1.1-.48-.32-1-.6-1.53-.83-.16-.07-.34-.12-.5-.18V5.01c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v1.52c-.17.06-.34.11-.5.18-.53.23-1.05.51-1.53.83s-.92.69-1.33 1.1-.78.86-1.1 1.33c-.32.48-.6 1-.83 1.53-.23.54-.41 1.11-.53 1.69-.12.59-.18 1.2-.18 1.81v3h-1v2h20v-2h-1v-3ZM5 15c0-.47.05-.95.14-1.41.09-.45.23-.89.41-1.31s.39-.81.64-1.19a7.1 7.1 0 0 1 1.9-1.9c.29-.2.6-.36.91-.51V15h2V6h2v9h2V8.68c.32.15.62.32.91.51.37.25.72.54 1.04.86s.6.66.85 1.04c.25.37.47.77.65 1.19s.32.86.41 1.31c.09.46.14.94.14 1.41v3H5z"></path>
+                         </svg>
+                       </span>
+                       1. เลือกประเภทช่าง
+                    </h4>
+                  <div className="category-button-group" role="group" aria-label="ประเภทช่าง" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '1rem' }}>
+                    {CATEGORY_BUTTON_OPTIONS.map(option => {
+                      const isActive = roundForm.category === option.value;
+                      const isDisabled = roundsLoading || roundSaving;
+                      return (
+                        <button
+                          type="button"
+                          key={option.value}
+                          className={`category-button${isActive ? ' is-active' : ''}`}
+                          onClick={() => handleRoundCategorySelect(option.value)}
+                          aria-pressed={isActive}
+                          aria-disabled={isDisabled}
+                          disabled={isDisabled}
+                          style={{ 
+                            minHeight: '60px', 
+                            justifyContent: 'center', 
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            borderRadius: '10px',
+                            border: isActive ? '2px solid #4d6de2' : '1px solid #e2e8f0',
+                            background: isActive ? '#4d6de2' : '#fff',
+                            color: isActive ? '#fff' : '#4a5568',
+                            boxShadow: isActive ? '0 4px 6px rgba(77, 109, 226, 0.2)' : '0 1px 2px rgba(0,0,0,0.05)',
+                            padding: '0.75rem'
+                          }}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-grid form-grid--inner" style={{ marginTop: '1.5rem' }}>
-                
-                {/* Section 1: General Settings */}
-                <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '8px', border: '1px solid #edf2f7' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <i className='bx bx-slider-alt'></i> การตั้งค่าทั่วไป
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', alignItems: 'start' }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-frequency" style={{ fontSize: '0.9rem', fontWeight: 600 }}>ความถี่การสอบ (เดือน)</label>
-                      <div style={{ position: 'relative' }}>
+                 {/* 2. General Settings */}
+                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                    <h4 style={{ margin: '0 0 1.5rem 0', fontSize: '1.1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700 }}>
+                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', background: '#ebf8ff', color: '#3182ce' }}><i className='bx bx-equalizer'></i></span>
+                       2. การตั้งค่าและเกณฑ์คะแนน
+                    </h4>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.25rem' }}>
+                       {/* Row 1 */}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="round-frequency" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>ความถี่การสอบ (เดือน)</label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            id="round-frequency"
+                            type="number"
+                            min="0"
+                            value={roundForm.frequencyMonths || ''}
+                            onChange={(e) => setRoundForm({ ...roundForm, frequencyMonths: e.target.value === '' ? '' : Number(e.target.value) })}
+                            placeholder="เช่น 6"
+                            style={{ padding: '0.75rem', borderRadius: '8px', border: (attemptedSubmit && (roundForm.frequencyMonths === '' || roundForm.frequencyMonths === null || roundForm.frequencyMonths === undefined)) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
+                          />
+                        </div>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="round-duration" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>เวลาทำข้อสอบ (นาที)</label>
                         <input
-                          id="round-frequency"
+                          id="round-duration"
                           type="number"
-                          min="0"
-                          value={roundForm.frequencyMonths || ''}
-                          onChange={(e) => setRoundForm({ ...roundForm, frequencyMonths: e.target.value === '' ? '' : Number(e.target.value) })}
-                          placeholder="เช่น 6 เดือน"
-                          style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (roundForm.frequencyMonths === '' || roundForm.frequencyMonths === null || roundForm.frequencyMonths === undefined)) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
+                          min={1}
+                          value={roundForm.durationMinutes ?? ''}
+                          onChange={(e) => setRoundForm({ ...roundForm, durationMinutes: e.target.value === '' ? '' : Number(e.target.value) })}
+                          style={{ padding: '0.75rem', borderRadius: '8px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
                         />
                       </div>
-                      {(attemptedSubmit && (roundForm.frequencyMonths === '' || roundForm.frequencyMonths === null || roundForm.frequencyMonths === undefined)) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '2px' }}>กรุณาระบุความถี่</div>
-                      )}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-duration" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เวลาทำข้อสอบ (นาที)</label>
-                      <input
-                        id="round-duration"
-                        type="number"
-                        min={1}
-                        value={roundForm.durationMinutes}
-                        onChange={(e) => setRoundForm({ ...roundForm, durationMinutes: Number(e.target.value) })}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.durationMinutes) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
-                      />
-                      {(attemptedSubmit && !roundForm.durationMinutes) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุเวลาสอบ</div>
-                      )}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-question-count" style={{ fontSize: '0.9rem', fontWeight: 600 }}>จำนวนข้อสอบ (ข้อ)</label>
-                      <input
-                        id="round-question-count"
-                        type="number"
-                        min={1}
-                        value={roundForm.questionCount}
-                        onChange={(e) => setRoundForm({ ...roundForm, questionCount: Number(e.target.value) })}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
-                      />
-                      {(attemptedSubmit && !roundForm.questionCount) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาระบุจำนวนข้อสอบ</div>
-                      )}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-exam-weight" style={{ fontSize: '0.9rem', fontWeight: 600 }}>สัดส่วนคะแนนสอบ (%)</label>
-                      <input
-                        id="round-exam-weight"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={roundForm.scoreWeights?.exam ?? ''}
-                        onChange={(e) => {
-                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
-                          setRoundForm(prev => ({
-                            ...prev,
-                            scoreWeights: { ...prev.scoreWeights, exam: nextValue }
-                          }));
-                        }}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(examWeightValue) && (examWeightValue < 0 || examWeightValue > 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
-                      />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="round-practical-weight" style={{ fontSize: '0.9rem', fontWeight: 600 }}>สัดส่วนคะแนนภาคปฏิบัติ (%)</label>
-                      <input
-                        id="round-practical-weight"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={roundForm.scoreWeights?.practical ?? ''}
-                        onChange={(e) => {
-                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
-                          setRoundForm(prev => ({
-                            ...prev,
-                            scoreWeights: { ...prev.scoreWeights, practical: nextValue }
-                          }));
-                        }}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: (attemptedSubmit && (Number.isFinite(practicalWeightValue) && (practicalWeightValue < 0 || practicalWeightValue > 100 || weightTotalValue !== 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
-                      />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="criteria-pass-threshold" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เกณฑ์ผ่านรวม (%)</label>
-                      <input
-                        id="criteria-pass-threshold"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={roundForm.criteria?.passThreshold ?? ''}
-                        onChange={(e) => {
-                          const nextValue = e.target.value === '' ? '' : Number(e.target.value);
-                          setRoundForm(prev => ({
+
+                       {/* Row 2 */}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="round-question-count" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>จำนวนข้อสอบ (ข้อ)</label>
+                        <input
+                          id="round-question-count"
+                          type="number"
+                          min={1}
+                          value={roundForm.questionCount}
+                          onChange={(e) => setRoundForm({ ...roundForm, questionCount: Number(e.target.value) })}
+                          style={{ padding: '0.75rem', borderRadius: '8px', border: (attemptedSubmit && !roundForm.questionCount) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="criteria-pass-threshold" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>เกณฑ์ผ่านรวม (%)</label>
+                        <input
+                          id="criteria-pass-threshold"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={roundForm.criteria?.passThreshold ?? ''}
+                          onChange={(e) => {
+                            const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                            setRoundForm(prev => ({
                             ...prev,
                             criteria: { ...prev.criteria, passThreshold: nextValue }
-                          }));
-                        }}
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: isPassThresholdError ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem' }}
-                      />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
-                      <label htmlFor="round-description" style={{ fontSize: '0.9rem', fontWeight: 600 }}>รายละเอียดเพิ่มเติม</label>
-                      <textarea
-                        id="round-description"
-                        rows={3}
-                        value={roundForm.description || ''}
-                        onChange={(e) => setRoundForm({ ...roundForm, description: e.target.value })}
-                        placeholder="ระบุรายละเอียดหรือหมายเหตุเพิ่มเติม"
-                        style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', resize: 'vertical' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Exam Conditions */}
-                <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <i className='bx bx-layer'></i>เงื่อนไขความยากง่าย
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem', alignItems: 'start' }}>
-                    
-                    {/* Level Selector */}
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="level-selector__label" style={{ fontSize: '0.9rem', fontWeight: 600 }}>เลือกชุดข้อสอบตามระดับ</label>
-                      <div className="level-selector__options" role="group" aria-label="เลือกชุดข้อสอบตามระดับ" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', border: (attemptedSubmit && !roundForm.targetLevel) ? '1px solid #e53e3e' : 'none', padding: (attemptedSubmit && !roundForm.targetLevel) ? '0.5rem' : '0', borderRadius: '6px' }}>
-                        {[
-                          { value: 'easy', label: 'ระดับ 1 (พื้นฐาน)' },
-                          { value: 'medium', label: 'ระดับ 2 (ปานกลาง)' },
-                          { value: 'hard', label: 'ระดับ 3 (ยาก)' }
-                        ].map(level => (
-                          <button
-                            key={level.value}
-                            type="button"
-                            className={`level-option${roundForm.targetLevel === level.value ? ' is-active' : ''}`}
-                            onClick={() => setRoundForm(prev => {
-                              const newWeights = {
-                                easy: level.value === 'easy' ? 100 : 0,
-                                medium: level.value === 'medium' ? 100 : 0,
-                                hard: level.value === 'hard' ? 100 : 0
-                              };
-                              return {
-                                ...prev,
-                                targetLevel: level.value,
-                                difficultyWeights: newWeights
-                              };
-                            })}
-                            aria-pressed={roundForm.targetLevel === level.value}
-                            style={{
-                              padding: '0.5rem 1rem',
-                              borderRadius: '20px',
-                              border: roundForm.targetLevel === level.value ? '1px solid #3182ce' : '1px solid #e2e8f0',
-                              background: roundForm.targetLevel === level.value ? '#ebf8ff' : '#fff',
-                              color: roundForm.targetLevel === level.value ? '#2b6cb0' : '#4a5568',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            {level.label}
-                          </button>
-                        ))}
+                            }));
+                          }}
+                          style={{ padding: '0.75rem', borderRadius: '8px', border: isPassThresholdError ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
+                        />
                       </div>
-                      {(attemptedSubmit && !roundForm.targetLevel) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>กรุณาเลือกระดับความยาก</div>
-                      )}
-                      <div className="level-selector__hint" style={{ fontSize: '0.8rem', color: '#718096', marginTop: '0.5rem' }}>
-                        เลือกระดับเฉพาะเจาะจง ตาม Level Selector ด้านบน                      </div>
-                    </div>
 
-                    {/* Difficulty Weights */}
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <label style={{ marginBottom: 0, fontWeight: 600, fontSize: '0.9rem' }}>โครงสร้างน้ำหนักความยาก (%)</label>
+                      {/* Row 3: Weights */}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="round-exam-weight" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>สัดส่วนคะแนนสอบ (%)</label>
+                        <input
+                          id="round-exam-weight"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={roundForm.scoreWeights?.exam ?? ''}
+                          onChange={(e) => {
+                            const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                            setRoundForm(prev => ({
+                              ...prev,
+                              scoreWeights: { ...prev.scoreWeights, exam: nextValue }
+                            }));
+                          }}
+                          style={{ padding: '0.75rem', borderRadius: '8px', border: (attemptedSubmit && (Number.isFinite(examWeightValue) && (examWeightValue < 0 || examWeightValue > 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
+                        />
                       </div>
-                      
-                      <div style={{ padding: '1rem', background: '#ebf8ff', borderRadius: '6px', border: (attemptedSubmit && (resolvedDifficultyWeights.easy + resolvedDifficultyWeights.medium + resolvedDifficultyWeights.hard !== 100)) ? '1px solid #e53e3e' : '1px solid #bee3f8', color: '#2c5282', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <i className='bx bx-info-circle' style={{ fontSize: '1.5rem', color: roundForm.targetLevel ? '#2c5282' : '#e53e3e' }}></i>
-                        <div>
-                          {roundForm.targetLevel ? (
-                            <div style={{ fontWeight: 600 }}>โหมดสอบเลื่อนระดับ {roundForm.targetLevel === 'easy' ? '1' : roundForm.targetLevel === 'medium' ? '2' : '3'}</div>
-                          ) : (
-                            <div style={{ fontWeight: 600, color: '#e53e3e' }}>กรุณาเลือกระดับสอบ</div>
-                          )}
-                          <div style={{ fontSize: '0.9rem' }}>
-                            {roundForm.targetLevel 
-                              ? <span>ระบบจะสุ่มเฉพาะข้อสอบ<strong>{DIFFICULTY_LABELS[roundForm.targetLevel] || 'ระดับที่เลือก'}</strong>เท่านั้น (100%)</span>
-                              : <span style={{ opacity: 0.9 }}>เพื่อกำหนดน้ำหนักความยากของข้อสอบ</span>
-                            }
-                          </div>
-                        </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="round-practical-weight" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>สัดส่วนภาคปฏิบัติ (%)</label>
+                        <input
+                          id="round-practical-weight"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={roundForm.scoreWeights?.practical ?? ''}
+                          onChange={(e) => {
+                            const nextValue = e.target.value === '' ? '' : Number(e.target.value);
+                            setRoundForm(prev => ({
+                              ...prev,
+                              scoreWeights: { ...prev.scoreWeights, practical: nextValue }
+                            }));
+                          }}
+                          style={{ padding: '0.75rem', borderRadius: '8px', border: (attemptedSubmit && (Number.isFinite(practicalWeightValue) && (practicalWeightValue < 0 || practicalWeightValue > 100 || weightTotalValue !== 100))) ? '1px solid #e53e3e' : '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', background: '#f8fafc' }}
+                        />
                       </div>
-                      {(attemptedSubmit && (resolvedDifficultyWeights.easy + resolvedDifficultyWeights.medium + resolvedDifficultyWeights.hard !== 100)) && (
-                        <div style={{ fontSize: '0.8rem', color: '#e53e3e', marginTop: '4px' }}>ผลรวมน้ำหนักต้องเท่ากับ 100%</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
 
-                {/* Section 3: Subcategory Quotas */}
-                {subcategoryOptions[roundForm.category] && subcategoryOptions[roundForm.category].length > 0 && (
-                  <div style={{ gridColumn: '1 / -1', background: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-                      <h4 style={{ margin: 0, fontSize: '1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <i className='bx bx-pie-chart-alt-2'></i> สัดส่วนข้อสอบรายหมวดหมู่ย่อย
-                      </h4>
-                      
-                      {/* Preset Controls */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {quotaPresets[roundForm.category] && quotaPresets[roundForm.category].length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                            <select 
-                              value={selectedPresetName} 
-                              onChange={(e) => setSelectedPresetName(e.target.value)}
-                              style={{ padding: '0.25rem', borderRadius: '4px', border: '1px solid #dddddd00', fontSize: '0.8rem' }}
-                            >
-                              <option value="">-- เลือกสูตร --</option>
-                              {quotaPresets[roundForm.category].map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                            </select>
-                            <button type="button" className="pill secondary" onClick={handleLoadPreset} disabled={!selectedPresetName} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 'auto', minWidth: 'auto' }}>
-                              ใช้สูตร
-                            </button>
-                            <button type="button" className="btn-icon" onClick={() => handleDeletePreset(selectedPresetName)} disabled={!selectedPresetName} title="ลบสูตร" style={{ width: '28px', height: '28px', minWidth: 'auto', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-                              <i className='bx bx-trash'></i>
-                            </button>
-                          </div>
-                        )}
-                        <button type="button" className="pill secondary" onClick={handleSavePreset} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 'auto', minWidth: 'auto' }}>
-                          <i className='bx bx-save'></i> บันทึกสูตร
-                        </button>
+                       {/* Weight Validation */}
+                      <div style={{ gridColumn: '1 / -1', marginTop: '-0.5rem' }}>
+                         {weightTotalValue !== 100 ? (
+                            <div style={{ fontSize: '0.85rem', color: '#e53e3e', display: 'flex', alignItems: 'center', gap: '4px', background: '#fff5f5', padding: '0.5rem', borderRadius: '6px' }}>
+                               <i className='bx bx-error-circle'></i> รวมกันต้องได้ 100% (ปัจจุบัน {weightTotalValue}%)
+                            </div>
+                         ) : (
+                            <div style={{ fontSize: '0.85rem', color: '#38a169', display: 'flex', alignItems: 'center', gap: '4px', background: '#f0fff4', padding: '0.5rem', borderRadius: '6px' }}>
+                               <i className='bx bx-check-circle'></i> สัดส่วนคะแนนถูกต้อง (100%)
+                            </div>
+                         )}
                       </div>
                     </div>
                     
-                    {categoryStats.total === 0 ? (
-                      <div style={{ padding: '2rem', background: '#f9fafb00', borderRadius: '8px', border: '1px dashed #e2e8f000', color: '#00000000', textAlign: 'center', fontSize: '0.9rem' }}>
-                        <i className='bx bx-info-circle' style={{ marginRight: '0.5rem', verticalAlign: 'middle', fontSize: '1.2em' }}></i>
-                        ยังไม่มีข้อสอบในคลังสำหรับหมวดหมู่นี้ กรุณาเพิ่มข้อสอบก่อนกำหนดสัดส่วน
-                      </div>
-                    ) : (
-                      <div style={{ background: 'transparent', padding: '1rem', borderRadius: '8px', border: '1px solid #edf2f700' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#4a5568', fontSize: '0.9rem' }}>
-                          <i className='bx bx-bulb'></i>
-                          <span>กำหนดเปอร์เซ็นต์เป้าหมายของแต่ละหมวดหมู่ย่อย ผลรวมต้องเท่ากับ 100%</span>
-                        </div>
-                        
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
-                          {subcategoryOptions[roundForm.category].map(option => {
-                            const stats = currentSubcategoryStats[option.value] || { total: 0, easy: 0, medium: 0, hard: 0 };
-                            if (stats.total === 0) return null;
-                            const quota = roundForm.subcategoryQuotas[option.value] || {};
-                            const safeQuota = typeof quota === 'number' ? {} : quota;
+                    <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px dashed #e2e8f0' }}>
+                        <label htmlFor="round-description" style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', display: 'block', color: '#4a5568' }}>รายละเอียดเพิ่มเติม</label>
+                        <textarea
+                            id="round-description"
+                            rows={3}
+                            value={roundForm.description || ''}
+                            onChange={(e) => setRoundForm({ ...roundForm, description: e.target.value })}
+                            placeholder="ระบุรายละเอียดหรือหมายเหตุเพิ่มเติม (ถ้ามี)"
+                            style={{ padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e0', width: '100%', fontSize: '0.95rem', resize: 'vertical', background: '#f8fafc' }}
+                        />
+                    </div>
+                  </div>
+              </div>
 
+              {/* Column 2: Conditions & Quotas */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  
+                  {/* Exam Conditions */}
+                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                    <h4 style={{ margin: '0 0 1.5rem 0', fontSize: '1.1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', background: '#e6fffa', color: '#319795' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M4 2H2v19c0 .55.45 1 1 1h19v-2H4z"></path>
+                          <path d="M8 17c1.1 0 2-.9 2-2 0-.47-.17-.9-.45-1.25l1.62-3.77c.19-.02.38-.06.56-.12l2.31 1.84c-.01.1-.03.19-.03.3 0 1.1.9 2 2 2s2-.9 2-2c0-.41-.12-.78-.33-1.1l1.46-2.91c1.04-.07 1.88-.93 1.88-1.99s-.9-2-2-2-2 .9-2 2c0 .41.12.78.33 1.1l-1.46 2.91c-.21.01-.41.05-.6.13L12.98 8.3c.01-.1.03-.19.03-.3 0-1.1-.9-2-2-2s-2 .9-2 2c0 .42.13.81.36 1.13l-1.67 3.9c-.95.15-1.68.97-1.68 1.97 0 1.1.9 2 2 2Z"></path>
+                        </svg>
+                      </span>
+                      3. เงื่อนไขความยากง่าย
+                    </h4>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                      
+                      {/* Level Selector */}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="level-selector__label" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#4a5568', marginBottom: '0.5rem' }}>ระดับความยากของข้อสอบ</label>
+                        <div className="level-selector__options" role="group" aria-label="เลือกชุดข้อสอบตามระดับ" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', padding: '0.5rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #edf2f7' }}>
+                          {[
+                            { value: 'easy', label: 'ระดับ 1 (พื้นฐาน)', color: 'green' },
+                            { value: 'medium', label: 'ระดับ 2 (ปานกลาง)', color: 'orange' },
+                            { value: 'hard', label: 'ระดับ 3 (ยาก)', color: 'red' }
+                          ].map(level => {
+                            const isActive = roundForm.targetLevel === level.value;
                             return (
-                              <div key={option.value} style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#2d3748', lineHeight: 1.4 }}>{option.label}</span>
-                                  <span style={{ fontSize: '0.75rem', background: '#edf2f7', padding: '2px 6px', borderRadius: '4px', color: '#4a5568', whiteSpace: 'nowrap' }}>{stats.total} ข้อ</span>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
-                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <label style={{ fontSize: '0.85rem', color: '#718096' }}>เป้าหมาย (%)</label>
-                                    {(safeQuota && safeQuota.pct !== undefined && safeQuota.pct !== '') && (
-                                      <span style={{ fontSize: '0.8rem', color: '#3182ce', fontWeight: 'bold' }}>
-                                        ≈ {Math.round((Number(safeQuota.pct) / 100) * roundForm.questionCount)} ข้อ
-                                      </span>
-                                    )}
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    value={(safeQuota && typeof safeQuota === 'object') ? (safeQuota.pct ?? '') : ''}
-                                    onChange={(e) => handleSubcategoryPctChange(option.value, e.target.value)}
-                                    style={{ width: '80px', padding: '0.3rem', border: '1px solid #cbd5e0', borderRadius: '4px', textAlign: 'right' }}
-                                  />
-                                </div>
-                                <div style={{ fontSize: '0.75rem', color: '#718096' }}>
-                                  สูงสุด {roundForm.questionCount ? Math.min(100, Math.floor((stats.total / roundForm.questionCount) * 100)) : 100}% (มี {stats.total} ข้อ)
-                                </div>
-                              </div>
+                              <button
+                                key={level.value}
+                                type="button"
+                                onClick={() => setRoundForm(prev => {
+                                  const newWeights = {
+                                    easy: level.value === 'easy' ? 100 : 0,
+                                    medium: level.value === 'medium' ? 100 : 0,
+                                    hard: level.value === 'hard' ? 100 : 0
+                                  };
+                                  return {
+                                    ...prev,
+                                    targetLevel: level.value,
+                                    difficultyWeights: newWeights
+                                  };
+                                })}
+                                aria-pressed={isActive}
+                                style={{
+                                  flex: 1,
+                                  minWidth: '140px',
+                                  padding: '0.75rem 1rem',
+                                  borderRadius: '8px',
+                                  border: isActive ? `1px solid ${level.color === 'green' ? '#38a169' : level.color === 'orange' ? '#dd6b20' : '#e53e3e'}` : '1px solid transparent',
+                                  background: isActive ? '#fff' : 'transparent',
+                                  color: isActive ? '#2d3748' : '#718096',
+                                  cursor: 'pointer',
+                                  fontSize: '0.95rem',
+                                  fontWeight: isActive ? 600 : 500,
+                                  transition: 'all 0.2s',
+                                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.5rem'
+                                }}
+                              >
+                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: level.color === 'green' ? '#48bb78' : level.color === 'orange' ? '#ed8936' : '#f56565', opacity: isActive ? 1 : 0.5 }}></div>
+                                {level.label}
+                              </button>
                             );
                           })}
                         </div>
+                        {(attemptedSubmit && !roundForm.targetLevel) && (
+                          <div style={{ fontSize: '0.85rem', color: '#e53e3e', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <i className='bx bx-error-circle'></i> กรุณาเลือกระดับความยาก
+                          </div>
+                        )}
+                      </div>
 
-                        <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'transparent', borderRadius: '6px', border: '1px solid #e2e8f000', display: 'flex', justifyContent: 'flex-end' }}>
-                          {(() => {
-                            const currentTotalPct = subcategoryOptions[roundForm.category].reduce((sum, opt) => {
-                              const q = roundForm.subcategoryQuotas[opt.value] || {};
-                              return sum + Number(q.pct || 0);
-                            }, 0);
-                            const isTotalMismatch = currentTotalPct !== 100;
-                            return (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
-                                <span style={{ color: '#4a5568' }}>รวมทุกหมวดหมู่:</span>
-                                <strong style={{ color: isTotalMismatch ? '#e53e3e' : '#38a169', fontSize: '1.1rem' }}>{currentTotalPct}%</strong>
-                                {isTotalMismatch && <span style={{ color: '#e53e3e', fontSize: '0.85rem' }}>(ต้องรวมได้ 100%)</span>}
-                                {!isTotalMismatch && <span style={{ color: '#38a169', fontSize: '0.85rem', display: 'flex', alignItems: 'center' }}><i className='bx bx-check-circle'></i> ครบถ้วน</span>}
-                              </div>
-                            );
-                          })()}
+                      {/* Difficulty Weights Display */}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <div style={{ padding: '1rem', background: '#ebf8ff', borderRadius: '8px', border: (attemptedSubmit && (resolvedDifficultyWeights.easy + resolvedDifficultyWeights.medium + resolvedDifficultyWeights.hard !== 100)) ? '1px solid #fc8181' : '1px solid #bee3f8', color: '#2c5282', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                          <i className='bx bx-info-circle' style={{ fontSize: '1.25rem', marginTop: '2px', color: '#3182ce' }}></i>
+                          <div style={{ flex: 1 }}>
+                            {roundForm.targetLevel ? (
+                              <>
+                                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem', color: '#2b6cb0' }}>โหมดสอบ: {DIFFICULTY_LABELS[roundForm.targetLevel]}</div>
+                                <div style={{ fontSize: '0.9rem', color: '#4299e1' }}>
+                                  ระบบจะสุ่มเฉพาะข้อสอบระดับนี้เท่านั้น (100%)
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ fontWeight: 600, color: '#e53e3e' }}>กรุณาเลือกระดับการสอบด้านบน</div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                )}
-              </div>
 
+                  {/* Subcategory Quotas */}
+                  {subcategoryOptions[roundForm.category] && subcategoryOptions[roundForm.category].length > 0 && (
+                    <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                        <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#2d3748', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', background: '#fff5f5', color: '#e53e3e' }}><i className='bx bx-pie-chart-alt-2'></i></span>
+                          4. สัดส่วนข้อสอบรายหมวดหมู่
+                        </h4>
+                        
+                        {/* Preset Controls */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {quotaPresets[roundForm.category] && quotaPresets[roundForm.category].length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f7fafc', padding: '0.25rem', borderRadius: '6px', border: '1px solid #edf2f7' }}>
+                              <select 
+                                value={selectedPresetName} 
+                                onChange={(e) => setSelectedPresetName(e.target.value)}
+                                style={{ padding: '0.4rem', borderRadius: '4px', border: 'none', background: 'transparent', fontSize: '0.85rem', color: '#4a5568', outline: 'none', cursor: 'pointer' }}
+                              >
+                                <option value="">-- เลือกสูตรที่มี --</option>
+                                {quotaPresets[roundForm.category].map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                              </select>
+                              <button type="button" className="pill secondary" onClick={handleLoadPreset} disabled={!selectedPresetName} style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem', height: 'auto', minWidth: 'auto', borderRadius: '4px' }}>
+                                ใช้สูตร
+                              </button>
+                              <button type="button" className="btn-icon" onClick={() => handleDeletePreset(selectedPresetName)} disabled={!selectedPresetName} title="ลบสูตร" style={{ width: '28px', height: '28px', minWidth: 'auto', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', color: '#718096', border: 'none', background: 'transparent' }}>
+                                <i className='bx bx-trash'></i>
+                              </button>
+                            </div>
+                          )}
+                          <button type="button" className="pill secondary" onClick={handleSavePreset} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', height: 'auto', minWidth: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <i className='bx bx-save'></i> บันทึกสูตรปัจจุบัน
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {categoryStats.total === 0 ? (
+                        <div style={{ padding: '2rem', background: '#fffaf0', borderRadius: '8px', border: '1px dashed #ed8936', color: '#c05621', textAlign: 'center', fontSize: '0.95rem' }}>
+                          <i className='bx bx-info-circle' style={{ marginRight: '0.5rem', verticalAlign: 'middle', fontSize: '1.2em' }}></i>
+                          ไม่พบข้อสอบในคลังสำหรับหมวดหมู่นี้ กรุณาเพิ่มข้อสอบก่อนกำหนดสัดส่วน
+                        </div>
+                      ) : (
+                        <div style={{ background: 'transparent' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', color: '#718096', fontSize: '0.9rem', background: '#f7fafc', padding: '0.75rem', borderRadius: '8px' }}>
+                            <i className='bx bx-bulb' style={{ color: '#ecc94b', fontSize: '1.1rem' }}></i>
+                            <span>กำหนดเปอร์เซ็นต์เป้าหมายของแต่ละหมวดหมู่ย่อย (ผลรวมต้องเท่ากับ 100%)</span>
+                          </div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                            {subcategoryOptions[roundForm.category].map(option => {
+                              const stats = currentSubcategoryStats[option.value] || { total: 0, easy: 0, medium: 0, hard: 0 };
+                              if (stats.total === 0) return null;
+                              const quota = roundForm.subcategoryQuotas[option.value] || {};
+                              const safeQuota = typeof quota === 'number' ? {} : quota;
+
+                              return (
+                                <div key={option.value} style={{ background: '#fff', padding: '1rem', borderRadius: '12px', border: '1px solid #e2e8f0', transition: 'border-color 0.2s, box-shadow 0.2s' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#2d3748', lineHeight: 1.4 }}>{option.label}</span>
+                                    <span style={{ fontSize: '0.75rem', background: '#edf2f7', padding: '2px 8px', borderRadius: '12px', color: '#4a5568', whiteSpace: 'nowrap', fontWeight: 600 }}>{stats.total} ข้อ</span>
+                                  </div>
+                                  
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: '0.8rem', color: '#718096', marginBottom: '0.25rem' }}>เป้าหมาย</div>
+                                      {(safeQuota && safeQuota.pct !== undefined && safeQuota.pct !== '') ? (
+                                        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#3182ce' }}>
+                                          {safeQuota.pct}% <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#718096' }}>(≈ {Math.round((Number(safeQuota.pct) / 100) * roundForm.questionCount)} ข้อ)</span>
+                                        </div>
+                                      ) : (
+                                        <div style={{ fontSize: '0.9rem', color: '#a0aec0' }}>-</div>
+                                      )}
+                                    </div>
+                                    <div style={{ width: '80px' }}>
+                                      <div style={{ position: 'relative' }}>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          value={(safeQuota && typeof safeQuota === 'object') ? (safeQuota.pct ?? '') : ''}
+                                          onChange={(e) => handleSubcategoryPctChange(option.value, e.target.value)}
+                                          placeholder="0"
+                                          style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e0', borderRadius: '6px', textAlign: 'center', fontWeight: 600, color: '#2d3748' }}
+                                        />
+                                        <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#a0aec0', pointerEvents: 'none' }}>%</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div style={{ marginTop: '0.5rem', height: '4px', background: '#edf2f7', borderRadius: '2px', overflow: 'hidden' }}>
+                                    <div style={{ 
+                                      height: '100%', 
+                                      width: `${roundForm.questionCount ? Math.min(100, Math.floor((stats.total / roundForm.questionCount) * 100)) : 0}%`,
+                                      background: (roundForm.questionCount && stats.total < Math.round((Number(safeQuota.pct||0)/100)*roundForm.questionCount)) ? '#fc8181' : '#68d391',
+                                      borderRadius: '2px' 
+                                    }}></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f7fafc', borderRadius: '8px', border: '1px solid #edf2f7', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            {(() => {
+                              const currentTotalPct = subcategoryOptions[roundForm.category].reduce((sum, opt) => {
+                                const q = roundForm.subcategoryQuotas[opt.value] || {};
+                                return sum + Number(q.pct || 0);
+                              }, 0);
+                              const isTotalMismatch = currentTotalPct !== 100;
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1rem' }}>
+                                  <span style={{ color: '#4a5568', fontWeight: 500 }}>รวมทุกหมวดหมู่:</span>
+                                  <strong style={{ color: isTotalMismatch ? '#e53e3e' : '#38a169', fontSize: '1.25rem' }}>{currentTotalPct}%</strong>
+                                  {isTotalMismatch ? (
+                                    <span style={{ color: '#e53e3e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <i className='bx bx-error-circle'></i> ต้องรวมได้ 100%
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#38a169', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#f0fff4', padding: '0.25rem 0.75rem', borderRadius: '20px', border: '1px solid #c6f6d5' }}>
+                                      <i className='bx bx-check-circle'></i> ถูกต้อง
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: '0.85rem', color: '#718096' }}>
                   {selectedRoundId !== ROUND_NEW_VALUE && selectedRound && (

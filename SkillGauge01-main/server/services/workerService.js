@@ -176,6 +176,12 @@ export const workerService = {
         getColumn(row, 'account_password_hash', 'password_hash')
       ) || '';
       const tradeType = toNullableString(profile.employment.tradeType) || '';
+      const storedEmploymentStatus = toNullableString(getColumn(row, 'employment_status'));
+      const shouldAutoPromote = assessmentSummary?.passed === true
+        && (!storedEmploymentStatus || storedEmploymentStatus === 'active' || storedEmploymentStatus === 'probation');
+      const resolvedEmploymentStatus = shouldAutoPromote
+        ? 'permanent'
+        : (storedEmploymentStatus || 'active');
     
       return {
         id: getColumn(row, 'id'),
@@ -186,7 +192,7 @@ export const workerService = {
         trade_type: tradeType,
         category: tradeLabel,
         level: tradeLabel, // Often level is mapped from trade or assessment
-        status: toNullableString(getColumn(row, 'employment_status')) || 'active',
+        status: resolvedEmploymentStatus,
         startDate:
           toISODateString(getColumn(row, 'start_date')) ||
           toISODateString(getColumn(row, 'created_at')) ||

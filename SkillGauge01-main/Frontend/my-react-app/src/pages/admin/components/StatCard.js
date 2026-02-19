@@ -2,10 +2,14 @@ import React from 'react';
 import './StatCard.css';
 
 const StatCard = ({ stat, onClick, ...rest }) => {
+    const isClickable = typeof onClick === 'function';
+
     return (
         <div
-            className={`stat-card stat-card--${stat.color}`}
+            className={`stat-card stat-card--${stat.color} ${isClickable ? 'stat-card--clickable' : 'stat-card--disabled'}`}
             onClick={onClick}
+            role={isClickable ? 'button' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
             {...rest}
         >
             <div className="stat-icon-wrapper">

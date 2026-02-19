@@ -61,16 +61,40 @@ const ProjectDetail = () => {
             });
 
             // ดึงสรุปโครงการ + งานย่อยจาก API ที่มีอยู่จริง
-            const [projectsData, tasksData] = await Promise.all([
+            const [projectsData, projectData, tasksData] = await Promise.all([
                 apiRequest('/api/dashboard/project-task-counts'),
+                apiRequest(`/api/projects/${pj_id}`),
                 apiRequest(`/api/tasks?${params.toString()}`)
             ]);
 
             const projects = Array.isArray(projectsData) ? projectsData : [];
             const foundProject = projects.find(p => p.project_id === pj_id) || null;
-            const resolvedProject = foundProject
-              ? { ...foundProject, project_name: foundProject.project_name }
-              : (incomingProject || { project_name: 'โครงการ', project_id: pj_id });
+            const resolvedProject = {
+              ...(incomingProject || {}),
+              ...(foundProject || {}),
+              ...(projectData || {}),
+              project_id: pj_id,
+              project_name:
+                projectData?.name ||
+                foundProject?.project_name ||
+                incomingProject?.project_name ||
+                incomingProject?.projectName ||
+                'โครงการ',
+              project_type:
+                projectData?.project_type ||
+                foundProject?.project_type ||
+                incomingProject?.project_type ||
+                incomingProject?.projectType ||
+                '-',
+              site_address:
+                projectData?.site_address ||
+                incomingProject?.site_address ||
+                incomingProject?.location ||
+                '-',
+              start_date: projectData?.start_date || incomingProject?.start_date || null,
+              end_date: projectData?.end_date || incomingProject?.end_date || null,
+              description: projectData?.description || incomingProject?.description || '-'
+            };
 
             setProject(resolvedProject);
             setTasks(Array.isArray(tasksData?.items) ? tasksData.items : []);
@@ -152,8 +176,7 @@ const ProjectDetail = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
                 <div>
                     <p style={detailRowStyle}><span style={labelStyle}>ประเภท:</span> {project.project_type || '-'}</p>
-                    <p style={detailRowStyle}><span style={labelStyle}>สถานที่:</span> {project.site_location || '-'}</p>
-                    <p style={detailRowStyle}><span style={labelStyle}>PM ผู้ดูแล ID:</span> {project.manager_id || '-'}</p>
+                  <p style={detailRowStyle}><span style={labelStyle}>สถานที่:</span> {project.site_address || '-'}</p>
                 </div>
                 <div>
                     <p style={detailRowStyle}><span style={labelStyle}>ระยะเวลา:</span> {formatDate(project.start_date)} - {formatDate(project.end_date)}</p>
@@ -192,7 +215,7 @@ const ProjectDetail = () => {
                                     </td>
                                     <td style={{ padding: '12px' }}>{task.status || '-'}</td>
                                     <td style={{ padding: '12px' }}>{task.assignee_name || '-'}</td>
-                                    <td style={{ padding: '12px' }}>{task.due_date ? formatDate(task.due_date) : '-'}</td>
+                                    <td style={{ padding: '12px' }}>{task.due_date ? formatDate(task.due_date) : (task.assigned_at ? formatDate(task.assigned_at) : '-')}</td>
                                 </tr>
                             ))}
                         </tbody>

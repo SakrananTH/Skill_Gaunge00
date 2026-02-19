@@ -20,6 +20,7 @@ const WKProjectTasks = () => {
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [errors, setErrors] = useState({});
   const [shakeKey, setShakeKey] = useState(0);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const workerCategoryToTaskType = {
     'ช่างโครงสร้าง': 'งานโครงสร้าง',
@@ -37,6 +38,11 @@ const WKProjectTasks = () => {
     const candidate = project?.project_type || project?.taskType || project?.trade_type || '';
     return resolveTaskType(candidate) || 'งานโครงสร้าง';
   };
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   
   // ✅ ฟังก์ชันเล่นเสียง Beep เมื่อเกิด Error
   const playErrorBeep = () => {
@@ -228,6 +234,10 @@ const WKProjectTasks = () => {
                       <p className="header-subtitle">
                         ผู้รับการประเมิน: <span className="highlight-name">{selectedWorker?.name}</span>
                         <span className="worker-skill-badge">• {selectedWorker?.skill}</span>
+                      </p>
+                      <p className="header-subtitle" style={{ marginTop: '6px', opacity: 0.95 }}>
+                        หัวหน้าช่าง FM: <span className="highlight-name">{user?.name || '-'}</span>
+                        <span className="worker-skill-badge">• เวลา {currentTime.toLocaleTimeString('th-TH')}</span>
                       </p>
                     </div>
                     

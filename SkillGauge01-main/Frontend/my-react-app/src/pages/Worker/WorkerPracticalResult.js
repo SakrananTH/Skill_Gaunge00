@@ -2,6 +2,57 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../utils/api';
 
+const PRACTICAL_CRITERIA_SECTIONS = [
+  {
+    title: 'A. ความเข้าใจงาน & ความพร้อม',
+    items: [
+      { id: 'a1', text: 'เข้าใจแบบ งานสั่ง หรือคำอธิบายงานได้ถูกต้อง' },
+      { id: 'a2', text: 'การวัดและการคำนวณ (Correct measurements)' },
+      { id: 'a3', text: 'การใช้เครื่องมือถูกต้องเหมาะสม' }
+    ]
+  },
+  {
+    title: 'B. วิธีการทำงาน',
+    items: [
+      { id: 'b1', text: 'การปฏิบัติงานตามขั้นตอนและวิธีการที่ถูกต้อง' },
+      { id: 'b2', text: 'ปฏิบัติตามขั้นตอนความปลอดภัยในการทำงาน' }
+    ]
+  },
+  {
+    title: 'C. คุณภาพและความถูกต้องของงาน',
+    items: [
+      { id: 'c1', text: 'ตำแหน่ง ระดับ แนว และมุมของงานถูกต้องตามที่กำหนด' },
+      { id: 'c2', text: 'งานทำตามแบบและข้อกำหนดที่ได้รับ' },
+      { id: 'c3', text: 'ความแข็งแรงและความคงทนของงาน' },
+      { id: 'c4', text: 'ความเรียบร้อยและความละเอียดของงาน' }
+    ]
+  },
+  {
+    title: 'D. ประสิทธิภาพในการทำงาน',
+    items: [
+      { id: 'd1', text: 'ทำงานได้ทันตามเวลาที่กำหนดและทำงานต่อเนื่อง' },
+      { id: 'd2', text: 'บริหารเวลาและลำดับงานได้เหมาะสม' },
+      { id: 'd3', text: 'ทำงานร่วมกับผู้อื่นได้ดี ไม่เป็นอุปสรรคต่อทีม' }
+    ]
+  },
+  {
+    title: 'E. ความปลอดภัยเชิงพฤติกรรม',
+    items: [
+      { id: 'e1', text: 'หลีกเลี่ยงพฤติกรรมเสี่ยงและแจ้งเมื่อพบความเสี่ยง' },
+      { id: 'e2', text: 'ใช้อุปกรณ์ป้องกันส่วนบุคคลครบถ้วนและถูกต้อง' }
+    ]
+  },
+  {
+    title: 'F. ความรับผิดชอบและทัศนคติ',
+    items: [
+      { id: 'f1', text: 'ตรงต่อเวลาและพร้อมทำงาน' },
+      { id: 'f2', text: 'รับผิดชอบต่องานที่ได้รับมอบหมายจนแล้วเสร็จ' },
+      { id: 'f3', text: 'แก้ไขปัญหาที่เกิดขึ้นได้ ไม่หลีกเลี่ยงความรับผิดชอบ' },
+      { id: 'f4', text: 'ปฏิบัติตามคำสั่งและข้อตกลงของผู้ควบคุมงาน' }
+    ]
+  }
+];
+
 const WorkerPracticalResult = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -64,6 +115,32 @@ const WorkerPracticalResult = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const getSectionScoreRows = (criteriaScores) => {
+    const source = criteriaScores && typeof criteriaScores === 'object' ? criteriaScores : {};
+    return PRACTICAL_CRITERIA_SECTIONS.map((section) => {
+      const items = section.items.map((item) => {
+        const rawScore = source[item.id];
+        const score = Number(rawScore);
+        const hasScore = Number.isFinite(score);
+        return {
+          id: item.id,
+          text: item.text,
+          score: hasScore ? score : null
+        };
+      });
+      const sectionTotal = items.reduce((sum, item) => sum + (item.score ?? 0), 0);
+      const sectionMax = items.length * 4;
+      const hasAnyScore = items.some((item) => item.score !== null);
+      return {
+        title: section.title,
+        items,
+        sectionTotal,
+        sectionMax,
+        hasAnyScore
+      };
+    }).filter((section) => section.hasAnyScore);
   };
 
   return (
@@ -183,6 +260,45 @@ const WorkerPracticalResult = () => {
                       <div style={{ fontSize: '12px', color: '#64748b' }}>วันที่ประเมิน</div>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{formatDateTime(practicalResult.result.assessedAt)}</div>
                     </div>
+                  </div>
+
+                  {practicalResult.result.comment && (
+                    <div style={{ marginTop: '16px', textAlign: 'left', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>ความเห็นจากผู้ประเมิน</div>
+                      <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: 1.5 }}>{practicalResult.result.comment}</div>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '22px', textAlign: 'left' }}>
+                    <h4 style={{ fontSize: '18px', fontWeight: '800', color: '#1e293b', margin: '0 0 10px 0' }}>ประวัติคะแนนรายหัวข้อ</h4>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px 0' }}>แสดงคะแนนแต่ละหัวข้อจากการประเมินครั้งล่าสุด (เต็ม 4 คะแนน/ข้อ)</p>
+
+                    {getSectionScoreRows(practicalResult.result.criteriaScores).length === 0 ? (
+                      <div style={{ fontSize: '14px', color: '#64748b', padding: '12px', border: '1px dashed #cbd5e1', borderRadius: '10px', background: '#f8fafc' }}>
+                        ไม่พบข้อมูลคะแนนรายหัวข้อ
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: '12px' }}>
+                        {getSectionScoreRows(practicalResult.result.criteriaScores).map((section) => (
+                          <div key={section.title} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                            <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '14px' }}>{section.title}</div>
+                              <div style={{ fontWeight: '700', color: '#0f766e', fontSize: '13px' }}>{section.sectionTotal}/{section.sectionMax}</div>
+                            </div>
+                            <div style={{ padding: '8px 12px' }}>
+                              {section.items.map((item) => (
+                                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+                                  <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.4 }}>{item.text}</div>
+                                  <div style={{ minWidth: '52px', textAlign: 'right', fontWeight: '700', color: item.score === null ? '#94a3b8' : '#0f766e' }}>
+                                    {item.score === null ? '-' : `${item.score}/4`}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

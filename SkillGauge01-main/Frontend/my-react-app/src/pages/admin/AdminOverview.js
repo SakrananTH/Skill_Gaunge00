@@ -466,14 +466,6 @@ const AdminOverview = ({ setTab }) => {
           <div className="stat-card-wrapper" key={index}>
             <StatCard 
               stat={stat}
-              onClick={() => navigate('/admin', { 
-                state: { 
-                  initialTab: 'users', 
-                  filterSkill: stat.filterSkill, 
-                  filterStatus: stat.filterStatus, 
-                  filterCategory: selectedBranch 
-                } 
-              })}
               onMouseEnter={e => setTooltip({ show: true, text: stat.insight, x: e.clientX, y: e.clientY })}
               onMouseLeave={() => setTooltip({ show: false, text: '', x: 0, y: 0 })}
             />

@@ -39,6 +39,16 @@ const isWorkerRole = (role, category) => {
   return false;
 };
 
+const isForemanRole = (role) => {
+  const key = normalizeRole(role);
+  return key.includes('หัวหน้า') || key.includes('foreman') || key === 'fm' || key.includes('(fm)');
+};
+
+const isProjectManagerRole = (role) => {
+  const key = normalizeRole(role);
+  return key.includes('ผู้จัดการ') || key.includes('project_manager') || key === 'pm' || key.includes('(pm)');
+};
+
 const AdminUsersTable = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -108,7 +118,11 @@ const AdminUsersTable = () => {
                            (worker.phone || '').includes(searchTerm);
       const matchesCategory = filterCategory === 'all'
         ? true
-        : workerRoleIsWorker && worker.category === filterCategory;
+        : filterCategory === 'pm'
+          ? isProjectManagerRole(worker.role)
+          : filterCategory === 'fm'
+            ? isForemanRole(worker.role)
+            : workerRoleIsWorker && worker.category === filterCategory;
       const matchesStatus = filterStatus === 'all'
         ? true
         : workerRoleIsWorker && (
@@ -340,6 +354,8 @@ const AdminUsersTable = () => {
             </div>
             <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
               <option value="all">ทุกประเภท</option>
+              <option value="pm">Project Manager (PM)</option>
+              <option value="fm">Foreman (FM)</option>
               <option value="structure">ช่างโครงสร้าง</option>
               <option value="plumbing">ช่างประปา</option>
               <option value="roofing">ช่างหลังคา</option>

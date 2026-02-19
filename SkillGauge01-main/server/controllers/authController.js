@@ -28,6 +28,55 @@ async function resolveUserRoles(userId) {
   }
 }
 
+async function resolveWorkerIdForUserRecord(user) {
+  if (!user || typeof user !== 'object') return null;
+
+  const directNumeric = Number(user.id);
+  if (Number.isFinite(directNumeric)) return directNumeric;
+
+  if (user.email) {
+    const accountRow = await queryOne(
+      `SELECT worker_id
+       FROM worker_accounts
+       WHERE LOWER(email) = LOWER(?)
+       LIMIT 1`,
+      [user.email]
+    );
+    const workerId = Number(accountRow?.worker_id);
+    if (Number.isFinite(workerId)) return workerId;
+  }
+
+  if (user.phone) {
+    const workerRow = await queryOne(
+      `SELECT id
+       FROM workers
+       WHERE phone = ?
+       LIMIT 1`,
+      [user.phone]
+    );
+    const workerId = Number(workerRow?.id);
+    if (Number.isFinite(workerId)) return workerId;
+  }
+
+  if (user.full_name) {
+    const workerRow = await queryOne(
+      `SELECT w.id
+       FROM workers w
+       LEFT JOIN task_worker_assignments twa ON twa.worker_id = w.id
+       WHERE REPLACE(TRIM(w.full_name), ' ', '') = REPLACE(TRIM(?), ' ', '')
+          OR w.full_name LIKE ?
+       GROUP BY w.id
+       ORDER BY COUNT(twa.id) DESC, w.id DESC
+       LIMIT 1`,
+      [user.full_name, `%${String(user.full_name).trim()}%`]
+    );
+    const workerId = Number(workerRow?.id);
+    if (Number.isFinite(workerId)) return workerId;
+  }
+
+  return null;
+}
+
   function normalizeWorkerRole(roleCode) {
     if (!roleCode) return 'worker';
     const value = String(roleCode).toLowerCase();
@@ -93,8 +142,25 @@ export const authController = {
         if (!roles.length) roles = ['worker'];
       }
 
+      const normalizedRoles = Array.isArray(roles)
+        ? roles.map((role) => String(role || '').toLowerCase())
+        : [];
+      const isWorkerLogin = normalizedRoles.includes('worker') || normalizedRoles.includes('wk');
+      let workerId = null;
+
+      if (source === 'worker_accounts') {
+        const directId = Number(user.id);
+        workerId = Number.isFinite(directId) ? directId : null;
+      } else if (isWorkerLogin) {
+        try {
+          workerId = await resolveWorkerIdForUserRecord(user);
+        } catch (mappingError) {
+          console.warn('Worker mapping failed at login', mappingError?.message || mappingError);
+        }
+      }
+
       const token = jwt.sign(
-        { id: user.id, roles, full_name: user.full_name || '' },
+        { id: user.id, roles, full_name: user.full_name || '', worker_id: workerId },
         env.JWT_SECRET,
         { expiresIn: env.JWT_EXPIRES_IN }
       );
@@ -119,7 +185,8 @@ export const authController = {
           full_name: user.full_name || '',
           phone: user.phone || '',
           email: user.email || '',
-          roles
+          roles,
+          worker_id: workerId
         }
       });
     } catch (error) {

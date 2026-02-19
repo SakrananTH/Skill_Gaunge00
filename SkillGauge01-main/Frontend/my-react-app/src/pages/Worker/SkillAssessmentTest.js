@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../utils/api';
 import './SkillAssessmentTest.css';
+import LogoutModal from '../../components/LogoutModal';
 // import { API_BASE_URL } from '../../utils/api'; 
 
 const SkillAssessmentTest = () => {
@@ -25,6 +26,7 @@ const SkillAssessmentTest = () => {
   // State หลัก
   const [step, setStep] = useState('intro'); 
   const [questions, setQuestions] = useState([]); 
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [user, setUser] = useState({ name: 'ผู้ใช้งาน', id: '', role: 'worker' });
   const [isScrolled, setIsScrolled] = useState(false);
   const resolvedTrade =
@@ -574,10 +576,7 @@ const SkillAssessmentTest = () => {
   };
 
   const handleLogout = () => {
-    if (window.confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
-      sessionStorage.clear();
-      navigate('/login');
-    }
+    setShowLogoutModal(true);
   };
 
   // --- Step 1: Intro ---
@@ -678,6 +677,7 @@ const SkillAssessmentTest = () => {
             </div>
           </div>
         </main>
+        <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
       </div>
     );
   }
@@ -759,6 +759,7 @@ const SkillAssessmentTest = () => {
              </div>
             </div>
           </main>
+          <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
        </div>
     );
   }
@@ -914,6 +915,7 @@ const SkillAssessmentTest = () => {
                 </div>
             </div>
        </div>
+       <LogoutModal show={showLogoutModal} onClose={() => setShowLogoutModal(false)} />
     </div>
   );
 };

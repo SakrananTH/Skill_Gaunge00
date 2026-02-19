@@ -66,7 +66,7 @@ const Login = () => {
       // Persist token and identity
       try {
         sessionStorage.setItem('auth_token', token);
-        if (user?.id) sessionStorage.setItem('user_id', user.id);
+        if (user?.worker_id || user?.id) sessionStorage.setItem('user_id', user.worker_id || user.id);
         if (user?.email) sessionStorage.setItem('user_email', user.email);
       } catch {}
 
@@ -84,7 +84,8 @@ const Login = () => {
       // Check if worker profile is completed
       const hasProfile = sessionStorage.getItem('worker_profile');
       const navUser = {
-        id: user?.id ?? null,
+        id: user?.worker_id ?? user?.id ?? null,
+        worker_id: user?.worker_id ?? null,
         name: user?.full_name || null,
         username: user?.phone || user?.email || username,
         phone: user?.phone || null,
@@ -93,7 +94,8 @@ const Login = () => {
       };
       try {
         const sessionUser = {
-          id: user?.id ?? null,
+          id: user?.worker_id ?? user?.id ?? null,
+          worker_id: user?.worker_id ?? null,
           name: user?.full_name || null,
           username: user?.phone || user?.email || username,
           phone: user?.phone || null,
